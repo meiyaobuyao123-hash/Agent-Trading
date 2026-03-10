@@ -95,3 +95,71 @@ export async function getOKXChains() {
   const json = await res.json()
   return json?.data ?? []
 }
+
+// ===== GET SWAP TX DATA (unsigned) =====
+// Returns the unsigned transaction that needs to be signed + broadcast
+export async function getOKXSwapData(params: {
+  chainIndex: string
+  fromTokenAddress: string
+  toTokenAddress: string
+  amount: string        // in fromToken smallest unit (e.g. USDT has 18 decimals on BSC)
+  slippage: string      // e.g. '0.005' = 0.5%
+  userWalletAddress: string
+  referrerAddress?: string
+  feePercent?: string
+}) {
+  const query = new URLSearchParams({
+    chainIndex: params.chainIndex,
+    fromTokenAddress: params.fromTokenAddress,
+    toTokenAddress: params.toTokenAddress,
+    amount: params.amount,
+    slippage: params.slippage,
+    userWalletAddress: params.userWalletAddress,
+    ...(params.referrerAddress ? { referrerAddress: params.referrerAddress } : {}),
+    ...(params.feePercent ? { feePercent: params.feePercent } : {}),
+  })
+  const path = `/api/v6/dex/aggregator/swap?${query}`
+  const headers = getOKXHeaders('GET', path)
+  const res = await fetch(`https://www.okx.com${path}`, { headers })
+  const json = await res.json()
+  if (json.code !== '0') throw new Error(`OKX swap error ${json.code}: ${json.msg}`)
+  return json?.data?.[0] ?? null
+}
+
+// ===== STABLECOIN ADDRESSES (fromToken for buys) =====
+// Used as the "from" token when buying a new position
+export const STABLECOINS: Record<string, { usdt: string; usdc: string; decimals: number }> = {
+  '56': {  // BSC
+    usdt: '0x55d398326f99059fF775485246999027B3197955', // BSC-USDT (18 decimals)
+    usdc: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', // BSC-USDC (18 decimals)
+    decimals: 18,
+  },
+  '1': {   // ETH
+    usdt: '0xdAC17F958D2ee523a2206206994597C13D831ec7', // ETH-USDT (6 decimals)
+    usdc: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', // ETH-USDC (6 decimals)
+    decimals: 6,
+  },
+  '137': { // Polygon
+    usdt: '0xc2132D05D31c914a87C6611C10748AEb04B58e8F',
+    usdc: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
+    decimals: 6,
+  },
+  '42161': { // Arbitrum
+    usdt: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9',
+    usdc: '0xFF970A61A04b1cA14834A43f5dE4533eBDDB5CC8',
+    decimals: 6,
+  },
+  '8453': { // Base
+    usdt: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2',
+    usdc: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+    decimals: 6,
+  },
+}
+
+// Helper: convert USD amount to token smallest unit
+export function usdToTokenAmount(amountUsd: number, chainIndex: string): string {
+  const stable = STABLECOINS[chainIndex]
+  if (!stable) throw new Error(`Unsupported chain: ${chainIndex}`)
+  const decimals = stable.decimals
+  return Math.floor(amountUsd * Math.pow(10, decimals)).toString()
+}

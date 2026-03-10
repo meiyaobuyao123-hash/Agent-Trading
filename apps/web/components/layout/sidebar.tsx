@@ -11,6 +11,7 @@ import {
   Briefcase,
   Star,
   Settings,
+  FlaskConical,
 } from 'lucide-react'
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { href: '/market', label: '行情', icon: TrendingUp },
   { href: '/signals', label: '信号', icon: Zap },
   { href: '/strategy', label: '策略', icon: Brain },
+  { href: '/backtest', label: '回测', icon: FlaskConical },
   { href: '/portfolio', label: '持仓', icon: Briefcase },
   { href: '/official', label: '官方组合', icon: Star },
 ]

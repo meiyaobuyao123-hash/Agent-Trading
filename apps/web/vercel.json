@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/engine/sync-signals",
+      "schedule": "*/5 * * * *"
+    }
+  ]
+}

@@ -16,5 +16,11 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "@swc/helpers": "^0.5.19"
+  },
+  "overrides": {
+    "caniuse-lite": "1.0.30001580"
   }
 }

@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/web",
+      "port": 3000
+    },
+    {
+      "name": "admin",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
+      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/admin",
+      "port": 3002
+    }
+  ]
+}

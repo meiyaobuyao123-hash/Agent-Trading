@@ -1,98 +1,159 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../models/hot_coin.dart';
 import '../theme/app_colors.dart';
 
-class HotCoinCard extends StatelessWidget {
+class HotCoinCard extends StatefulWidget {
   final HotCoin coin;
   final int rank;
   final VoidCallback? onTap;
   final double? livePrice;
   final double? liveChange24h;
 
-  const HotCoinCard({super.key, required this.coin, required this.rank, this.onTap, this.livePrice, this.liveChange24h});
+  const HotCoinCard({
+    super.key,
+    required this.coin,
+    required this.rank,
+    this.onTap,
+    this.livePrice,
+    this.liveChange24h,
+  });
+
+  @override
+  State<HotCoinCard> createState() => _HotCoinCardState();
+}
+
+class _HotCoinCardState extends State<HotCoinCard>
+    with SingleTickerProviderStateMixin {
+  bool _pressed = false;
+  double? _prevPrice;
+  Color _flashColor = Colors.transparent;
+
+  @override
+  void didUpdateWidget(HotCoinCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 价格闪烁效果
+    final newPrice = widget.livePrice ?? widget.coin.priceUsd;
+    if (_prevPrice != null && newPrice != _prevPrice) {
+      setState(() {
+        _flashColor = newPrice > _prevPrice!
+            ? AppColors.success.withValues(alpha: 0.15)
+            : AppColors.danger.withValues(alpha: 0.15);
+      });
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (mounted) setState(() => _flashColor = Colors.transparent);
+      });
+    }
+    _prevPrice = newPrice;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _prevPrice = widget.livePrice ?? widget.coin.priceUsd;
+  }
 
   @override
   Widget build(BuildContext context) {
+    final coin = widget.coin;
     final isStrong = coin.recommendation == 'strong';
-    final price = livePrice ?? coin.priceUsd;
-    final change = liveChange24h ?? coin.priceChange24h;
+    final price = widget.livePrice ?? coin.priceUsd;
+    final change = widget.liveChange24h ?? coin.priceChange24h;
 
-    return CupertinoButton(
-      padding: EdgeInsets.zero,
-      onPressed: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            // ── 代币头像 ──────────────────────
-            _TokenAvatar(coin: coin, rank: rank),
-            const SizedBox(width: 12),
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) {
+        setState(() => _pressed = false);
+        HapticFeedback.selectionClick();
+        widget.onTap?.call();
+      },
+      onTapCancel: () => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 500),
+          curve: Curves.easeOut,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          decoration: BoxDecoration(
+            color: _flashColor == Colors.transparent
+                ? Colors.transparent
+                : _flashColor,
+          ),
+          child: Row(
+            children: [
+              // ── 代币头像 ──────────────────────
+              _TokenAvatar(coin: coin, rank: widget.rank, isStrong: isStrong),
+              const SizedBox(width: 12),
 
-            // ── 名称 + 市值/年龄/链 ──────────
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          coin.symbol.toUpperCase(),
-                          style: const TextStyle(
-                            color: AppColors.textPrimary, fontSize: 16,
-                            fontWeight: FontWeight.w600, letterSpacing: -0.3,
+              // ── 名称 + 链标签 + 市值 ──────────
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            coin.symbol.toUpperCase(),
+                            style: const TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.3,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
-                          overflow: TextOverflow.ellipsis,
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      _ChainDot(chain: coin.chain),
-                      if (isStrong) ...[
                         const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: AppColors.strong.withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: const Text('HOT',
-                              style: TextStyle(color: AppColors.strong, fontSize: 10, fontWeight: FontWeight.w700)),
-                        ),
+                        _ChainLabel(chain: coin.chain),
+                        if (isStrong) ...[
+                          const SizedBox(width: 6),
+                          _HotBadge(),
+                        ],
                       ],
-                    ],
-                  ),
-                  const SizedBox(height: 2),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_fmtMC(coin.marketCapUsd)}  ·  ${coin.ageDays.toStringAsFixed(0)}天',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                        letterSpacing: -0.1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── 右侧：价格 + 涨跌幅 ──
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
                   Text(
-                    '${_fmtMC(coin.marketCapUsd)} · ${coin.ageDays.toStringAsFixed(0)}天',
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                    _fmtPrice(price),
+                    style: const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: -0.5,
+                      fontFeatures: [FontFeature.tabularFigures()],
+                    ),
                   ),
+                  const SizedBox(height: 4),
+                  _ChangeChip(pct: change),
                 ],
               ),
-            ),
-
-            // ── 右侧：价格 + 涨跌幅（实时更新） ──
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  _fmtPrice(price),
-                  style: const TextStyle(
-                    color: AppColors.textPrimary, fontSize: 15,
-                    fontWeight: FontWeight.w600, letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 3),
-                _ChangeChip(pct: change),
-              ],
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 
   String _fmtMC(double usd) {
+    if (usd >= 1e9) return '\$${(usd / 1e9).toStringAsFixed(1)}B';
     if (usd >= 1e6) return '\$${(usd / 1e6).toStringAsFixed(1)}M';
     if (usd >= 1e3) return '\$${(usd / 1e3).toStringAsFixed(0)}K';
     return '\$${usd.toStringAsFixed(0)}';
@@ -106,11 +167,12 @@ class HotCoinCard extends StatelessWidget {
   }
 }
 
-// ─── 代币头像（网络图片 or 首字母） ──────────────
+// ─── 代币头像（网络图片 or 首字母）──────────────
 class _TokenAvatar extends StatelessWidget {
   final HotCoin coin;
   final int rank;
-  const _TokenAvatar({required this.coin, required this.rank});
+  final bool isStrong;
+  const _TokenAvatar({required this.coin, required this.rank, required this.isStrong});
 
   Color get _chainColor => switch (coin.chain) {
     'solana' => const Color(0xFF9945FF),
@@ -122,43 +184,72 @@ class _TokenAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 44, height: 44,
+      width: 46, height: 46,
       child: Stack(
         children: [
-          if (coin.imageUrl != null && coin.imageUrl!.isNotEmpty)
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(22),
-                border: Border.all(color: _chainColor.withValues(alpha: 0.15), width: 1.5),
+          // 外圈光环（强推加金色）
+          Container(
+            width: 46, height: 46,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: isStrong
+                    ? AppColors.accentGold.withValues(alpha: 0.4)
+                    : _chainColor.withValues(alpha: 0.2),
+                width: isStrong ? 2.5 : 2,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.network(
-                  coin.imageUrl!,
-                  width: 41, height: 41, fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => _letterAvatar(),
+              boxShadow: isStrong ? [
+                BoxShadow(
+                  color: AppColors.accentGold.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  spreadRadius: 1,
                 ),
-              ),
-            )
-          else
-            _letterAvatar(),
-
+              ] : null,
+            ),
+          ),
+          // 头像内容
+          Positioned.fill(
+            child: Padding(
+              padding: const EdgeInsets.all(2),
+              child: coin.imageUrl != null && coin.imageUrl!.isNotEmpty
+                  ? ClipOval(
+                      child: Image.network(
+                        coin.imageUrl!,
+                        width: 42, height: 42, fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => _letterAvatar(),
+                      ),
+                    )
+                  : _letterAvatar(),
+            ),
+          ),
+          // 排名 badge
           if (rank <= 3)
             Positioned(
-              right: 0, bottom: 0,
+              right: -1, bottom: -1,
               child: Container(
-                width: 16, height: 16,
+                width: 18, height: 18,
                 decoration: BoxDecoration(
-                  color: rank == 1 ? const Color(0xFFFFD700)
-                      : rank == 2 ? const Color(0xFFC0C0C0)
-                      : const Color(0xFFCD7F32),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft, end: Alignment.bottomRight,
+                    colors: rank == 1
+                        ? [const Color(0xFFFFD700), const Color(0xFFF0C020)]
+                        : rank == 2
+                            ? [const Color(0xFFC0C0C0), const Color(0xFFA0A0A0)]
+                            : [const Color(0xFFCD7F32), const Color(0xFFB06020)],
+                  ),
                   shape: BoxShape.circle,
-                  border: Border.all(color: AppColors.surface, width: 1.5),
+                  border: Border.all(color: AppColors.surface, width: 2),
+                  boxShadow: const [
+                    BoxShadow(color: Color(0x20000000), blurRadius: 3, offset: Offset(0, 1)),
+                  ],
                 ),
                 alignment: Alignment.center,
                 child: Text('$rank',
-                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                    style: const TextStyle(
+                      color: Colors.white, fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                    )),
               ),
             ),
         ],
@@ -168,13 +259,12 @@ class _TokenAvatar extends StatelessWidget {
 
   Widget _letterAvatar() {
     return Container(
-      width: 44, height: 44,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft, end: Alignment.bottomRight,
-          colors: [_chainColor.withValues(alpha: 0.15), _chainColor.withValues(alpha: 0.05)],
+          colors: [_chainColor.withValues(alpha: 0.18), _chainColor.withValues(alpha: 0.06)],
         ),
-        borderRadius: BorderRadius.circular(22),
+        shape: BoxShape.circle,
       ),
       alignment: Alignment.center,
       child: Text(
@@ -185,10 +275,10 @@ class _TokenAvatar extends StatelessWidget {
   }
 }
 
-// ─── 链色圆点 ──────────────────────────────
-class _ChainDot extends StatelessWidget {
+// ─── 链标签（彩色文字）──────────────────────────
+class _ChainLabel extends StatelessWidget {
   final String chain;
-  const _ChainDot({required this.chain});
+  const _ChainLabel({required this.chain});
 
   Color get _color => switch (chain) {
     'solana' => const Color(0xFF9945FF),
@@ -197,11 +287,60 @@ class _ChainDot extends StatelessWidget {
     _        => AppColors.textSecondary,
   };
 
+  String get _label => switch (chain) {
+    'solana' => 'SOL',
+    'bsc'    => 'BSC',
+    'base'   => 'BASE',
+    _        => chain.toUpperCase(),
+  };
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 7, height: 7,
-      decoration: BoxDecoration(color: _color, shape: BoxShape.circle),
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: _color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        _label,
+        style: TextStyle(
+          color: _color,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── HOT 徽章 ──────────────────────────────
+class _HotBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF34C759), Color(0xFF30D158)],
+        ),
+        borderRadius: BorderRadius.circular(4),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.success.withValues(alpha: 0.25),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: const Text('HOT',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
+          )),
     );
   }
 }
@@ -216,16 +355,30 @@ class _ChangeChip extends StatelessWidget {
     final isPos = pct >= 0;
     final color = isPos ? AppColors.success : AppColors.danger;
     final sign  = isPos ? '+' : '';
+    final arrow = isPos ? '▲' : '▼';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(8),
       ),
-      child: Text(
-        '$sign${pct.toStringAsFixed(1)}%',
-        style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(arrow,
+            style: TextStyle(color: color, fontSize: 8, height: 1)),
+          const SizedBox(width: 2),
+          Text(
+            '$sign${pct.toStringAsFixed(1)}%',
+            style: TextStyle(
+              color: color,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        ],
       ),
     );
   }

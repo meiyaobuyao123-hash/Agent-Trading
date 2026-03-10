@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -160,10 +161,16 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           // ── Bitget 风格固定 Header ──────────────
           SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg,
+            backgroundColor: AppColors.bg.withValues(alpha: 0.85),
             elevation: 0,
-            scrolledUnderElevation: 0.5,
+            scrolledUnderElevation: 0,
             surfaceTintColor: Colors.transparent,
+            flexibleSpace: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
             leading: IconButton(
               icon: const Icon(CupertinoIcons.back, size: 22),
               color: AppColors.textPrimary,
@@ -222,11 +229,14 @@ class _TokenDetailPageState extends State<TokenDetailPage>
               controller: _tabController,
               labelColor: AppColors.textPrimary,
               unselectedLabelColor: AppColors.textSecondary,
-              labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
               unselectedLabelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w400),
               indicatorColor: AppColors.primary,
-              indicatorWeight: 2.5,
+              indicatorWeight: 3,
               indicatorSize: TabBarIndicatorSize.label,
+              dividerColor: Colors.transparent,
+              splashFactory: NoSplash.splashFactory,
+              overlayColor: WidgetStateProperty.all(Colors.transparent),
               tabs: const [
                 Tab(text: '行情'),
                 Tab(text: '详情'),
@@ -286,8 +296,9 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             children: [
               if (token.priceUsd > 0)
                 Text(_fmtPrice(token.priceUsd),
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary, letterSpacing: -1.5, height: 1.1)),
+                  style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary, letterSpacing: -1.5, height: 1.1,
+                    fontFeatures: [FontFeature.tabularFigures()])),
               const SizedBox(height: 4),
               Row(children: [
                 _changePill(token.priceChange24h, '24h'),
@@ -309,26 +320,50 @@ class _TokenDetailPageState extends State<TokenDetailPage>
         if (token.scoreDetail != null && token.scoreDetail!.isNotEmpty)
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(3)),
-                child: const Text('AI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: AppColors.primary)),
+              borderRadius: BorderRadius.circular(10),
+              gradient: LinearGradient(
+                colors: [AppColors.primary.withValues(alpha: 0.06), AppColors.surface],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
               ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(
-                'AI评分 ${token.score.toStringAsFixed(0)} · ${token.recommendation == "strong" ? "强推" : "关注"}',
-                style: const TextStyle(fontSize: 12, color: AppColors.textSecondary),
-                overflow: TextOverflow.ellipsis,
-              )),
-              const Icon(CupertinoIcons.chevron_right, size: 12, color: AppColors.textTertiary),
-            ]),
+              boxShadow: AppColors.cardShadow,
+            ),
+            child: Row(
+              children: [
+                // 左侧蓝色竖条
+                Container(
+                  width: 4,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(10),
+                      bottomLeft: Radius.circular(10),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('AI', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: AppColors.primary)),
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: Text(
+                  'AI评分 ${token.score.toStringAsFixed(0)} · ${token.recommendation == "strong" ? "强推" : "关注"}',
+                  style: const TextStyle(fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500),
+                  overflow: TextOverflow.ellipsis,
+                )),
+                const Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: Icon(CupertinoIcons.chevron_right, size: 13, color: AppColors.textTertiary),
+                ),
+              ],
+            ),
           ),
         const SizedBox(height: 12),
 
@@ -461,16 +496,30 @@ class _TokenDetailPageState extends State<TokenDetailPage>
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const [BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2))],
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: AppColors.cardShadow,
+          border: count > 0
+            ? Border.all(color: color.withValues(alpha: 0.15), width: 1)
+            : null,
         ),
         child: Row(children: [
-          Icon(CupertinoIcons.exclamationmark_circle, size: 28, color: count > 0 ? color : AppColors.textTertiary),
-          const SizedBox(width: 10),
+          Container(
+            width: 36, height: 36,
+            decoration: BoxDecoration(
+              color: (count > 0 ? color : AppColors.textTertiary).withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(CupertinoIcons.exclamationmark_circle, size: 20,
+              color: count > 0 ? color : AppColors.textTertiary),
+          ),
+          const SizedBox(width: 12),
           Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text(label, style: const TextStyle(fontSize: 12, color: AppColors.textSecondary)),
-            Text('$count', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800,
-              color: count > 0 ? color : AppColors.textPrimary)),
+            const SizedBox(height: 2),
+            Text('$count', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800,
+              color: count > 0 ? color : AppColors.textPrimary,
+              fontFeatures: const [FontFeature.tabularFigures()])),
           ]),
         ]),
       ),
@@ -481,8 +530,17 @@ class _TokenDetailPageState extends State<TokenDetailPage>
     final isPos = pct >= 0;
     final color = isPos ? AppColors.success : AppColors.danger;
     final sign = isPos ? '+' : '';
-    return Text('$sign${pct.toStringAsFixed(2)}%',
-      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: color));
+    final arrow = isPos ? '▲' : '▼';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text('$arrow $sign${pct.toStringAsFixed(2)}%',
+        style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color,
+          fontFeatures: const [FontFeature.tabularFigures()])),
+    );
   }
 
   String _fmtPrice(double p) {

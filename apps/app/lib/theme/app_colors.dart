@@ -49,12 +49,19 @@ class AppColors {
   static const chartBullish   = Color(0xFF00C853);
   static const chartBearish   = Color(0xFFFF1744);
 
-  // ── 阴影（iOS 极轻）──────────────────
+  // ── 强调 ──────────────────────────────
+  static const accentGold    = Color(0xFFFFB81C);
+  static const accentGoldDim = Color(0x26FFB81C);   // 15% opacity
+
+  // ── 阴影（三级层次）──────────────────
   static const shadow        = Color(0x0C000000);
   static const List<BoxShadow> cardShadow = [
-    BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2)),
+    BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
   ];
   static const List<BoxShadow> cardShadowMd = [
-    BoxShadow(color: Color(0x10000000), blurRadius: 16, offset: Offset(0, 4)),
+    BoxShadow(color: Color(0x12000000), blurRadius: 20, offset: Offset(0, 4)),
+  ];
+  static const List<BoxShadow> cardShadowLg = [
+    BoxShadow(color: Color(0x18000000), blurRadius: 30, offset: Offset(0, 8)),
   ];
 }

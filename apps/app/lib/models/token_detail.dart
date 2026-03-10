@@ -130,6 +130,7 @@ class TokenDetail {
       scoreP: coin.scoreP,
       recommendation: coin.recommendation,
       source: TokenSource.hotCoin,
+      imageUri: coin.imageUrl,
     );
   }
 

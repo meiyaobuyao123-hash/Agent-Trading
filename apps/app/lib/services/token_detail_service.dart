@@ -31,11 +31,15 @@ class TokenDetailService {
     final dexInfo = results[1] as DexScreenerInfo?;
     final top1Pct = chain == 'solana' ? results[2] as double? : null;
 
-    // 解析 pair address
-    final resolvedPair = pairAddress ??
-        (dexInfo?.pairs.isNotEmpty == true ? dexInfo!.pairs.first.pairAddress : null);
+    // 解析 pair address — 优先级: 传入 > DexScreener > 代币地址
+    String? resolvedPair = pairAddress;
+    if (resolvedPair == null || resolvedPair.isEmpty) {
+      if (dexInfo?.pairs.isNotEmpty == true) {
+        resolvedPair = dexInfo!.pairs.first.pairAddress;
+      }
+    }
 
-    // 加载默认 1h K线
+    // 加载默认 1h K线 — 先用 resolvedPair，失败则用 address 作 fallback
     List<OhlcvCandle>? candles;
     if (resolvedPair != null && resolvedPair.isNotEmpty) {
       candles = await GeckoTerminalService.instance.fetchOhlcv(
@@ -45,6 +49,24 @@ class TokenDetailService {
         aggregate: 1,
         limit: 100,
       );
+    }
+    // fallback: 用代币 address 直接查 GeckoTerminal（部分 pool 可匹配）
+    if ((candles == null || candles.isEmpty) && (resolvedPair == null || resolvedPair != address)) {
+      try {
+        final fallback = await GeckoTerminalService.instance.fetchOhlcv(
+          network: chain,
+          poolAddress: address,
+          timeframe: 'hour',
+          aggregate: 1,
+          limit: 100,
+        );
+        if (fallback.isNotEmpty) {
+          candles = fallback;
+          resolvedPair = address;
+        }
+      } catch (_) {
+        // 静默失败
+      }
     }
 
     return TokenEnrichment(

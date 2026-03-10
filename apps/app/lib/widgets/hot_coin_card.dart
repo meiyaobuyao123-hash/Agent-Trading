@@ -7,12 +7,16 @@ class HotCoinCard extends StatelessWidget {
   final HotCoin coin;
   final int rank;
   final VoidCallback? onTap;
+  final double? livePrice;
+  final double? liveChange24h;
 
-  const HotCoinCard({super.key, required this.coin, required this.rank, this.onTap});
+  const HotCoinCard({super.key, required this.coin, required this.rank, this.onTap, this.livePrice, this.liveChange24h});
 
   @override
   Widget build(BuildContext context) {
     final isStrong = coin.recommendation == 'strong';
+    final price = livePrice ?? coin.priceUsd;
+    final change = liveChange24h ?? coin.priceChange24h;
 
     return CupertinoButton(
       padding: EdgeInsets.zero,
@@ -67,19 +71,19 @@ class HotCoinCard extends StatelessWidget {
               ),
             ),
 
-            // ── 右侧：价格 + 涨跌幅 ──────────
+            // ── 右侧：价格 + 涨跌幅（实时更新） ──
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _fmtPrice(coin.priceUsd),
+                  _fmtPrice(price),
                   style: const TextStyle(
                     color: AppColors.textPrimary, fontSize: 15,
                     fontWeight: FontWeight.w600, letterSpacing: -0.3,
                   ),
                 ),
                 const SizedBox(height: 3),
-                _ChangeChip(pct: coin.priceChange24h),
+                _ChangeChip(pct: change),
               ],
             ),
           ],

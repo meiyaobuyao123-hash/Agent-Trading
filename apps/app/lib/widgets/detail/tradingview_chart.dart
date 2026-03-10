@@ -106,10 +106,22 @@ class _TradingViewChartState extends State<TradingViewChart> {
                     ),
                   )
                 : widget.candles.isEmpty
-                    ? const Center(
-                        child: Text('暂无K线数据',
-                          style: TextStyle(color: Colors.white38, fontSize: 14,
-                              decoration: TextDecoration.none)),
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(CupertinoIcons.chart_bar_alt_fill,
+                              size: 32, color: Colors.white24),
+                            const SizedBox(height: 8),
+                            const Text('暂无K线数据',
+                              style: TextStyle(color: Colors.white38, fontSize: 14,
+                                  decoration: TextDecoration.none)),
+                            const SizedBox(height: 4),
+                            const Text('该代币可能上线时间较短',
+                              style: TextStyle(color: Colors.white24, fontSize: 11,
+                                  decoration: TextDecoration.none)),
+                          ],
+                        ),
                       )
                     : WebViewWidget(controller: _controller),
           ),

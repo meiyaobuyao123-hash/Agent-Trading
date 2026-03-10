@@ -24,6 +24,9 @@ class GoPlusReport {
   bool get hasTaxRisk => buyTax > 5.0 || sellTax > 5.0;
   bool get hasConcentrationRisk => top10HolderPct > 80;
 
+  int get dangerCount => items.where((i) => i.status == SecurityStatus.danger).length;
+  int get warningCount => items.where((i) => i.status == SecurityStatus.warning).length;
+
   List<SecurityItem> get items => [
         SecurityItem(
           label: '蜜罐检测',

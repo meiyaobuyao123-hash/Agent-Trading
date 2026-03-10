@@ -6,6 +6,7 @@ import '../../models/hot_coin.dart';
 import '../../models/daily_pick.dart';
 import '../../models/token_detail.dart';
 import '../../services/supabase_service.dart';
+import '../../services/price_ticker_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/hot_coin_card.dart';
 import '../../widgets/pick_card.dart';
@@ -19,10 +20,8 @@ class MarketScreen extends StatefulWidget {
 }
 
 class _MarketScreenState extends State<MarketScreen> {
-  // ── 顶部切换 ──────────────────────────────
-  int _segment = 0; // 0=热币, 1=新币
+  int _segment = 0;
 
-  // ── 热币数据 ──────────────────────────────
   List<HotCoin> _hotCoins = [];
   List<HotCoin> _hotFiltered = [];
   bool _hotLoading = true;
@@ -30,29 +29,28 @@ class _MarketScreenState extends State<MarketScreen> {
   int _chainIndex = 0;
   static const _chainKeys = [null, 'SOL', 'BSC', 'BASE'];
 
-  // ── 新币数据 ──────────────────────────────
+  // 实时价格覆盖
+  Map<String, PriceTick> _livePrices = {};
+  StreamSubscription? _priceSub;
+
   List<DailyPick> _picks = [];
   bool _picksLoading = true;
   String? _picksError;
-
-  // ── 自动刷新 ──────────────────────────────
-  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _loadHot();
     _loadPicks();
-    // 每 2 分钟自动刷新
-    _refreshTimer = Timer.periodic(const Duration(minutes: 2), (_) {
-      _loadHot();
-      _loadPicks();
+    _priceSub = PriceTickerService.instance.stream.listen((prices) {
+      if (mounted) setState(() => _livePrices = prices);
     });
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    _priceSub?.cancel();
+    PriceTickerService.instance.stop();
     super.dispose();
   }
 
@@ -66,6 +64,7 @@ class _MarketScreenState extends State<MarketScreen> {
           _hotLoading = false;
           _applyChainFilter();
         });
+        PriceTickerService.instance.start(coins.map((c) => c.address).toList());
       }
     } catch (e) {
       if (mounted) setState(() { _hotError = e.toString(); _hotLoading = false; });
@@ -101,6 +100,12 @@ class _MarketScreenState extends State<MarketScreen> {
       CupertinoPageRoute(builder: (_) => TokenDetailPage(token: TokenDetail.fromDailyPick(pick))));
   }
 
+  double _livePrice(HotCoin coin) =>
+      _livePrices[coin.address.toLowerCase()]?.priceUsd ?? coin.priceUsd;
+
+  double _liveChange24h(HotCoin coin) =>
+      _livePrices[coin.address.toLowerCase()]?.priceChange24h ?? coin.priceChange24h;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,14 +113,11 @@ class _MarketScreenState extends State<MarketScreen> {
       body: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // ── 导航栏 ──────────────────────────────
           CupertinoSliverNavigationBar(
             largeTitle: const Text('行情'),
             backgroundColor: AppColors.bg.withValues(alpha: 0.9),
             border: null,
           ),
-
-          // ── 顶部切换：热币 / 新币 ──────────────
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -123,20 +125,14 @@ class _MarketScreenState extends State<MarketScreen> {
                 groupValue: _segment,
                 onValueChanged: (v) { if (v != null) setState(() => _segment = v); },
                 children: const {
-                  0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('热币', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                  ),
-                  1: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 12),
-                    child: Text('新币', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
-                  ),
+                  0: Padding(padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('热币', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+                  1: Padding(padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Text('新币', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
                 },
               ),
             ),
           ),
-
-          // ── 链过滤（仅热币） ──────────────────────
           if (_segment == 0)
             SliverToBoxAdapter(
               child: Padding(
@@ -167,45 +163,31 @@ class _MarketScreenState extends State<MarketScreen> {
                 ),
               ),
             ),
-
-          // ── 日期（仅新币） ──────────────────────
           if (_segment == 1)
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
                 child: Row(
                   children: [
-                    Text(
-                      DateFormat('M月d日').format(DateTime.now()),
-                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-                    ),
+                    Text(DateFormat('M月d日').format(DateTime.now()),
+                      style: const TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                     const Spacer(),
                     if (_picks.isNotEmpty)
-                      Text(
-                        '${_picks.where((p) => p.recommendation == "strong").length} 强推',
-                        style: const TextStyle(color: AppColors.strong, fontSize: 13, fontWeight: FontWeight.w600),
-                      ),
+                      Text('${_picks.where((p) => p.recommendation == "strong").length} 强推',
+                        style: const TextStyle(color: AppColors.strong, fontSize: 13, fontWeight: FontWeight.w600)),
                   ],
                 ),
               ),
             ),
-
-          // ── 下拉刷新 ──────────────────────────
           CupertinoSliverRefreshControl(
             onRefresh: () => _segment == 0 ? _loadHot() : _loadPicks(),
           ),
-
-          // ── 内容区 ──────────────────────────────
-          if (_segment == 0)
-            ..._buildHotContent()
-          else
-            ..._buildPicksContent(),
+          if (_segment == 0) ..._buildHotContent() else ..._buildPicksContent(),
         ],
       ),
     );
   }
 
-  // ── 热币内容 ──────────────────────────────
   List<Widget> _buildHotContent() {
     if (_hotLoading) return [const SliverFillRemaining(child: Center(child: CupertinoActivityIndicator(radius: 14)))];
     if (_hotError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadHot))];
@@ -224,7 +206,12 @@ class _MarketScreenState extends State<MarketScreen> {
             children: List.generate(_hotFiltered.length, (i) {
               final coin = _hotFiltered[i];
               return Column(children: [
-                HotCoinCard(coin: coin, rank: i + 1, onTap: () => _openHotDetail(coin)),
+                HotCoinCard(
+                  coin: coin, rank: i + 1,
+                  livePrice: _livePrice(coin),
+                  liveChange24h: _liveChange24h(coin),
+                  onTap: () => _openHotDetail(coin),
+                ),
                 if (i < _hotFiltered.length - 1)
                   const Padding(padding: EdgeInsets.only(left: 64),
                     child: Divider(height: 0.5, thickness: 0.5, color: Color(0xFFE5E5EA))),
@@ -238,7 +225,7 @@ class _MarketScreenState extends State<MarketScreen> {
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           child: Text(
             '${_hotFiltered.where((c) => c.recommendation == "strong").length} 强推 · '
-            '${_hotFiltered.length} 个 · 每 2 小时更新',
+            '${_hotFiltered.length} 个 · 实时价格',
             textAlign: TextAlign.center,
             style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
           ),
@@ -247,7 +234,6 @@ class _MarketScreenState extends State<MarketScreen> {
     ];
   }
 
-  // ── 新币内容 ──────────────────────────────
   List<Widget> _buildPicksContent() {
     if (_picksLoading) return [const SliverFillRemaining(child: Center(child: CupertinoActivityIndicator(radius: 14)))];
     if (_picksError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadPicks))];
@@ -278,11 +264,9 @@ class _MarketScreenState extends State<MarketScreen> {
       const SliverToBoxAdapter(
         child: Padding(
           padding: EdgeInsets.fromLTRB(16, 16, 16, 32),
-          child: Text(
-            '每日 UTC 00:05 更新 · pump.fun 内盘扫描',
+          child: Text('每日 UTC 00:05 更新 · pump.fun 内盘扫描',
             textAlign: TextAlign.center,
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-          ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         ),
       ),
     ];

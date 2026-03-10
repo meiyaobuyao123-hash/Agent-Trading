@@ -43,6 +43,9 @@ class HotCoin {
   final bool hasTelegram;
   final bool hasWebsite;
 
+  // 图标
+  final String? imageUrl;
+
   // 打分
   final double score;             // 综合分 0-100
   final double scoreM;            // 动量分 0-50
@@ -79,6 +82,7 @@ class HotCoin {
     required this.hasTwitter,
     required this.hasTelegram,
     required this.hasWebsite,
+    this.imageUrl,
     required this.score,
     required this.scoreM,
     required this.scoreQ,
@@ -115,6 +119,7 @@ class HotCoin {
       hasTwitter:      json['has_twitter']         as bool? ?? false,
       hasTelegram:     json['has_telegram']        as bool? ?? false,
       hasWebsite:      json['has_website']         as bool? ?? false,
+      imageUrl:        json['image_url']           as String?,
       score:           (json['score']              as num?)?.toDouble() ?? 0.0,
       scoreM:          (json['score_m']            as num?)?.toDouble() ?? 0.0,
       scoreQ:          (json['score_q']            as num?)?.toDouble() ?? 0.0,

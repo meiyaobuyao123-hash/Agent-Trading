@@ -11,6 +11,8 @@
     "dev:admin": "npm run dev --workspace=apps/admin",
     "build:web": "npm run build --workspace=apps/web",
     "build:admin": "npm run build --workspace=apps/admin",
+    "dev:portal": "npm run dev --workspace=apps/portal",
+    "build:portal": "npm run build --workspace=apps/portal",
     "lint": "npm run lint --workspaces --if-present",
     "type-check": "npm run type-check --workspaces --if-present"
   },

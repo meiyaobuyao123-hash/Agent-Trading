@@ -58,7 +58,7 @@ class SupabaseService {
           'price_change_1h, price_change_6h, price_change_24h, '
           'buys_1h, sells_1h, buys_24h, sells_24h, '
           'age_days, holder_count, top10_holder_pct, top1_holder_pct, '
-          'goplus_risk, has_twitter, has_telegram, has_website, '
+          'goplus_risk, has_twitter, has_telegram, has_website, image_url, '
           'score, score_m, score_q, score_p, recommendation, scanned_at',
         )
         .eq('goplus_risk', false)

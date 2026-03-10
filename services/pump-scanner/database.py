@@ -109,6 +109,37 @@ def save_hot_daily_picks(picks: list[dict]):
         log.error(f"save_hot_daily_picks error: {e}")
 
 
+def upsert_performance(rows: list):
+    """批量写入代币表现追踪数据"""
+    if not rows:
+        return
+    try:
+        for i in range(0, len(rows), 50):
+            batch = rows[i:i + 50]
+            get_db().table("token_performance").upsert(
+                batch, on_conflict="source,pick_date,chain,address"
+            ).execute()
+        log.info(f"upsert_performance: {len(rows)} 条")
+    except Exception as e:
+        log.error(f"upsert_performance error: {e}")
+
+
+def get_active_performance() -> list:
+    """获取所有活跃的表现追踪行"""
+    try:
+        res = (
+            get_db()
+            .table("token_performance")
+            .select("*")
+            .eq("is_active", True)
+            .execute()
+        )
+        return res.data
+    except Exception as e:
+        log.error(f"get_active_performance error: {e}")
+        return []
+
+
 def get_smart_wallet_tiers() -> dict:
     """
     加载聪明钱分级数据

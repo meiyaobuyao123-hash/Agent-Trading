@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
       "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/admin",
       "port": 3002
+    },
+    {
+      "name": "portal",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/portal",
+      "port": 3003
     }
   ]
 }

@@ -1,54 +1,60 @@
 import 'package:flutter/material.dart';
 
-/// 白底极简科技风格
-/// 参考：Linear / Stripe / Notion 设计系统
+/// iOS 原生风格配色
+/// 参考：Apple Stocks / Health / 优质 iOS 金融应用
 class AppColors {
   AppColors._();
 
-  // ── 背景层级 ──────────────────────────────
-  static const bg           = Color(0xFFF5F7FA);   // 页面底色（冷灰白）
-  static const surface      = Color(0xFFFFFFFF);   // 卡片（纯白）
-  static const surfaceAlt   = Color(0xFFF0F2F5);   // 次级背景
+  // ── 背景 ──────────────────────────────
+  static const bg           = Color(0xFFF2F2F7);   // iOS systemGroupedBackground
+  static const surface      = Color(0xFFFFFFFF);
+  static const surfaceAlt   = Color(0xFFE5E5EA);   // iOS systemGray5
 
-  // ── 主色 ──────────────────────────────────
-  static const primary      = Color(0xFF2563EB);   // 科技蓝
-  static const primaryLight = Color(0xFFEFF4FF);   // 蓝浅底
-  static const primaryDim   = Color(0xFFDBEAFE);   // badge 底色
+  // ── 主色 ──────────────────────────────
+  static const primary      = Color(0xFF007AFF);   // iOS systemBlue
+  static const primaryLight = Color(0xFFE8F2FF);
+  static const primaryDim   = Color(0xFFD6E8FF);
 
-  // ── 信号 ──────────────────────────────────
-  static const strong       = Color(0xFF059669);   // 强烈推荐（翠绿）
-  static const strongLight  = Color(0xFFECFDF5);
-  static const normal       = Color(0xFFD97706);   // 普通关注（琥珀）
-  static const normalLight  = Color(0xFFFEF3C7);
+  // ── 信号 ──────────────────────────────
+  static const strong       = Color(0xFF34C759);   // iOS systemGreen
+  static const strongLight  = Color(0xFFE8FAF0);
+  static const normal       = Color(0xFFFF9500);   // iOS systemOrange
+  static const normalLight  = Color(0xFFFFF4E6);
 
-  // ── 语义 ──────────────────────────────────
-  static const success      = Color(0xFF10B981);
-  static const successLight = Color(0xFFD1FAE5);
-  static const danger       = Color(0xFFEF4444);
-  static const dangerLight  = Color(0xFFFEE2E2);
-  static const warning      = Color(0xFFF59E0B);
-  static const warningLight = Color(0xFFFEF3C7);
+  // ── 语义 ──────────────────────────────
+  static const success      = Color(0xFF34C759);
+  static const successLight = Color(0xFFE8FAF0);
+  static const danger       = Color(0xFFFF3B30);   // iOS systemRed
+  static const dangerLight  = Color(0xFFFEECEB);
+  static const warning      = Color(0xFFFF9500);
+  static const warningLight = Color(0xFFFFF4E6);
 
-  // ── 文字 ──────────────────────────────────
-  static const textPrimary   = Color(0xFF0F172A);   // 主文字
-  static const textSecondary = Color(0xFF64748B);   // 副文字
-  static const textTertiary  = Color(0xFF94A3B8);   // Hint
+  // ── 文字 ──────────────────────────────
+  static const textPrimary   = Color(0xFF000000);
+  static const textSecondary = Color(0xFF8E8E93);   // iOS secondaryLabel
+  static const textTertiary  = Color(0xFFC7C7CC);
 
-  // ── 线条 ──────────────────────────────────
-  static const divider       = Color(0xFFE2E8F0);
-  static const border        = Color(0xFFCBD5E1);
+  // ── 线条 ──────────────────────────────
+  static const divider       = Color(0xFFC6C6C8);
+  static const border        = Color(0xFFD1D1D6);
 
-  // ── 图标 ──────────────────────────────────
-  static const iconInactive  = Color(0xFFADB5BD);
+  // ── 图标 ──────────────────────────────
+  static const iconInactive  = Color(0xFF8E8E93);
 
-  // ── 阴影 ──────────────────────────────────
-  static const shadow        = Color(0x0A0F172A);
+  // ── K线图深色主题 ────────────────────
+  static const chartBg        = Color(0xFF1A1D26);
+  static const chartSurface   = Color(0xFF222531);
+  static const chartGrid      = Color(0xFF2A2D38);
+  static const chartCrosshair = Color(0xFF8E8E93);
+  static const chartBullish   = Color(0xFF00C853);
+  static const chartBearish   = Color(0xFFFF1744);
+
+  // ── 阴影（iOS 极轻）──────────────────
+  static const shadow        = Color(0x0C000000);
   static const List<BoxShadow> cardShadow = [
-    BoxShadow(color: Color(0x0A0F172A), blurRadius: 12, offset: Offset(0, 2)),
-    BoxShadow(color: Color(0x050F172A), blurRadius: 4,  offset: Offset(0, 0)),
+    BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 2)),
   ];
   static const List<BoxShadow> cardShadowMd = [
-    BoxShadow(color: Color(0x120F172A), blurRadius: 24, offset: Offset(0, 4)),
-    BoxShadow(color: Color(0x080F172A), blurRadius: 8,  offset: Offset(0, 1)),
+    BoxShadow(color: Color(0x10000000), blurRadius: 16, offset: Offset(0, 4)),
   ];
 }

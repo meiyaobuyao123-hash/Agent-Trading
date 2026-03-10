@@ -6,8 +6,8 @@ import 'app.dart';
 // ─── Supabase 配置 ────────────────────────────────────
 // ⚠️ 将以下值替换为你的真实凭证（不要提交真实 key 到 Git）
 // Supabase Dashboard → Project Settings → API
-const _supabaseUrl = 'YOUR_SUPABASE_URL';
-const _supabaseKey = 'YOUR_SUPABASE_ANON_KEY';
+const _supabaseUrl = 'https://qmzsruqgwaqusywprxlj.supabase.co';
+const _supabaseKey = 'sb_publishable_2uL576o81fhTTuXxhTv20w_oKzjlLkS';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();

@@ -27,6 +27,15 @@ dependencies:
   # 本地存储
   shared_preferences: ^2.3.5
 
+  # HTTP 客户端
+  http: ^1.2.0
+
+  # K线图 (TradingView via WebView)
+  webview_flutter: ^4.13.0
+
+  # 加载骨架屏
+  shimmer: ^3.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

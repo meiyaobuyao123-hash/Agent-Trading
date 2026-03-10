@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import '../models/hot_coin.dart';
 import '../theme/app_colors.dart';
@@ -13,94 +14,75 @@ class HotCoinCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isStrong = coin.recommendation == 'strong';
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: isStrong ? AppColors.strong.withValues(alpha: 0.3) : AppColors.divider,
-            width: isStrong ? 1.0 : 0.5,
-          ),
-          boxShadow: AppColors.cardShadow,
-        ),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // ── 排名 ──────────────────────────────────────
-              _RankCol(rank: rank, isStrong: isStrong),
-              const SizedBox(width: 12),
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            // ── 代币头像 ──────────────────────
+            _TokenAvatar(coin: coin, rank: rank),
+            const SizedBox(width: 12),
 
-              // ── 链徽章 ────────────────────────────────────
-              _ChainBadge(chain: coin.chain),
-              const SizedBox(width: 10),
-
-              // ── 代币名称 + 年龄 + 市值 ────────────────────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
+            // ── 名称 + 市值/年龄/链 ──────────
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
                           coin.symbol.toUpperCase(),
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
+                            color: AppColors.textPrimary, fontSize: 16,
+                            fontWeight: FontWeight.w600, letterSpacing: -0.3,
                           ),
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        if (isStrong) ...[
-                          const SizedBox(width: 6),
-                          _Badge(
-                            label: '强推',
-                            color: AppColors.strong,
-                            bg: AppColors.strongLight,
+                      ),
+                      const SizedBox(width: 4),
+                      _ChainDot(chain: coin.chain),
+                      if (isStrong) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: AppColors.strong.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
                           ),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Text(
-                          _fmtMC(coin.marketCapUsd),
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          '${coin.ageDays.toStringAsFixed(0)}d',
-                          style: const TextStyle(
-                            color: AppColors.textTertiary,
-                            fontSize: 11,
-                          ),
+                          child: const Text('HOT',
+                              style: TextStyle(color: AppColors.strong, fontSize: 10, fontWeight: FontWeight.w700)),
                         ),
                       ],
-                    ),
-                  ],
-                ),
-              ),
-
-              // ── 评分 + 24h涨跌 ────────────────────────────
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  // 综合分
-                  _ScoreChip(score: coin.score),
-                  const SizedBox(height: 4),
-                  // 24h 涨跌
-                  _PctChange(pct: coin.priceChange24h),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${_fmtMC(coin.marketCapUsd)} · ${coin.ageDays.toStringAsFixed(0)}天',
+                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+
+            // ── 右侧：价格 + 涨跌幅 ──────────
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _fmtPrice(coin.priceUsd),
+                  style: const TextStyle(
+                    color: AppColors.textPrimary, fontSize: 15,
+                    fontWeight: FontWeight.w600, letterSpacing: -0.3,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                _ChangeChip(pct: coin.priceChange24h),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -111,137 +93,135 @@ class HotCoinCard extends StatelessWidget {
     if (usd >= 1e3) return '\$${(usd / 1e3).toStringAsFixed(0)}K';
     return '\$${usd.toStringAsFixed(0)}';
   }
+
+  String _fmtPrice(double p) {
+    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
+    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
+    if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
+    return '\$${p.toStringAsFixed(8)}';
+  }
 }
 
-// ─── 排名列 ──────────────────────────────────────────
-class _RankCol extends StatelessWidget {
+// ─── 代币头像（网络图片 or 首字母） ──────────────
+class _TokenAvatar extends StatelessWidget {
+  final HotCoin coin;
   final int rank;
-  final bool isStrong;
-  const _RankCol({required this.rank, required this.isStrong});
+  const _TokenAvatar({required this.coin, required this.rank});
+
+  Color get _chainColor => switch (coin.chain) {
+    'solana' => const Color(0xFF9945FF),
+    'bsc'    => const Color(0xFFF3BA2F),
+    'base'   => const Color(0xFF0052FF),
+    _        => AppColors.primary,
+  };
 
   @override
   Widget build(BuildContext context) {
-    final bg = rank == 1
-        ? const Color(0x33FFD700)
-        : rank == 2
-            ? const Color(0x33C0C0C0)
-            : rank == 3
-                ? const Color(0x33CD7F32)
-                : isStrong
-                    ? AppColors.strongLight
-                    : AppColors.surfaceAlt;
-    final fg = rank <= 3
-        ? const Color(0xFFFFD700)
-        : isStrong
-            ? AppColors.strong
-            : AppColors.textTertiary;
+    return SizedBox(
+      width: 44, height: 44,
+      child: Stack(
+        children: [
+          if (coin.imageUrl != null && coin.imageUrl!.isNotEmpty)
+            Container(
+              width: 44, height: 44,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: _chainColor.withValues(alpha: 0.15), width: 1.5),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.network(
+                  coin.imageUrl!,
+                  width: 41, height: 41, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _letterAvatar(),
+                ),
+              ),
+            )
+          else
+            _letterAvatar(),
 
+          if (rank <= 3)
+            Positioned(
+              right: 0, bottom: 0,
+              child: Container(
+                width: 16, height: 16,
+                decoration: BoxDecoration(
+                  color: rank == 1 ? const Color(0xFFFFD700)
+                      : rank == 2 ? const Color(0xFFC0C0C0)
+                      : const Color(0xFFCD7F32),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppColors.surface, width: 1.5),
+                ),
+                alignment: Alignment.center,
+                child: Text('$rank',
+                    style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _letterAvatar() {
     return Container(
-      width: 34,
-      height: 34,
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(10)),
+      width: 44, height: 44,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft, end: Alignment.bottomRight,
+          colors: [_chainColor.withValues(alpha: 0.15), _chainColor.withValues(alpha: 0.05)],
+        ),
+        borderRadius: BorderRadius.circular(22),
+      ),
       alignment: Alignment.center,
       child: Text(
-        '$rank',
-        style: TextStyle(color: fg, fontSize: 14, fontWeight: FontWeight.w800),
+        coin.symbol.isNotEmpty ? coin.symbol[0].toUpperCase() : '?',
+        style: TextStyle(color: _chainColor, fontSize: 18, fontWeight: FontWeight.w700),
       ),
     );
   }
 }
 
-// ─── 链徽章 ──────────────────────────────────────────
-class _ChainBadge extends StatelessWidget {
+// ─── 链色圆点 ──────────────────────────────
+class _ChainDot extends StatelessWidget {
   final String chain;
-  const _ChainBadge({required this.chain});
+  const _ChainDot({required this.chain});
 
-  (String, Color, Color) get _style => switch (chain) {
-        'solana' => ('SOL', const Color(0xFF9945FF), const Color(0x1A9945FF)),
-        'bsc'    => ('BSC', const Color(0xFFF3BA2F), const Color(0x1AF3BA2F)),
-        'base'   => ('BASE', const Color(0xFF0052FF), const Color(0x1A0052FF)),
-        _        => (chain.toUpperCase(), AppColors.textSecondary, AppColors.surfaceAlt),
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, fg, bg) = _style;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(
-        label,
-        style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-// ─── 评分圆角矩形 ────────────────────────────────────
-class _ScoreChip extends StatelessWidget {
-  final double score;
-  const _ScoreChip({required this.score});
-
-  Color get _color {
-    if (score >= 72) return AppColors.strong;
-    if (score >= 50) return AppColors.normal;
-    return AppColors.textSecondary;
-  }
+  Color get _color => switch (chain) {
+    'solana' => const Color(0xFF9945FF),
+    'bsc'    => const Color(0xFFF3BA2F),
+    'base'   => const Color(0xFF0052FF),
+    _        => AppColors.textSecondary,
+  };
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        score.toStringAsFixed(0),
-        style: TextStyle(
-          color: _color,
-          fontSize: 13,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
+      width: 7, height: 7,
+      decoration: BoxDecoration(color: _color, shape: BoxShape.circle),
     );
   }
 }
 
-// ─── 24h 涨跌幅 ──────────────────────────────────────
-class _PctChange extends StatelessWidget {
+// ─── 涨跌幅胶囊 ──────────────────────────────
+class _ChangeChip extends StatelessWidget {
   final double pct;
-  const _PctChange({required this.pct});
+  const _ChangeChip({required this.pct});
 
   @override
   Widget build(BuildContext context) {
     final isPos = pct >= 0;
     final color = isPos ? AppColors.success : AppColors.danger;
     final sign  = isPos ? '+' : '';
-    return Text(
-      '$sign${pct.toStringAsFixed(1)}%',
-      style: TextStyle(
-        color: color,
-        fontSize: 12,
-        fontWeight: FontWeight.w600,
-      ),
-    );
-  }
-}
 
-// ─── 标签徽章 ────────────────────────────────────────
-class _Badge extends StatelessWidget {
-  final String label;
-  final Color color;
-  final Color bg;
-  const _Badge({required this.label, required this.color, required this.bg});
-
-  @override
-  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(5)),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
       child: Text(
-        label,
-        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+        '$sign${pct.toStringAsFixed(1)}%',
+        style: TextStyle(color: color, fontSize: 13, fontWeight: FontWeight.w600),
       ),
     );
   }

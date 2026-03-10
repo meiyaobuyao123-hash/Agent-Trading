@@ -71,6 +71,7 @@ async def run_hot_coin_scan():
                 "has_twitter":       c.get("has_twitter", False),
                 "has_telegram":      c.get("has_telegram", False),
                 "has_website":       c.get("has_website", False),
+                "image_url":         c.get("image_url", ""),
                 "score":             result.total,
                 "score_m":           result.score_m,
                 "score_q":           result.score_q,

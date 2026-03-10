@@ -26,6 +26,7 @@ from outcome_labeler import run_outcome_labeler
 from smart_wallet_updater import run_smart_wallet_updater
 from creator_stats_updater import run_creator_stats_updater
 from hot_coin_job import run_hot_coin_scan, run_hot_daily_picks
+from performance_tracker import run_performance_tracker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -95,6 +96,16 @@ async def main():
         misfire_grace_time=600,
     )
 
+    # ── 表现追踪（每4小时）──────────────────────────────────
+    scheduler.add_job(
+        run_performance_tracker,
+        trigger="interval",
+        hours=4,
+        id="performance_tracker",
+        name="推荐代币表现追踪",
+        misfire_grace_time=600,
+    )
+
     scheduler.start()
     log.info(
         "定时任务已启动:\n"
@@ -103,6 +114,7 @@ async def main():
         "  每日 UTC 02:00 → hot_daily_picks\n"
         "  每1小时        → outcome_labeler\n"
         "  每2小时        → hot_coin_scan\n"
+        "  每4小时        → performance_tracker\n"
         "  每6小时        → smart_wallet_updater"
     )
 

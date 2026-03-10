@@ -375,7 +375,7 @@ async def _get_dexscreener_socials(
     session: aiohttp.ClientSession,
     address: str,
 ) -> dict:
-    """从 DexScreener 获取 Twitter / Telegram / 网站 存在性"""
+    """从 DexScreener 获取 Twitter / Telegram / 网站 存在性 + 代币图标"""
     try:
         url = f"{DEXSCREENER_API}/latest/dex/tokens/{address}"
         async with session.get(url, timeout=_TIMEOUT) as resp:
@@ -390,11 +390,13 @@ async def _get_dexscreener_socials(
             info     = pairs[0].get("info", {})
             socials  = info.get("socials", [])
             websites = info.get("websites", [])
+            image_url = info.get("imageUrl") or ""
 
             return {
                 "has_twitter":  any(s.get("type") == "twitter"  for s in socials),
                 "has_telegram": any(s.get("type") == "telegram" for s in socials),
                 "has_website":  len(websites) > 0,
+                "image_url":    image_url,
             }
     except Exception as e:
         log.debug(f"DexScreener socials {address[:8]}: {e}")
@@ -491,6 +493,7 @@ async def fetch_hot_coin_candidates() -> list[dict]:
                     "has_twitter":      socials.get("has_twitter", False),
                     "has_telegram":     socials.get("has_telegram", False),
                     "has_website":      socials.get("has_website", False),
+                    "image_url":        socials.get("image_url", ""),
                 })
 
             log.info(f"  {chain}: 富化完成 {len(enriched)} 个进入打分")

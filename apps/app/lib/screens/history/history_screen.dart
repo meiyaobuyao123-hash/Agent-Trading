@@ -1,10 +1,12 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../models/daily_pick.dart';
 import '../../services/supabase_service.dart';
 import '../../theme/app_colors.dart';
+import '../../models/token_detail.dart';
 import '../../widgets/pick_card.dart';
-import '../picks/token_detail_screen.dart';
+import '../detail/token_detail_page.dart';
 
 class HistoryScreen extends StatefulWidget {
   const HistoryScreen({super.key});
@@ -142,8 +144,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     pick: entry.value[i],
                     onTap: () => Navigator.push(
                       context,
-                      MaterialPageRoute(
-                        builder: (_) => TokenDetailScreen(pick: entry.value[i]),
+                      CupertinoPageRoute(
+                        builder: (_) => TokenDetailPage(
+                          token: TokenDetail.fromDailyPick(entry.value[i]),
+                        ),
                       ),
                     ),
                   ),

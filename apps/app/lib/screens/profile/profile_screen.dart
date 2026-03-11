@@ -1,5 +1,6 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
+import '../../app.dart';
 import '../../theme/app_colors.dart';
 
 class ProfileScreen extends StatelessWidget {
@@ -7,21 +8,29 @@ class ProfileScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
           // ── 顶部 AppBar ──────────────────────
-          const SliverAppBar(
+          SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg,
+            backgroundColor: Colors.transparent,
+            flexibleSpace: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
             title: Text(
               '我的',
               style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
+                color: c.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
               ),
             ),
           ),
@@ -37,7 +46,7 @@ class ProfileScreen extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // ── 交易设置 ───────────────────
-                  const _SectionLabel(label: '交易设置'),
+                  _SectionLabel(label: '交易设置'),
                   const SizedBox(height: 8),
                   _SettingItem(
                     icon: Icons.speed_rounded,
@@ -67,7 +76,7 @@ class ProfileScreen extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // ── 通知设置 ───────────────────
-                  const _SectionLabel(label: '通知设置'),
+                  _SectionLabel(label: '通知设置'),
                   const SizedBox(height: 8),
                   _ToggleItem(
                     icon: Icons.bolt_rounded,
@@ -93,8 +102,22 @@ class ProfileScreen extends StatelessWidget {
 
                   const SizedBox(height: 16),
 
+                  // ── 外观设置 ───────────────────
+                  _SectionLabel(label: '外观设置'),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: context.isDark
+                        ? Icons.dark_mode_rounded
+                        : Icons.light_mode_rounded,
+                    title: '深色模式',
+                    value: context.isDark ? '开启' : '关闭',
+                    onTap: () => themeNotifier.toggle(),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // ── 关于 ───────────────────────
-                  const _SectionLabel(label: '关于'),
+                  _SectionLabel(label: '关于'),
                   const SizedBox(height: 8),
                   _SettingItem(
                     icon: Icons.info_outline_rounded,
@@ -126,10 +149,14 @@ class ProfileScreen extends StatelessWidget {
   }
 
   void _showComingSoon(BuildContext context) {
+    final c = context.colors;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('该功能即将上线'),
-        backgroundColor: AppColors.surface,
+      SnackBar(
+        content: Text(
+          '该功能即将上线',
+          style: TextStyle(color: c.textPrimary),
+        ),
+        backgroundColor: c.cardGlass,
         behavior: SnackBarBehavior.floating,
       ),
     );
@@ -138,23 +165,28 @@ class ProfileScreen extends StatelessWidget {
   void _showRiskDisclaimer(BuildContext context) {
     showDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.surface,
-        title: const Text('风险提示',
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
-        content: const Text(
-          '本 App 提供的信号仅供参考，不构成投资建议。\n\n'
-          'Meme 代币高度投机，存在归零风险。\n\n'
-          '请根据自身风险承受能力独立决策，谨慎操作。',
-          style: TextStyle(color: AppColors.textSecondary, height: 1.6),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('我知道了', style: TextStyle(color: AppColors.primary)),
+      builder: (dialogCtx) {
+        final dc = dialogCtx.colors;
+        return AlertDialog(
+          backgroundColor: dc.bg,
+          title: Text('风险提示',
+              style: TextStyle(
+                  color: dc.textPrimary, fontWeight: FontWeight.w700)),
+          content: Text(
+            '本 App 提供的信号仅供参考，不构成投资建议。\n\n'
+            'Meme 代币高度投机，存在归零风险。\n\n'
+            '请根据自身风险承受能力独立决策，谨慎操作。',
+            style: TextStyle(color: dc.textSecondary, height: 1.6),
           ),
-        ],
-      ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child:
+                  Text('我知道了', style: TextStyle(color: dc.primary)),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -165,17 +197,28 @@ class _WalletCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF1A2550), Color(0xFF0D1530)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
+        gradient: context.isDark
+            ? const LinearGradient(
+                colors: [Color(0xFF1A2550), Color(0xFF0D1530)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              )
+            : LinearGradient(
+                colors: [
+                  c.primary.withValues(alpha: 0.08),
+                  c.primary.withValues(alpha: 0.03),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.3),
+          color: c.primary.withValues(alpha: 0.3),
           width: 1,
         ),
       ),
@@ -184,36 +227,37 @@ class _WalletCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.account_balance_wallet_rounded,
-                color: AppColors.primary, size: 20),
+              Icon(Icons.account_balance_wallet_rounded,
+                  color: c.primary, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Solana 钱包',
                 style: TextStyle(
-                  color: AppColors.textSecondary,
+                  color: c.textSecondary,
                   fontSize: 12,
                   fontWeight: FontWeight.w500,
                 ),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.surfaceAlt,
+                  color: c.surfaceAlt,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text(
+                child: Text(
                   '未连接',
-                  style: TextStyle(color: AppColors.textTertiary, fontSize: 11),
+                  style: TextStyle(color: c.textTertiary, fontSize: 11),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             '连接钱包后，Agent 可以代你\n自动执行交易策略',
             style: TextStyle(
-              color: AppColors.textPrimary,
+              color: c.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w600,
               height: 1.5,
@@ -225,7 +269,7 @@ class _WalletCard extends StatelessWidget {
             child: ElevatedButton(
               onPressed: () => _showConnectWallet(context),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
+                backgroundColor: c.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 shape: RoundedRectangleBorder(
@@ -245,65 +289,69 @@ class _WalletCard extends StatelessWidget {
   }
 
   void _showConnectWallet(BuildContext context) {
+    final c = context.colors;
     showModalBottomSheet(
       context: context,
-      backgroundColor: AppColors.surface,
+      backgroundColor: c.bg,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '连接钱包',
-              style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+      builder: (sheetCtx) {
+        final sc = sheetCtx.colors;
+        return Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '连接钱包',
+                style: TextStyle(
+                  color: sc.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.normalLight,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.warning_amber_rounded,
-                    color: AppColors.normal, size: 16),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '私钥仅存储于本设备，不会上传任何服务器',
-                      style: TextStyle(
-                        color: AppColors.normal, fontSize: 12),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: sc.warningLight,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded,
+                        color: sc.warning, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '私钥仅存储于本设备，不会上传任何服务器',
+                        style:
+                            TextStyle(color: sc.warning, fontSize: 12),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            // 两种方式（占位）
-            _ConnectOption(
-              icon: Icons.vpn_key_rounded,
-              title: '导入私钥',
-              desc: '粘贴 Base58 格式私钥',
-            ),
-            const SizedBox(height: 8),
-            _ConnectOption(
-              icon: Icons.list_alt_rounded,
-              title: '导入助记词',
-              desc: '输入 12 / 24 个单词',
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
-      ),
+              const SizedBox(height: 16),
+              // 两种方式（占位）
+              _ConnectOption(
+                icon: Icons.vpn_key_rounded,
+                title: '导入私钥',
+                desc: '粘贴 Base58 格式私钥',
+              ),
+              const SizedBox(height: 8),
+              _ConnectOption(
+                icon: Icons.list_alt_rounded,
+                title: '导入助记词',
+                desc: '输入 12 / 24 个单词',
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -312,37 +360,40 @@ class _ConnectOption extends StatelessWidget {
   final IconData icon;
   final String title;
   final String desc;
-  const _ConnectOption({required this.icon, required this.title, required this.desc});
+  const _ConnectOption(
+      {required this.icon, required this.title, required this.desc});
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surfaceAlt,
+        color: c.cardGlass,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.primary, size: 20),
+          Icon(icon, color: c.primary, size: 20),
           const SizedBox(width: 12),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(title,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                )),
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  )),
               Text(desc,
-                style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12)),
+                  style: TextStyle(color: c.textSecondary, fontSize: 12)),
             ],
           ),
           const Spacer(),
-          const Text('即将开放',
-            style: TextStyle(color: AppColors.textTertiary, fontSize: 11)),
+          Text('即将开放',
+              style: TextStyle(color: c.textTertiary, fontSize: 11)),
         ],
       ),
     );
@@ -356,10 +407,12 @@ class _SectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Text(
       label,
-      style: const TextStyle(
-        color: AppColors.textSecondary,
+      style: TextStyle(
+        color: c.textSecondary,
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.5,
@@ -375,38 +428,41 @@ class _SettingItem extends StatelessWidget {
   final String value;
   final VoidCallback? onTap;
   const _SettingItem({
-    required this.icon, required this.title,
-    required this.value, this.onTap,
+    required this.icon,
+    required this.title,
+    required this.value,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
         margin: const EdgeInsets.only(bottom: 6),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
         decoration: BoxDecoration(
-          color: AppColors.surface,
+          color: c.cardGlass,
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.glassBorder, width: 0.5),
         ),
         child: Row(
           children: [
-            Icon(icon, color: AppColors.textSecondary, size: 18),
+            Icon(icon, color: c.textSecondary, size: 18),
             const SizedBox(width: 12),
             Expanded(
               child: Text(title,
-                style: const TextStyle(
-                  color: AppColors.textPrimary, fontSize: 14)),
+                  style: TextStyle(color: c.textPrimary, fontSize: 14)),
             ),
             if (value.isNotEmpty)
               Text(value,
-                style: const TextStyle(
-                  color: AppColors.textSecondary, fontSize: 13)),
+                  style: TextStyle(color: c.textSecondary, fontSize: 13)),
             if (onTap != null) ...[
               const SizedBox(width: 4),
-              const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textTertiary, size: 18),
+              Icon(Icons.chevron_right_rounded,
+                  color: c.textTertiary, size: 18),
             ],
           ],
         ),
@@ -423,33 +479,39 @@ class _ToggleItem extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
   const _ToggleItem({
-    required this.icon, required this.title,
-    required this.subtitle, required this.value, required this.onChanged,
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
   });
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: c.cardGlass,
         borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.textSecondary, size: 18),
+          Icon(icon, color: c.textSecondary, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary, fontSize: 14)),
+                    style:
+                        TextStyle(color: c.textPrimary, fontSize: 14)),
                 Text(subtitle,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary, fontSize: 11)),
+                    style:
+                        TextStyle(color: c.textSecondary, fontSize: 11)),
               ],
             ),
           ),
@@ -457,9 +519,9 @@ class _ToggleItem extends StatelessWidget {
             value: value,
             onChanged: onChanged,
             activeThumbColor: Colors.white,
-            activeTrackColor: AppColors.primary,
-            inactiveThumbColor: AppColors.textTertiary,
-            inactiveTrackColor: AppColors.surfaceAlt,
+            activeTrackColor: c.primary,
+            inactiveThumbColor: c.textTertiary,
+            inactiveTrackColor: c.surfaceAlt,
           ),
         ],
       ),

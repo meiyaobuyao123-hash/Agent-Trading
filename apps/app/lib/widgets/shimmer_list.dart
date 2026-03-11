@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 
-/// 列表 Shimmer 骨架屏 — 加载时显示闪烁占位
+/// 列表 Shimmer 骨架屏 — 主题感知
 class ShimmerList extends StatefulWidget {
   final int itemCount;
   const ShimmerList({super.key, this.itemCount = 8});
@@ -31,12 +31,13 @@ class _ShimmerListState extends State<ShimmerList>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: AppColors.cardShadow,
+        color: c.cardGlass,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Column(
         children: List.generate(widget.itemCount, (i) {
@@ -54,7 +55,7 @@ class _ShimmerListState extends State<ShimmerList>
                   child: Divider(
                     height: 0.5,
                     thickness: 0.5,
-                    color: AppColors.divider.withValues(alpha: 0.15),
+                    color: c.divider,
                   ),
                 ),
             ],
@@ -71,31 +72,29 @@ class _ShimmerItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Row(
         children: [
-          // 头像
-          _shimmerBox(46, 46, isCircle: true),
+          _shimmerBox(c, 46, 46, isCircle: true),
           const SizedBox(width: 12),
-          // 名称 + 信息
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _shimmerBox(80, 14),
+                _shimmerBox(c, 80, 14),
                 const SizedBox(height: 6),
-                _shimmerBox(110, 11),
+                _shimmerBox(c, 110, 11),
               ],
             ),
           ),
-          // 价格 + 涨跌
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              _shimmerBox(72, 14),
+              _shimmerBox(c, 72, 14),
               const SizedBox(height: 6),
-              _shimmerBox(56, 22, radius: 8),
+              _shimmerBox(c, 56, 22, radius: 8),
             ],
           ),
         ],
@@ -103,16 +102,17 @@ class _ShimmerItem extends StatelessWidget {
     );
   }
 
-  Widget _shimmerBox(double width, double height, {bool isCircle = false, double radius = 6}) {
+  Widget _shimmerBox(AppColorScheme c, double width, double height,
+      {bool isCircle = false, double radius = 6}) {
     return ShaderMask(
       shaderCallback: (bounds) {
         return LinearGradient(
           begin: Alignment(-1.0 + 2.0 * progress, 0),
           end: Alignment(-0.5 + 2.0 * progress, 0),
-          colors: const [
-            Color(0xFFE8E8ED),
-            Color(0xFFF5F5F8),
-            Color(0xFFE8E8ED),
+          colors: [
+            c.shimmerBase,
+            c.shimmerHighlight,
+            c.shimmerBase,
           ],
         ).createShader(bounds);
       },

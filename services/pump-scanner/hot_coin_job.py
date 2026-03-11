@@ -8,6 +8,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone, date
+from typing import Dict, List
 
 from hot_coin_fetcher import fetch_hot_coin_candidates
 from hot_scorer import score_hot_coin
@@ -135,8 +136,8 @@ def run_hot_daily_picks():
             return
 
         # 跨链分配：每链最多 8 个，总计最多 20 个
-        chain_counts: dict[str, int] = {}
-        picks: list[dict] = []
+        chain_counts: Dict[str, int] = {}
+        picks: List[dict] = []
         for row in res.data:
             chain = row["chain"]
             if chain_counts.get(chain, 0) >= 8:

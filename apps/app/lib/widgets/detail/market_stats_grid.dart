@@ -25,7 +25,7 @@ class MarketStatsGrid extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -34,19 +34,19 @@ class MarketStatsGrid extends StatelessWidget {
       child: Row(
         children: List.generate(items.length * 2 - 1, (i) {
           if (i.isOdd) {
-            return Container(width: 0.5, height: 30, color: AppColors.divider.withValues(alpha: 0.3));
+            return Container(width: 0.5, height: 30, color: context.colors.divider.withValues(alpha: 0.3));
           }
           final item = items[i ~/ 2];
           return Expanded(
             child: Column(
               children: [
                 Text(item.label,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500,
-                        color: AppColors.textSecondary, letterSpacing: 0.5)),
+                    style: TextStyle(fontSize: 10, fontWeight: FontWeight.w500,
+                        color: context.colors.textSecondary, letterSpacing: 0.5)),
                 const SizedBox(height: 4),
                 Text(item.value,
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary)),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700,
+                        color: context.colors.textPrimary)),
               ],
             ),
           );

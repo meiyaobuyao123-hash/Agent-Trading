@@ -21,12 +21,12 @@ class ContractAddressCard extends StatelessWidget {
           icon: CupertinoIcons.doc_on_doc,
           label: '合约地址',
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            Text(short, style: const TextStyle(fontSize: 13,
-                color: AppColors.textSecondary,
+            Text(short, style: TextStyle(fontSize: 13,
+                color: context.colors.textSecondary,
                 fontFamily: 'Menlo')),
             const SizedBox(width: 4),
-            const Icon(CupertinoIcons.doc_on_clipboard, size: 14,
-                color: AppColors.textTertiary),
+            Icon(CupertinoIcons.doc_on_clipboard, size: 14,
+                color: context.colors.textTertiary),
           ]),
           onTap: () {
             Clipboard.setData(ClipboardData(text: token.address));
@@ -62,7 +62,7 @@ class ContractAddressCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -115,12 +115,12 @@ class _Row extends StatelessWidget {
       onPressed: onTap,
       child: Row(
         children: [
-          Icon(icon, size: 16, color: AppColors.textSecondary),
+          Icon(icon, size: 16, color: context.colors.textSecondary),
           const SizedBox(width: 10),
-          Text(label, style: const TextStyle(fontSize: 14, color: AppColors.textPrimary)),
+          Text(label, style: TextStyle(fontSize: 14, color: context.colors.textPrimary)),
           const Spacer(),
           if (trailing != null) trailing!
-          else const Icon(CupertinoIcons.chevron_right, size: 14, color: AppColors.textTertiary),
+          else Icon(CupertinoIcons.chevron_right, size: 14, color: context.colors.textTertiary),
         ],
       ),
     );

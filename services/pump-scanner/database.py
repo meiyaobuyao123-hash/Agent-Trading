@@ -66,7 +66,7 @@ def mark_graduated(mint: str, graduated_at: str):
         log.error(f"mark_graduated error: {e}")
 
 
-def save_daily_picks(picks: list[dict]):
+def save_daily_picks(picks: List[dict]):
     """保存当日 Top10"""
     try:
         get_db().table("daily_picks").upsert(picks, on_conflict="pick_date,mint").execute()
@@ -82,7 +82,7 @@ def cleanup_old_trades():
         log.error(f"cleanup_old_trades error: {e}")
 
 
-def upsert_hot_coins(rows: list[dict]):
+def upsert_hot_coins(rows: List[dict]):
     """批量写入热币数据（每批50条）"""
     if not rows:
         return
@@ -97,7 +97,7 @@ def upsert_hot_coins(rows: list[dict]):
         log.error(f"upsert_hot_coins error: {e}")
 
 
-def save_hot_daily_picks(picks: list[dict]):
+def save_hot_daily_picks(picks: List[dict]):
     """保存热币日榜（upsert，pick_date+chain+address 唯一）"""
     if not picks:
         return

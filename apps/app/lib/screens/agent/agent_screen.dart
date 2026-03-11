@@ -33,28 +33,29 @@ class _AgentScreenState extends State<AgentScreen>
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.transparent,
       body: NestedScrollView(
         headerSliverBuilder: (_, __) => [
           SliverAppBar(
             pinned: true,
-            backgroundColor: AppColors.bg,
-            title: const Text(
+            backgroundColor: c.bg,
+            title: Text(
               'Agent 策略',
               style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
+                color: c.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
               ),
             ),
             bottom: TabBar(
               controller: _tab,
-              indicatorColor: AppColors.primary,
+              indicatorColor: c.primary,
               indicatorWeight: 2,
-              labelColor: AppColors.primary,
-              unselectedLabelColor: AppColors.textTertiary,
+              labelColor: c.primary,
+              unselectedLabelColor: c.textTertiary,
               labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
               tabs: const [
                 Tab(text: '策略对话'),
@@ -110,7 +111,7 @@ class _ChatTab extends StatelessWidget {
         ),
 
         // 输入框（框架）
-        _ChatInput(),
+        const _ChatInput(),
       ],
     );
   }
@@ -122,6 +123,7 @@ class _AiBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -129,28 +131,29 @@ class _AiBubble extends StatelessWidget {
           width: 36,
           height: 36,
           decoration: BoxDecoration(
-            color: AppColors.primaryDim,
+            color: c.primaryLight,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: const Icon(Icons.smart_toy_rounded,
-            color: AppColors.primary, size: 20),
+          child: Icon(Icons.smart_toy_rounded,
+            color: c.primary, size: 20),
         ),
         const SizedBox(width: 10),
         Expanded(
           child: Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: AppColors.surface,
+              color: c.cardGlass,
               borderRadius: const BorderRadius.only(
                 topRight: Radius.circular(16),
                 bottomLeft: Radius.circular(16),
                 bottomRight: Radius.circular(16),
               ),
+              border: Border.all(color: c.glassBorder, width: 0.5),
             ),
             child: Text(
               text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
+              style: TextStyle(
+                color: c.textPrimary,
                 fontSize: 14,
                 height: 1.6,
               ),
@@ -167,15 +170,16 @@ class _ComingSoonSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(bottom: 10),
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
           child: Text(
             '即将上线的能力',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: c.textSecondary,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -186,7 +190,7 @@ class _ComingSoonSection extends StatelessWidget {
           title: '策略研发',
           desc: '用自然语言描述你的策略，AI 自动生成过滤规则和打分逻辑',
           tag: '即将上线',
-          tagColor: AppColors.primary,
+          tagColor: c.primary,
         ),
         const SizedBox(height: 8),
         _FeatureCard(
@@ -194,7 +198,7 @@ class _ComingSoonSection extends StatelessWidget {
           title: '回测验证',
           desc: '用历史数据验证你的策略，查看胜率、回报、最大回撤',
           tag: '即将上线',
-          tagColor: AppColors.primary,
+          tagColor: c.primary,
         ),
         const SizedBox(height: 8),
         _FeatureCard(
@@ -202,7 +206,7 @@ class _ComingSoonSection extends StatelessWidget {
           title: '自动执行',
           desc: '连接钱包后，Agent 按策略条件自动在 pump.fun 内盘买入',
           tag: '规划中',
-          tagColor: AppColors.normal,
+          tagColor: c.warning,
         ),
         const SizedBox(height: 8),
         _FeatureCard(
@@ -210,7 +214,7 @@ class _ComingSoonSection extends StatelessWidget {
           title: '实时提醒',
           desc: '策略触发时推送通知，支持自定义阈值和条件',
           tag: '规划中',
-          tagColor: AppColors.normal,
+          tagColor: c.warning,
         ),
       ],
     );
@@ -234,12 +238,13 @@ class _FeatureCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider, width: 0.5),
+        color: c.cardGlass,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Row(
         children: [
@@ -260,8 +265,8 @@ class _FeatureCard extends StatelessWidget {
                 Row(
                   children: [
                     Text(title,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: c.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       )),
@@ -279,8 +284,8 @@ class _FeatureCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(desc,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
+                  style: TextStyle(
+                    color: c.textSecondary,
                     fontSize: 12,
                     height: 1.4,
                   )),
@@ -294,12 +299,15 @@ class _FeatureCard extends StatelessWidget {
 }
 
 class _ChatInput extends StatelessWidget {
+  const _ChatInput();
+
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.surface,
-        border: Border(top: BorderSide(color: AppColors.divider, width: 0.5)),
+      decoration: BoxDecoration(
+        color: c.cardGlass,
+        border: Border(top: BorderSide(color: c.glassBorder, width: 0.5)),
       ),
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 20),
       child: Row(
@@ -307,15 +315,15 @@ class _ChatInput extends StatelessWidget {
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: AppColors.surfaceAlt,
+                color: c.surfaceAlt,
                 borderRadius: BorderRadius.circular(24),
               ),
-              child: const TextField(
+              child: TextField(
                 enabled: false,
                 decoration: InputDecoration(
                   hintText: '描述你的策略想法... (即将开放)',
-                  hintStyle: TextStyle(color: AppColors.textTertiary, fontSize: 14),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  hintStyle: TextStyle(color: c.textTertiary, fontSize: 14),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                   border: InputBorder.none,
                 ),
               ),
@@ -326,11 +334,11 @@ class _ChatInput extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: AppColors.primaryDim,
+              color: c.primaryLight,
               borderRadius: BorderRadius.circular(22),
             ),
-            child: const Icon(Icons.send_rounded,
-              color: AppColors.primary, size: 20),
+            child: Icon(Icons.send_rounded,
+              color: c.primary, size: 20),
           ),
         ],
       ),
@@ -346,6 +354,7 @@ class _MyStrategiesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -356,27 +365,27 @@ class _MyStrategiesTab extends StatelessWidget {
               width: 72,
               height: 72,
               decoration: BoxDecoration(
-                color: AppColors.primaryDim,
+                color: c.primaryLight,
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Icon(Icons.auto_graph_rounded,
-                color: AppColors.primary, size: 36),
+              child: Icon(Icons.auto_graph_rounded,
+                color: c.primary, size: 36),
             ),
             const SizedBox(height: 20),
-            const Text(
+            Text(
               '策略研发中',
               style: TextStyle(
-                color: AppColors.textPrimary,
+                color: c.textPrimary,
                 fontSize: 18,
                 fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
+            Text(
               '通过对话窗口描述你的策略\nAI 会帮你生成、命名并保存\n支持绑定钱包后自动执行',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: AppColors.textSecondary,
+                color: c.textSecondary,
                 fontSize: 14,
                 height: 1.6,
               ),
@@ -434,6 +443,7 @@ class _DataSourcesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: _sources.length,
@@ -443,10 +453,10 @@ class _DataSourcesTab extends StatelessWidget {
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
+            color: c.cardGlass,
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: s.ready ? AppColors.primary.withValues(alpha: 0.2) : AppColors.divider,
+              color: s.ready ? c.primary.withValues(alpha: 0.2) : c.glassBorder,
               width: 0.5,
             ),
           ),
@@ -457,12 +467,12 @@ class _DataSourcesTab extends StatelessWidget {
                 height: 44,
                 decoration: BoxDecoration(
                   color: s.ready
-                      ? AppColors.primaryDim
-                      : AppColors.surfaceAlt,
+                      ? c.primaryLight
+                      : c.surfaceAlt,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(s.icon,
-                  color: s.ready ? AppColors.primary : AppColors.textTertiary,
+                  color: s.ready ? c.primary : c.textTertiary,
                   size: 22),
               ),
               const SizedBox(width: 12),
@@ -471,15 +481,15 @@ class _DataSourcesTab extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(s.name,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                      style: TextStyle(
+                        color: c.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       )),
                     const SizedBox(height: 3),
                     Text(s.desc,
-                      style: const TextStyle(
-                        color: AppColors.textSecondary,
+                      style: TextStyle(
+                        color: c.textSecondary,
                         fontSize: 12,
                         height: 1.4,
                       )),
@@ -491,14 +501,14 @@ class _DataSourcesTab extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
                   color: s.ready
-                      ? AppColors.successLight
-                      : AppColors.surfaceAlt,
+                      ? c.successLight
+                      : c.surfaceAlt,
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
                   s.status,
                   style: TextStyle(
-                    color: s.ready ? AppColors.success : AppColors.textTertiary,
+                    color: s.ready ? c.success : c.textTertiary,
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
                   ),

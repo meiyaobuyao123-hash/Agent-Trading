@@ -15,7 +15,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -47,9 +47,9 @@ async def _fetch_gecko_pools(
     session: aiohttp.ClientSession,
     gecko_net: str,
     endpoint: str,          # 'trending_pools' | 'new_pools'
-) -> list[dict]:
+) -> List[dict]:
     """拉取 GeckoTerminal 池列表（多页，含 base_token 信息）"""
-    results: list[dict] = []
+    results: List[dict] = []
 
     for page in range(1, GECKO_PAGES + 1):
         url = f"{GECKO_API}/networks/{gecko_net}/{endpoint}"
@@ -83,7 +83,7 @@ async def _fetch_gecko_pools(
                         break
 
                     # 构建 included token 映射（id → attributes）
-                    included_map: dict[str, dict] = {}
+                    included_map: Dict[str, dict] = {}
                     for item in data.get("included", []):
                         if item.get("type") == "token":
                             included_map[item["id"]] = item.get("attributes", {})
@@ -203,7 +203,7 @@ def apply_hard_filter(
     coin: dict,
     mc_max_usd: float = None,
     liq_max_usd: float = None,
-) -> tuple[bool, str]:
+) -> Tuple[bool, str]:
     """
     返回 (通过, 拒绝原因)
     mc_max_usd / liq_max_usd: 链级别上限覆盖（None → 使用全局常量）
@@ -407,13 +407,13 @@ async def _get_dexscreener_socials(
 # 主函数：全链扫描并富化
 # ═══════════════════════════════════════════════════════════
 
-async def fetch_hot_coin_candidates() -> list[dict]:
+async def fetch_hot_coin_candidates() -> List[dict]:
     """
     扫描所有目标链（SOL / BSC / ETH / Base），
     经过硬过滤 → GoPlus → Helius → DexScreener 富化后返回候选列表。
     每条 dict 包含打分所需的全部字段。
     """
-    all_candidates: list[dict] = []
+    all_candidates: List[dict] = []
 
     async with aiohttp.ClientSession() as session:
         for chain, cfg in HOT_CHAINS.items():
@@ -426,7 +426,7 @@ async def fetch_hot_coin_candidates() -> list[dict]:
             new_pools = await _fetch_gecko_pools(session, gecko_net, "new_pools")
 
             # 按 address 去重（trending 和 new_pools 可能重叠）
-            seen: dict[str, dict] = {}
+            seen: Dict[str, dict] = {}
             for coin in trending + new_pools:
                 addr = coin["address"]
                 # 若已存在，保留 volume 更大的（trending 数据通常更新）
@@ -438,7 +438,7 @@ async def fetch_hot_coin_candidates() -> list[dict]:
             # ── 2. 硬过滤 ──────────────────────────────────────
             mc_max_usd  = cfg.get("mc_max_usd")   # 链级别覆盖，None→使用全局值
             liq_max_usd = cfg.get("liq_max_usd")
-            filtered: list[dict] = []
+            filtered: List[dict] = []
             for coin in raw:
                 ok, reason = apply_hard_filter(
                     coin, mc_max_usd=mc_max_usd, liq_max_usd=liq_max_usd
@@ -450,7 +450,7 @@ async def fetch_hot_coin_candidates() -> list[dict]:
             log.info(f"  {chain}: 硬过滤后 {len(filtered)} 个")
 
             # ── 3. GoPlus + Helius + DexScreener 富化 ─────────
-            enriched: list[dict] = []
+            enriched: List[dict] = []
             for coin in filtered:
                 addr = coin["address"]
 

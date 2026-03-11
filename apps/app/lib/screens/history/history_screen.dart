@@ -61,34 +61,36 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Scaffold(
-      backgroundColor: AppColors.bg,
+      backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
           SliverAppBar(
             expandedHeight: 100,
             pinned: true,
-            backgroundColor: AppColors.bg,
-            flexibleSpace: const FlexibleSpaceBar(
+            backgroundColor: Colors.transparent,
+            flexibleSpace: FlexibleSpaceBar(
               collapseMode: CollapseMode.pin,
-              titlePadding: EdgeInsets.fromLTRB(16, 0, 16, 12),
+              titlePadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               title: Text(
                 '历史追踪',
                 style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.5,
+                  color: c.textPrimary,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: -0.3,
                 ),
               ),
             ),
           ),
 
           if (_loading)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: CircularProgressIndicator(
-                  color: AppColors.primary, strokeWidth: 2),
+                  color: c.primary, strokeWidth: 2),
               ),
             )
           else if (_error != null)
@@ -97,25 +99,25 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.wifi_off_rounded,
-                      size: 48, color: AppColors.danger),
+                    Icon(Icons.wifi_off_rounded,
+                      size: 48, color: c.danger),
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: _load,
-                      child: const Text('重试',
-                        style: TextStyle(color: AppColors.primary)),
+                      child: Text('重试',
+                        style: TextStyle(color: c.primary)),
                     ),
                   ],
                 ),
               ),
             )
           else if (_history.isEmpty)
-            const SliverFillRemaining(
+            SliverFillRemaining(
               child: Center(
                 child: Text(
                   '暂无历史数据\n数据积累中...',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppColors.textSecondary,
+                  style: TextStyle(color: c.textSecondary,
                     fontSize: 14, height: 1.6),
                 ),
               ),
@@ -173,6 +175,8 @@ class _StatsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     final gradRate = total > 0
         ? '${(graduated / total * 100).toStringAsFixed(0)}%'
         : '-';
@@ -183,18 +187,19 @@ class _StatsPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: c.cardGlass,
         borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Row(
         children: [
           _StatItem(value: '$total', label: '历史推送'),
           _Divider(),
-          _StatItem(value: '$graduated', label: '已毕业', color: AppColors.success),
+          _StatItem(value: '$graduated', label: '已毕业', color: c.success),
           _Divider(),
-          _StatItem(value: gradRate, label: '毕业率', color: AppColors.success),
+          _StatItem(value: gradRate, label: '毕业率', color: c.success),
           _Divider(),
-          _StatItem(value: twoXRate, label: '2x率', color: AppColors.primary),
+          _StatItem(value: twoXRate, label: '2x率', color: c.primary),
         ],
       ),
     );
@@ -204,21 +209,23 @@ class _StatsPanel extends StatelessWidget {
 class _StatItem extends StatelessWidget {
   final String value;
   final String label;
-  final Color color;
-  const _StatItem({required this.value, required this.label,
-    this.color = AppColors.textPrimary});
+  final Color? color;
+  const _StatItem({required this.value, required this.label, this.color});
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+    final effectiveColor = color ?? c.textPrimary;
+
     return Expanded(
       child: Column(
         children: [
           Text(value,
-            style: TextStyle(color: color, fontSize: 20,
-              fontWeight: FontWeight.w800)),
+            style: TextStyle(color: effectiveColor, fontSize: 18,
+              fontWeight: FontWeight.w700)),
           const SizedBox(height: 2),
           Text(label,
-            style: const TextStyle(color: AppColors.textSecondary, fontSize: 11)),
+            style: TextStyle(color: c.textSecondary, fontSize: 11)),
         ],
       ),
     );
@@ -228,9 +235,11 @@ class _StatItem extends StatelessWidget {
 class _Divider extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     return Container(
       width: 0.5, height: 36,
-      color: AppColors.divider,
+      color: c.divider,
       margin: const EdgeInsets.symmetric(horizontal: 4),
     );
   }
@@ -244,6 +253,8 @@ class _DateHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
+
     // 计算这天的命中率
     final labeled = picks.where((p) => p.hasOutcome).toList();
     final hits    = labeled.where((p) => p.didGraduate == true || p.label2x == true).length;
@@ -266,15 +277,15 @@ class _DateHeader extends StatelessWidget {
         children: [
           Text(
             displayDate,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
+            style: TextStyle(
+              color: c.textPrimary,
               fontSize: 15,
               fontWeight: FontWeight.w700,
             ),
           ),
           Text(
             hitStr,
-            style: const TextStyle(color: AppColors.textTertiary, fontSize: 12),
+            style: TextStyle(color: c.textTertiary, fontSize: 12),
           ),
         ],
       ),

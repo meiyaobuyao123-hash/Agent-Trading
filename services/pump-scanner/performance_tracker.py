@@ -162,12 +162,10 @@ def _init_hot_picks() -> int:
 
             price_usd = float(snapshot.get("price_usd") or 0)
             if price_usd <= 0:
-                # 尝试从 market_cap_usd 估算
-                mc = float(p.get("market_cap_usd") or 0)
-                if mc > 0:
-                    price_usd = mc  # 用市值作为替代指标
-                else:
-                    continue
+                # price_usd 必须是实际单价，不能用 market_cap 替代
+                # 因为后续 current_price 来自 DexScreener priceUsd（单价）
+                log.debug(f"hot pick 无价格快照: {p.get('symbol')} {p.get('address','')[:8]}")
+                continue
 
             new_rows.append({
                 "source": "hot",
@@ -299,7 +297,7 @@ def _apply_price_update(row: Dict, current_price: float):
     day_number = (date.today() - pick_date).days
     row["tracking_days"] = day_number
 
-    # 更新 daily_highs
+    # 更新 daily_highs — 从 D0 开始记录（修复: 原来从 D1 开始导致永远为空）
     daily_highs = row.get("daily_highs") or {}
     if isinstance(daily_highs, str):
         try:
@@ -307,21 +305,22 @@ def _apply_price_update(row: Dict, current_price: float):
         except Exception:
             daily_highs = {}
 
-    if 1 <= day_number <= TRACK_DAYS:
-        day_key = str(day_number)
+    if 0 <= day_number <= TRACK_DAYS:
+        day_key = f"D{day_number}"
         existing = daily_highs.get(day_key)
 
         if existing is None or current_price > float(existing.get("high", 0)):
             daily_highs[day_key] = {
-                "high": current_price,
+                "high": round(current_price, 10),
                 "pct": round(current_pct, 2),
+                "at": datetime.now(timezone.utc).strftime("%H:%M"),
             }
 
     row["daily_highs"] = daily_highs
 
-    # 更新全周期最佳
+    # 更新全周期最佳（修复: best_price=0 时也要更新）
     best_price = float(row.get("best_price") or 0)
-    if current_price > best_price:
+    if best_price <= 0 or current_price > best_price:
         row["best_price"] = current_price
         row["best_pct"] = round(current_pct, 2)
         row["best_day"] = day_number

@@ -59,15 +59,15 @@ class _ScoreRingState extends State<ScoreRing>
   }
 
   Color get _color {
-    if (widget.score >= 75) return AppColors.strong;
-    if (widget.score >= 55) return AppColors.normal;
-    return AppColors.textTertiary;
+    if (widget.score >= 75) return context.colors.success;
+    if (widget.score >= 55) return context.colors.warning;
+    return context.colors.textTertiary;
   }
 
   Color get _colorLight {
-    if (widget.score >= 75) return AppColors.strong.withValues(alpha: 0.35);
-    if (widget.score >= 55) return AppColors.normal.withValues(alpha: 0.35);
-    return AppColors.textTertiary.withValues(alpha: 0.35);
+    if (widget.score >= 75) return context.colors.success.withValues(alpha: 0.35);
+    if (widget.score >= 55) return context.colors.warning.withValues(alpha: 0.35);
+    return context.colors.textTertiary.withValues(alpha: 0.35);
   }
 
   @override
@@ -87,6 +87,7 @@ class _ScoreRingState extends State<ScoreRing>
                   progress: (widget.score / 100) * _progressAnim.value,
                   color: _color,
                   colorLight: _colorLight,
+                  trackColor: context.colors.divider.withValues(alpha: 0.3),
                   strokeWidth: widget.strokeWidth,
                 ),
               ),
@@ -111,12 +112,14 @@ class _GradientRingPainter extends CustomPainter {
   final double progress;
   final Color color;
   final Color colorLight;
+  final Color trackColor;
   final double strokeWidth;
 
   const _GradientRingPainter({
     required this.progress,
     required this.color,
     required this.colorLight,
+    required this.trackColor,
     required this.strokeWidth,
   });
 
@@ -130,7 +133,7 @@ class _GradientRingPainter extends CustomPainter {
     canvas.drawCircle(
       center, radius,
       Paint()
-        ..color = AppColors.divider.withValues(alpha: 0.3)
+        ..color = trackColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth,
     );

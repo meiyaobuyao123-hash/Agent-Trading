@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import '../../models/goplus_report.dart';
 import '../../theme/app_colors.dart';
 
@@ -18,17 +17,17 @@ class SecurityCheckCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            const Text('安全检测',
+            Text('安全检测',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary)),
+                    color: context.colors.textPrimary)),
             const Spacer(),
             if (report != null)
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: report!.overallRisk
-                      ? AppColors.danger.withValues(alpha: 0.1)
-                      : AppColors.success.withValues(alpha: 0.1),
+                      ? context.colors.danger.withValues(alpha: 0.1)
+                      : context.colors.success.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Row(
@@ -39,14 +38,14 @@ class SecurityCheckCard extends StatelessWidget {
                           ? CupertinoIcons.xmark_shield_fill
                           : CupertinoIcons.checkmark_shield_fill,
                       size: 16,
-                      color: report!.overallRisk ? AppColors.danger : AppColors.success,
+                      color: report!.overallRisk ? context.colors.danger : context.colors.success,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       report!.overallRisk ? '有风险' : '安全',
                       style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w700,
-                        color: report!.overallRisk ? AppColors.danger : AppColors.success,
+                        color: report!.overallRisk ? context.colors.danger : context.colors.success,
                       ),
                     ),
                   ],
@@ -58,8 +57,8 @@ class SecurityCheckCard extends StatelessWidget {
         if (loading)
           const Center(child: CupertinoActivityIndicator(radius: 10))
         else if (report == null)
-          const Text('安全数据暂不可用',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
+          Text('安全数据暂不可用',
+              style: TextStyle(fontSize: 13, color: context.colors.textSecondary))
         else
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -81,7 +80,7 @@ class SecurityCheckCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -99,9 +98,9 @@ class _SecurityTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (icon, color) = switch (item.status) {
-      SecurityStatus.safe => (CupertinoIcons.checkmark_shield, AppColors.success),
-      SecurityStatus.warning => (CupertinoIcons.exclamationmark_shield, AppColors.warning),
-      SecurityStatus.danger => (CupertinoIcons.xmark_shield, AppColors.danger),
+      SecurityStatus.safe => (CupertinoIcons.checkmark_shield, context.colors.success),
+      SecurityStatus.warning => (CupertinoIcons.exclamationmark_shield, context.colors.warning),
+      SecurityStatus.danger => (CupertinoIcons.xmark_shield, context.colors.danger),
     };
 
     return Container(

@@ -1,9 +1,8 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import '../../services/gecko_terminal_service.dart';
 import '../../theme/app_colors.dart';
 
-/// 逐笔交易列表 — 带规模分类
+/// Bitget 风格逐笔交易列表
 class RecentTradesCard extends StatefulWidget {
   final String? pairAddress;
   final String network;
@@ -45,33 +44,48 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('最近交易',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary)),
-        const SizedBox(height: 12),
+        if (!widget.embedded) ...[
+          Text('最近交易',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
+                  color: context.colors.textPrimary)),
+          const SizedBox(height: 12),
+        ],
         if (_loading)
-          const Center(child: CupertinoActivityIndicator(radius: 10))
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: CupertinoActivityIndicator(radius: 10)),
+          )
         else if (_error != null)
-          Text(_error!, style: const TextStyle(fontSize: 13, color: AppColors.textSecondary))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: Text(_error!, style: TextStyle(fontSize: 13, color: context.colors.textSecondary))),
+          )
         else if (_trades.isEmpty)
-          const Text('暂无交易数据',
-              style: TextStyle(fontSize: 13, color: AppColors.textSecondary))
+          Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: Text('暂无交易数据',
+                style: TextStyle(fontSize: 13, color: context.colors.textSecondary))),
+          )
         else
           ...List.generate(
-            _trades.length > 15 ? 15 : _trades.length,
-            (i) => _TradeRow(trade: _trades[i],
-                isLast: i == (_trades.length > 15 ? 14 : _trades.length - 1)),
+            _trades.length > 20 ? 20 : _trades.length,
+            (i) => _BitgetTradeRow(trade: _trades[i]),
           ),
       ],
     );
 
-    if (widget.embedded) return content;
+    if (widget.embedded) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: content,
+      );
+    }
 
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -82,82 +96,132 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
   }
 }
 
-class _TradeRow extends StatelessWidget {
+/// Bitget 风格交易行：数量/时间 | 价值/价格 | 地址
+class _BitgetTradeRow extends StatelessWidget {
   final Map<String, dynamic> trade;
-  final bool isLast;
-  const _TradeRow({required this.trade, required this.isLast});
+  const _BitgetTradeRow({required this.trade});
 
   @override
   Widget build(BuildContext context) {
     final kind = trade['kind'] as String? ?? '';
     final isBuy = kind == 'buy';
-    final color = isBuy ? AppColors.success : AppColors.danger;
-    final label = isBuy ? '买' : '卖';
-    final volumeStr = trade['volume_in_usd'] as String? ?? '0';
-    final volumeUsd = double.tryParse(volumeStr) ?? 0;
-    final timestamp = trade['block_timestamp'] as String? ?? '';
+    final color = isBuy ? context.colors.success : context.colors.danger;
+    final label = isBuy ? '买入' : '卖出';
 
-    // 规模分类
-    final sizeLabel = volumeUsd >= 10000 ? '大单' : volumeUsd >= 1000 ? '中单' : '小单';
-    final sizeColor = volumeUsd >= 10000 ? AppColors.warning : AppColors.textTertiary;
+    final volumeUsd = (trade['volume_usd'] as num?)?.toDouble() ?? 0;
+    final priceUsd = (trade['price_usd'] as num?)?.toDouble() ?? 0;
+    final fromAmt = (trade['from_amount'] as num?)?.toDouble() ?? 0;
+    final toAmt = (trade['to_amount'] as num?)?.toDouble() ?? 0;
+    final qty = isBuy ? toAmt : fromAmt;
+
+    final timestamp = trade['timestamp'] as String? ?? '';
+    final maker = trade['maker'] as String? ?? '';
+    final txHash = trade['tx_hash'] as String? ?? '';
 
     String timeStr = '';
     if (timestamp.isNotEmpty) {
       try {
         final dt = DateTime.parse(timestamp);
         final diff = DateTime.now().toUtc().difference(dt);
-        if (diff.inMinutes < 60) timeStr = '${diff.inMinutes}m';
-        else if (diff.inHours < 24) timeStr = '${diff.inHours}h';
-        else timeStr = '${diff.inDays}d';
+        if (diff.inSeconds < 60) {
+          timeStr = '${diff.inSeconds}秒前';
+        } else if (diff.inMinutes < 60) {
+          timeStr = '${diff.inMinutes}分前';
+        } else if (diff.inHours < 24) {
+          timeStr = '${diff.inHours}小时前';
+        } else {
+          timeStr = '${diff.inDays}天前';
+        }
       } catch (_) {}
     }
 
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.03),
-            borderRadius: BorderRadius.circular(4),
+    // 地址：优先用 maker，退而用 txHash
+    final addr = maker.isNotEmpty ? maker : txHash;
+    final addrDisplay = addr.length > 10
+        ? '${addr.substring(0, 4)}...${addr.substring(addr.length - 4)}'
+        : '';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFF2F2F7), width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          // 列1: 买入/卖出 + 数量 + 时间
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Text(label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: color)),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      '${isBuy ? "+" : "-"}${_fmtQty(qty)}',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color,
+                        fontFeatures: const [FontFeature.tabularFigures()]),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ]),
+                if (timeStr.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(timeStr, style: TextStyle(fontSize: 11, color: context.colors.textTertiary)),
+                  ),
+              ],
+            ),
           ),
-          child: Row(
-            children: [
-              // 买/卖标签
-              Container(
-                width: 28, height: 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Text(label, style: TextStyle(fontSize: 11,
-                    fontWeight: FontWeight.w700, color: color)),
-              ),
-              const SizedBox(width: 8),
-              // 金额
-              Text('\$${_fmtVol(volumeUsd)}',
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600,
-                      color: AppColors.textPrimary)),
-              const SizedBox(width: 6),
-              // 规模
-              Text(sizeLabel, style: TextStyle(fontSize: 10, color: sizeColor)),
-              const Spacer(),
-              // 时间
-              if (timeStr.isNotEmpty)
-                Text(timeStr, style: const TextStyle(fontSize: 12,
-                    color: AppColors.textTertiary)),
-            ],
+          // 列2: 价值 + 价格
+          Expanded(
+            flex: 3,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('\$${_fmtVol(volumeUsd)}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: context.colors.textPrimary,
+                      fontFeatures: [FontFeature.tabularFigures()])),
+                if (priceUsd > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text('\$${_fmtSmallPrice(priceUsd)}',
+                        style: TextStyle(fontSize: 11, color: context.colors.textTertiary,
+                          fontFeatures: [FontFeature.tabularFigures()])),
+                  ),
+              ],
+            ),
           ),
-        ),
-        if (!isLast)
-          const Divider(height: 0.5, thickness: 0.5, color: Color(0xFFF2F2F7)),
-      ],
+          // 列3: 地址
+          Expanded(
+            flex: 3,
+            child: Text(addrDisplay,
+              style: TextStyle(fontSize: 12, color: context.colors.textPrimary),
+              textAlign: TextAlign.right),
+          ),
+        ],
+      ),
     );
+  }
+
+  String _fmtQty(double v) {
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)}M';
+    if (v >= 1e4) return '${(v / 1e4).toStringAsFixed(2)}万';
+    if (v >= 1000) return v.toStringAsFixed(0);
+    if (v >= 1) return v.toStringAsFixed(2);
+    return v.toStringAsFixed(4);
   }
 
   String _fmtVol(double v) {
     if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)}M';
     if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(0);
+    return v.toStringAsFixed(2);
+  }
+
+  String _fmtSmallPrice(double p) {
+    if (p >= 1) return p.toStringAsFixed(2);
+    if (p >= 0.01) return p.toStringAsFixed(4);
+    return p.toStringAsFixed(7);
   }
 }

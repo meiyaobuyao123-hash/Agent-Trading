@@ -6,7 +6,7 @@
 
 import logging
 from datetime import date, datetime, timezone, timedelta
-from typing import Optional, List
+from typing import Dict, List, Optional, Tuple
 
 from database import get_db, save_daily_picks, cleanup_old_trades
 from scorer import score, ScoreResult
@@ -57,14 +57,14 @@ def run_daily_job(pick_date: Optional[date] = None):
         return
 
     # 按 mint 聚合（取最新快照）
-    best: dict[str, dict] = {}
+    best: Dict[str, dict] = {}
     for row in res.data:
         mint = row["mint"]
         if mint not in best or row["bc_progress"] > best[mint]["bc_progress"]:
             best[mint] = row
 
     # 构建 TokenFeatures 并打分
-    scored: list[tuple[float, str, ScoreResult, dict]] = []
+    scored: List[Tuple[float, str, ScoreResult, dict]] = []
     for mint, snap in best.items():
         info = snap.get("pump_tokens") or {}
         f = _snap_to_features(mint, snap, info)

@@ -21,19 +21,19 @@ class HolderInfoCard extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('持有者',
+        Text('持有者',
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                color: AppColors.textPrimary)),
+                color: context.colors.textPrimary)),
         const SizedBox(height: 14),
         Row(
           children: [
-            _Stat(label: '持有人数', value: _fmtCount(holders), color: AppColors.textPrimary),
+            _Stat(label: '持有人数', value: _fmtCount(holders), color: context.colors.textPrimary),
             if (top10 != null)
               _Stat(label: 'Top10 占比', value: '${top10.toStringAsFixed(1)}%',
-                  color: _pctColor(top10)),
+                  color: _pctColor(context, top10)),
             if (top1 != null)
               _Stat(label: 'Top1 占比', value: '${top1.toStringAsFixed(1)}%',
-                  color: _pctColor(top1)),
+                  color: _pctColor(context, top1)),
           ],
         ),
         if (top10 != null) ...[
@@ -47,11 +47,11 @@ class HolderInfoCard extends StatelessWidget {
                 children: [
                   Expanded(
                     flex: (top10 * 10).round().clamp(1, 999),
-                    child: Container(color: _pctColor(top10)),
+                    child: Container(color: _pctColor(context, top10)),
                   ),
                   Expanded(
                     flex: ((100 - top10) * 10).round().clamp(1, 999),
-                    child: Container(color: AppColors.bg),
+                    child: Container(color: context.colors.bg),
                   ),
                 ],
               ),
@@ -67,7 +67,7 @@ class HolderInfoCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -77,10 +77,10 @@ class HolderInfoCard extends StatelessWidget {
     );
   }
 
-  Color _pctColor(double pct) {
-    if (pct > 60) return AppColors.danger;
-    if (pct > 30) return AppColors.warning;
-    return AppColors.success;
+  Color _pctColor(BuildContext context, double pct) {
+    if (pct > 60) return context.colors.danger;
+    if (pct > 30) return context.colors.warning;
+    return context.colors.success;
   }
 
   String _fmtCount(int n) {
@@ -101,7 +101,7 @@ class _Stat extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontSize: 11, color: AppColors.textSecondary)),
+          Text(label, style: TextStyle(fontSize: 11, color: context.colors.textSecondary)),
           const SizedBox(height: 4),
           Text(value, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: color)),
         ],

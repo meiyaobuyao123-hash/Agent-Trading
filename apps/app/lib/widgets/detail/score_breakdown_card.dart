@@ -38,9 +38,9 @@ class _ScoreBreakdownCardState extends State<ScoreBreakdownCard>
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: AppColors.cardShadow,
+        boxShadow: context.colors.cardShadow,
         border: Border.all(
           color: _scoreColor(token.score).withValues(alpha: 0.10),
           width: 1,
@@ -82,9 +82,9 @@ class _ScoreBreakdownCardState extends State<ScoreBreakdownCard>
   }
 
   Color _scoreColor(double s) {
-    if (s >= 72) return AppColors.strong;
-    if (s >= 50) return AppColors.normal;
-    return AppColors.textSecondary;
+    if (s >= 72) return context.colors.success;
+    if (s >= 50) return context.colors.warning;
+    return context.colors.textSecondary;
   }
 
   String _zhLabel(String key) => switch (key) {
@@ -150,9 +150,9 @@ class _AnimatedScoreBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ratio = (value / max).clamp(0.0, 1.0);
-    final color = ratio > 0.7 ? AppColors.strong
-        : ratio > 0.4 ? AppColors.normal
-        : AppColors.textTertiary;
+    final color = ratio > 0.7 ? context.colors.success
+        : ratio > 0.4 ? context.colors.warning
+        : context.colors.textTertiary;
 
     return AnimatedBuilder(
       animation: animation,
@@ -161,13 +161,13 @@ class _AnimatedScoreBar extends StatelessWidget {
         return Row(
           children: [
             SizedBox(width: 62,
-              child: Text(label, style: const TextStyle(
-                fontSize: 13, color: AppColors.textSecondary, fontWeight: FontWeight.w500))),
+              child: Text(label, style: TextStyle(
+                fontSize: 13, color: context.colors.textSecondary, fontWeight: FontWeight.w500))),
             Expanded(
               child: Container(
                 height: 8,
                 decoration: BoxDecoration(
-                  color: AppColors.bg,
+                  color: context.colors.bg,
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: FractionallySizedBox(
@@ -188,8 +188,8 @@ class _AnimatedScoreBar extends StatelessWidget {
             SizedBox(width: 54,
               child: Text('${(value * Curves.easeOutCubic.transform(animation.value)).toStringAsFixed(1)}/${max.toInt()}',
                   textAlign: TextAlign.right,
-                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700,
+                      color: context.colors.textSecondary,
                       fontFeatures: [FontFeature.tabularFigures()]))),
           ],
         );

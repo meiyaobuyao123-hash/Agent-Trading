@@ -21,13 +21,13 @@ class BcProgressCard extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.primary.withValues(alpha: 0.08),
+            context.colors.primary.withValues(alpha: 0.08),
             const Color(0xFF7C3AED).withValues(alpha: 0.06),
           ],
         ),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.15),
+          color: context.colors.primary.withValues(alpha: 0.15),
           width: 1,
         ),
       ),
@@ -40,20 +40,20 @@ class BcProgressCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.12),
+                  color: context.colors.primary.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.rocket_launch_rounded,
-                    size: 16, color: AppColors.primary),
+                child: Icon(Icons.rocket_launch_rounded,
+                    size: 16, color: context.colors.primary),
               ),
               const SizedBox(width: 10),
-              const Text('Bonding Curve',
+              Text('Bonding Curve',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
+                      color: context.colors.textPrimary)),
               const Spacer(),
               Text('${pct.toStringAsFixed(1)}%',
-                  style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
-                      color: AppColors.primary)),
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800,
+                      color: context.colors.primary)),
             ],
           ),
           const SizedBox(height: 14),
@@ -67,7 +67,7 @@ class BcProgressCard extends StatelessWidget {
                 Container(
                   height: 14,
                   decoration: BoxDecoration(
-                    color: AppColors.surfaceAlt,
+                    color: context.colors.cardGlass,
                     borderRadius: BorderRadius.circular(7),
                   ),
                 ),
@@ -113,7 +113,7 @@ class BcProgressCard extends StatelessWidget {
               '距离毕业还差 ${remaining.toStringAsFixed(1)}%',
               style: TextStyle(
                 fontSize: 13,
-                color: AppColors.textSecondary,
+                color: context.colors.textSecondary,
               ),
             ),
           const SizedBox(height: 10),
@@ -126,13 +126,13 @@ class BcProgressCard extends StatelessWidget {
               if (token.didGraduate != null)
                 _Tag(
                   label: token.didGraduate! ? '已毕业' : '未毕业',
-                  color: token.didGraduate! ? AppColors.success : AppColors.textSecondary,
+                  color: token.didGraduate! ? context.colors.success : context.colors.textSecondary,
                   icon: token.didGraduate! ? Icons.check_circle : Icons.pending,
                 ),
               if (token.label2x == true)
-                const _Tag(label: '2x', color: AppColors.normal, icon: Icons.trending_up),
+                _Tag(label: '2x', color: context.colors.warning, icon: Icons.trending_up),
               if (token.label10x == true)
-                const _Tag(label: '10x', color: AppColors.strong, icon: Icons.rocket),
+                _Tag(label: '10x', color: context.colors.success, icon: Icons.rocket),
             ],
           ),
         ],

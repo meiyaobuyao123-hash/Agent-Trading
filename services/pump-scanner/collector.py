@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Dict, Optional
 
 import aiohttp
 import websockets
@@ -32,9 +32,9 @@ log = logging.getLogger(__name__)
 class PumpScanner:
     def __init__(self):
         # mint → 原始 token_info dict
-        self._tokens: dict[str, dict] = {}
+        self._tokens: Dict[str, dict] = {}
         # mint → 交易列表
-        self._trades: dict[str, list] = {}
+        self._trades: Dict[str, list] = {}
         # 待订阅交易的 mint 队列
         self._subscribe_queue: asyncio.Queue = asyncio.Queue()
         # 聪明钱分层字典（从 DB 定期加载）wallet → 'elite'|'verified'|'watching'

@@ -5,6 +5,7 @@
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from typing import List, Tuple
 from config import (
     VIRTUAL_SOL_INIT, GRADUATION_SOL,
     LARGE_BUY_SOL, BC_MIN_PCT, BC_MAX_PCT,
@@ -76,7 +77,7 @@ def calc_bc_progress(v_sol_in_bc: float) -> float:
 
 def extract_features(
     token_info: dict,
-    trades: list[dict],
+    trades: List[dict],
     smart_wallet_tiers: dict,
     created_at: datetime,
 ) -> TokenFeatures:
@@ -185,7 +186,7 @@ def extract_features(
     return f
 
 
-def hard_filter(f: TokenFeatures) -> tuple[bool, str]:
+def hard_filter(f: TokenFeatures) -> Tuple[bool, str]:
     """
     硬过滤：返回 (通过, 拒绝原因)
     任何一条不通过 → 直接排除，不进入打分

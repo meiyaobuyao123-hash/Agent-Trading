@@ -9,8 +9,8 @@ class ShimmerSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
-      baseColor: AppColors.surfaceAlt,
-      highlightColor: AppColors.surface,
+      baseColor: context.colors.cardGlass,
+      highlightColor: context.colors.cardGlass,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

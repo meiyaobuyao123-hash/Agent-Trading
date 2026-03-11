@@ -13,20 +13,20 @@ class TradingDynamicsCard extends StatelessWidget {
     final buyPct1h = (token.buySellRatio1h * 100).round();
     final buyPct24h = (token.buySellRatio24h * 100).round();
     final trending = buyPct1h > buyPct24h ? '▲' : buyPct1h < buyPct24h ? '▼' : '';
-    final trendColor = buyPct1h > buyPct24h ? AppColors.success : AppColors.danger;
+    final trendColor = buyPct1h > buyPct24h ? context.colors.success : context.colors.danger;
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            const Text('交易动态',
+            Text('交易动态',
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary)),
+                    color: context.colors.textPrimary)),
             const Spacer(),
             Text('$buyPct1h% 买压',
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
-                    color: buyPct1h >= 50 ? AppColors.success : AppColors.danger)),
+                    color: buyPct1h >= 50 ? context.colors.success : context.colors.danger)),
             if (trending.isNotEmpty)
               Text(' $trending',
                   style: TextStyle(fontSize: 14, color: trendColor)),
@@ -47,7 +47,7 @@ class TradingDynamicsCard extends StatelessWidget {
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -76,8 +76,8 @@ class _RatioBar extends StatelessWidget {
         Row(
           children: [
             SizedBox(width: 30,
-              child: Text(label, style: const TextStyle(fontSize: 13,
-                  fontWeight: FontWeight.w500, color: AppColors.textSecondary))),
+              child: Text(label, style: TextStyle(fontSize: 13,
+                  fontWeight: FontWeight.w500, color: context.colors.textSecondary))),
             Expanded(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
@@ -88,10 +88,10 @@ class _RatioBar extends StatelessWidget {
                       Expanded(
                         flex: buyFlex,
                         child: Container(
-                          color: AppColors.success,
+                          color: context.colors.success,
                           alignment: Alignment.center,
                           child: buyFlex > 15
-                              ? Text('${buyFlex}%',
+                              ? Text('$buyFlex%',
                                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
                                       color: Colors.white))
                               : null,
@@ -100,10 +100,10 @@ class _RatioBar extends StatelessWidget {
                       Expanded(
                         flex: sellFlex,
                         child: Container(
-                          color: AppColors.danger,
+                          color: context.colors.danger,
                           alignment: Alignment.center,
                           child: sellFlex > 15
-                              ? Text('${sellFlex}%',
+                              ? Text('$sellFlex%',
                                   style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
                                       color: Colors.white))
                               : null,
@@ -120,9 +120,9 @@ class _RatioBar extends StatelessWidget {
         Row(
           children: [
             const SizedBox(width: 30),
-            Text('买 $buys', style: const TextStyle(fontSize: 12, color: AppColors.success)),
+            Text('买 $buys', style: TextStyle(fontSize: 12, color: context.colors.success)),
             const Spacer(),
-            Text('卖 $sells', style: const TextStyle(fontSize: 12, color: AppColors.danger)),
+            Text('卖 $sells', style: TextStyle(fontSize: 12, color: context.colors.danger)),
           ],
         ),
       ],

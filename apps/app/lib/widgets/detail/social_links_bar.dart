@@ -1,5 +1,4 @@
 import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../models/dexscreener_info.dart';
 import '../../theme/app_colors.dart';
@@ -20,17 +19,17 @@ class SocialLinksBar extends StatelessWidget {
       links.add(_Link('Telegram', CupertinoIcons.paperplane_fill, const Color(0xFF0088CC), info!.telegramUrl!));
     }
     if (info?.websiteUrl != null) {
-      links.add(_Link('Website', CupertinoIcons.globe, AppColors.textSecondary, info!.websiteUrl!));
+      links.add(_Link('Website', CupertinoIcons.globe, context.colors.textSecondary, info!.websiteUrl!));
     }
 
     Widget content;
     if (links.isEmpty) {
       content = Row(
         children: [
-          Icon(CupertinoIcons.link, size: 14, color: AppColors.textTertiary),
+          Icon(CupertinoIcons.link, size: 14, color: context.colors.textTertiary),
           const SizedBox(width: 6),
-          const Text('暂无社交信息',
-              style: TextStyle(fontSize: 13, color: AppColors.textTertiary)),
+          Text('暂无社交信息',
+              style: TextStyle(fontSize: 13, color: context.colors.textTertiary)),
         ],
       );
     } else {

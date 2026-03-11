@@ -10,7 +10,7 @@
 """
 
 import logging
-from typing import List
+from typing import Dict, List
 
 from database import get_db
 
@@ -33,7 +33,7 @@ def run_creator_stats_updater():
         return
 
     # 按 creator 分组统计
-    creator_stats: dict[str, dict] = {}
+    creator_stats: Dict[str, dict] = {}
     for row in res.data:
         creator = row.get("creator", "")
         if not creator:

@@ -43,7 +43,7 @@ class _BottomTabsSectionState extends State<BottomTabsSection> {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
-        color: AppColors.surface,
+        color: context.colors.cardGlass,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 2)),
@@ -65,7 +65,7 @@ class _BottomTabsSectionState extends State<BottomTabsSection> {
                       decoration: BoxDecoration(
                         border: Border(
                           bottom: BorderSide(
-                            color: selected ? AppColors.primary : Colors.transparent,
+                            color: selected ? context.colors.primary : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -76,7 +76,7 @@ class _BottomTabsSectionState extends State<BottomTabsSection> {
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                          color: selected ? AppColors.primary : AppColors.textSecondary,
+                          color: selected ? context.colors.primary : context.colors.textSecondary,
                         ),
                       ),
                     ),

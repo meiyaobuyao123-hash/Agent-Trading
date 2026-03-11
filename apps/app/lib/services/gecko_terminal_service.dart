@@ -50,9 +50,10 @@ class GeckoTerminalService {
       final attrs = (e as Map)['attributes'] as Map<String, dynamic>? ?? {};
       return {
         'kind': attrs['kind'] ?? '',
-        'volume_usd': (attrs['volume_in_usd'] as num?)?.toDouble() ?? 0,
-        'price_usd': (attrs['price_to_in_usd'] as num?)?.toDouble() ??
-            double.tryParse(attrs['price_to_in_usd']?.toString() ?? '') ?? 0,
+        'volume_usd': double.tryParse(attrs['volume_in_usd']?.toString() ?? '') ?? 0.0,
+        'price_usd': double.tryParse(attrs['price_to_in_usd']?.toString() ?? '') ?? 0.0,
+        'from_amount': double.tryParse(attrs['from_token_amount']?.toString() ?? '') ?? 0.0,
+        'to_amount': double.tryParse(attrs['to_token_amount']?.toString() ?? '') ?? 0.0,
         'timestamp': attrs['block_timestamp'] ?? '',
         'tx_hash': attrs['tx_hash'] ?? '',
         'maker': attrs['tx_from_address'] ?? '',

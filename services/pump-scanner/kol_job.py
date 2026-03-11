@@ -2,10 +2,11 @@
 KOL 系统调度入口 — APScheduler 任务
 
 定时任务：
-- 每 30 分钟：采集 KOL 推文
+- 每 30 分钟：采集 KOL 推文（twitterapi.io）
 - 每 30 分钟：分析未处理的推文
 - 每 1 小时：共振信号检测
 - 每 24 小时：KOL 准确率评估
+- 每 24 小时：同步 KOL 资料（粉丝数、bio 等）
 
 Python 3.9 兼容。
 """
@@ -32,6 +33,7 @@ async def run_kol_collect():
     KOL 推文采集任务
 
     每 30 分钟执行一次，采集所有活跃 KOL 的最新推文
+    数据源：twitterapi.io (按量付费 ~$0.60/天)
     """
     log.info("=== KOL 推文采集开始 ===")
     start = datetime.utcnow()
@@ -40,7 +42,7 @@ async def run_kol_collect():
         stats = await _collector.collect_all_kols(
             tweets_per_kol=20,
             batch_size=5,
-            delay_between_batches=5.0,
+            delay_between_batches=3.0,
         )
 
         total_tweets = sum(stats.values())
@@ -125,6 +127,25 @@ async def run_kol_accuracy_eval():
 
     except Exception as e:
         log.error(f"准确率评估失败: {e}")
+
+
+async def run_kol_profile_sync():
+    """
+    KOL 资料同步任务
+
+    每 24 小时执行一次，同步 KOL 的 Twitter 资料
+    （粉丝数、bio、tier 自动更新）
+    """
+    log.info("=== KOL 资料同步开始 ===")
+    start = datetime.utcnow()
+
+    try:
+        await _collector.sync_kol_profiles()
+        elapsed = (datetime.utcnow() - start).total_seconds()
+        log.info(f"KOL 资料同步完成, {elapsed:.1f}s")
+
+    except Exception as e:
+        log.error(f"KOL 资料同步失败: {e}")
 
 
 async def _evaluate_accuracy() -> int:

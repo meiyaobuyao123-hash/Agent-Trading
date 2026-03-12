@@ -34,7 +34,7 @@ if DEV_MODE:
 # FastAPI 安全方案
 security = HTTPBearer(auto_error=False)
 
-_DEV_USER_ID = "dev-user-00000000-0000-0000-0000-000000000000"
+_DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
 
 
 async def get_current_user(

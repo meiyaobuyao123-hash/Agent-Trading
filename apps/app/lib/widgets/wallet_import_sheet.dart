@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../services/wallet_service.dart';
 
@@ -45,6 +46,16 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
     _nameCtrl.dispose();
     _secretCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _pasteFromClipboard() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null && data!.text!.isNotEmpty) {
+      _secretCtrl.text = data.text!;
+      setState(() => _error = null);
+    } else {
+      setState(() => _error = '剪切板为空');
+    }
   }
 
   Future<void> _doImport() async {
@@ -161,8 +172,38 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
             ),
             const SizedBox(height: 12),
 
-            // ── 密钥输入 ──
+            // ── 密钥输入（含粘贴按钮） ──
             _buildSecretField(c),
+            const SizedBox(height: 8),
+
+            // ── 一键粘贴按钮 ──
+            GestureDetector(
+              onTap: _pasteFromClipboard,
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: c.primaryLight,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: c.primary.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.content_paste_rounded,
+                        size: 16, color: c.primary),
+                    const SizedBox(width: 6),
+                    Text(
+                      '从剪切板粘贴',
+                      style: TextStyle(
+                        color: c.primary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             const SizedBox(height: 8),
 
             // ── 错误提示 ──

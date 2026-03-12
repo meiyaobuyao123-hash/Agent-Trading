@@ -3,16 +3,6 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Agent API 服务 — 对接后端 FastAPI
-///
-/// 端点：
-///   POST /api/agent/chat         — 对话创建策略
-///   GET  /api/agent/strategies   — 策略列表
-///   POST /api/agent/strategies   — 创建策略
-///   PATCH /api/agent/strategies/:id — 更新策略
-///   DELETE /api/agent/strategies/:id — 删除策略
-///   GET  /api/agent/alerts       — 告警列表
-///   PATCH /api/agent/alerts/:id/read — 标记已读
-///   GET  /api/agent/alerts/unread-count — 未读数
 class AgentService {
   static final AgentService instance = AgentService._();
   AgentService._();
@@ -21,10 +11,8 @@ class AgentService {
 
   // TODO: 生产环境替换为实际部署地址
   static const _apiBase = 'http://localhost:8000';
-
   static const _timeout = Duration(seconds: 30);
 
-  /// 获取 JWT Token（从 Supabase session）
   String? get _token =>
       Supabase.instance.client.auth.currentSession?.accessToken;
 
@@ -33,17 +21,22 @@ class AgentService {
         if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
+  /// 解析后端错误信息
+  String _parseError(http.Response resp) {
+    try {
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      return body['detail'] as String? ?? '服务器错误 (${resp.statusCode})';
+    } catch (_) {
+      return '服务器错误 (${resp.statusCode})';
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   // 对话
   // ═══════════════════════════════════════════════════════
 
-  /// 发送对话消息，让 AI 解析为策略
-  ///
-  /// 返回 ChatResponse：
-  /// - strategy: 解析出的策略规范（可能为 null）
-  /// - message: AI 回复文本
-  /// - requires_confirmation: 是否需要用户确认创建
-  Future<ChatResponse?> chat(String message,
+  /// 发送对话消息，失败时抛 AgentException
+  Future<ChatResponse> chat(String message,
       {Map<String, dynamic>? context}) async {
     try {
       final resp = await _client
@@ -61,9 +54,11 @@ class AgentService {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         return ChatResponse.fromJson(data);
       }
-      return null;
-    } catch (_) {
-      return null;
+      throw AgentException(_parseError(resp));
+    } on AgentException {
+      rethrow;
+    } catch (e) {
+      throw AgentException('网络连接失败，请检查后端服务是否启动');
     }
   }
 
@@ -71,7 +66,6 @@ class AgentService {
   // 策略 CRUD
   // ═══════════════════════════════════════════════════════
 
-  /// 获取策略列表
   Future<List<AgentStrategy>> listStrategies({String? status}) async {
     try {
       var url = '$_apiBase/api/agent/strategies';
@@ -94,8 +88,8 @@ class AgentService {
     }
   }
 
-  /// 创建策略（用户确认后调用）
-  Future<AgentStrategy?> createStrategy(
+  /// 创建策略 — 失败时抛 AgentException（含具体错误信息）
+  Future<AgentStrategy> createStrategy(
     Map<String, dynamic> spec, {
     String? sourcePrompt,
   }) async {
@@ -115,14 +109,16 @@ class AgentService {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final s = data['strategy'] as Map<String, dynamic>?;
         if (s != null) return AgentStrategy.fromJson(s);
+        throw AgentException('返回数据格式异常');
       }
-      return null;
-    } catch (_) {
-      return null;
+      throw AgentException(_parseError(resp));
+    } on AgentException {
+      rethrow;
+    } catch (e) {
+      throw AgentException('网络错误: $e');
     }
   }
 
-  /// 更新策略状态
   Future<bool> updateStrategyStatus(String id, String status) async {
     try {
       final resp = await _client
@@ -138,7 +134,6 @@ class AgentService {
     }
   }
 
-  /// 删除策略
   Future<bool> deleteStrategy(String id) async {
     try {
       final resp = await _client
@@ -157,7 +152,6 @@ class AgentService {
   // 告警
   // ═══════════════════════════════════════════════════════
 
-  /// 获取告警列表
   Future<AlertsResponse?> listAlerts({
     int limit = 50,
     bool unreadOnly = false,
@@ -181,7 +175,6 @@ class AgentService {
     }
   }
 
-  /// 标记告警已读
   Future<bool> markAlertRead(String alertId) async {
     try {
       final resp = await _client
@@ -196,7 +189,6 @@ class AgentService {
     }
   }
 
-  /// 获取未读告警数
   Future<int> getUnreadCount() async {
     try {
       final resp = await _client
@@ -215,6 +207,17 @@ class AgentService {
       return 0;
     }
   }
+}
+
+// ═══════════════════════════════════════════════════════════
+// 异常类型
+// ═══════════════════════════════════════════════════════════
+
+class AgentException implements Exception {
+  final String message;
+  const AgentException(this.message);
+  @override
+  String toString() => message;
 }
 
 // ═══════════════════════════════════════════════════════════

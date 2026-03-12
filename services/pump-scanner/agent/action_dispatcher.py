@@ -202,21 +202,80 @@ class ActionDispatcher:
                 log.error(f"Failed to create risk block alert: {e}")
             return
 
-        # 风控通过 — 记录日志（Phase 3 执行交易）
+        # 风控通过 — 执行真实交易
         log.info(
-            f"[Trade TODO] {action_type} ${amount_usd} of "
+            f"Trade APPROVED: {action_type} ${amount_usd} of "
             f"{event.token_name} on {chain} (risk: {risk_result.risk_level})"
         )
 
-        # Phase 3: OKX DEX v6 API
-        # from agent.trade_executor import execute_trade
-        # result = await execute_trade(event, action)
-        # if result.success:
-        #     risk_mgr.record_trade(
-        #         token_address=token_address, chain=chain,
-        #         action=action_type, amount_usd=amount_usd,
-        #         price=result.price, pnl_usd=result.pnl,
-        #     )
+        # OKX DEX v6 Swap 执行
+        from agent.trade_executor import get_trade_executor
+        executor = get_trade_executor()
+        slippage = action.get("max_slippage_pct", 1.0)
+
+        result = await executor.execute_trade(
+            chain=chain,
+            token_address=token_address,
+            action=action_type,
+            amount_usd=amount_usd,
+            slippage_pct=slippage,
+        )
+
+        if result.success:
+            risk_mgr.record_trade(
+                token_address=token_address, chain=chain,
+                action=action_type, amount_usd=amount_usd,
+                price=result.price, pnl_usd=0.0,
+            )
+            # 写入成功告警
+            try:
+                get_db().table("agent_alerts").insert({
+                    "user_id": event.user_id,
+                    "strategy_id": event.strategy_id,
+                    "trigger_context": {
+                        "type": "trade_executed",
+                        "action": action_type,
+                        "amount_usd": amount_usd,
+                        "tx_hash": result.tx_hash,
+                        "price": result.price,
+                        "to_amount": result.to_amount,
+                    },
+                    "token_address": token_address,
+                    "token_name": event.token_name,
+                    "chain": chain,
+                    "title": f"Trade Executed: {action_type.upper()} {event.token_name}",
+                    "message": f"{action_type.upper()} ${amount_usd} → tx: {result.tx_hash[:16]}...",
+                    "severity": "info",
+                    "is_read": False,
+                    "is_pushed": False,
+                }).execute()
+            except Exception as e:
+                log.error(f"Failed to create trade alert: {e}")
+        else:
+            log.error(
+                f"Trade FAILED: {action_type} {event.token_name} — {result.error}"
+            )
+            try:
+                get_db().table("agent_alerts").insert({
+                    "user_id": event.user_id,
+                    "strategy_id": event.strategy_id,
+                    "trigger_context": {
+                        "type": "trade_failed",
+                        "action": action_type,
+                        "amount_usd": amount_usd,
+                        "error": result.error,
+                    },
+                    "token_address": token_address,
+                    "token_name": event.token_name,
+                    "chain": chain,
+                    "title": f"Trade Failed: {action_type.upper()} {event.token_name}",
+                    "message": f"Error: {result.error[:100]}",
+                    "severity": "warning",
+                    "is_read": False,
+                    "is_pushed": False,
+                }).execute()
+            except Exception as e:
+                log.error(f"Failed to create trade fail alert: {e}")
 
     def _render_template(
         self,

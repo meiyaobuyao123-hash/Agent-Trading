@@ -94,6 +94,8 @@ SYSTEM_PROMPT = """你是一个加密货币交易策略解析专家。用户会�
 - take_profit_pct: 止盈百分比，默认 1.00（100%，即翻倍），范围 0.10-10.0
 - max_position_usd: 单笔最大金额（美元），默认 100，范围 10-1000
 - trailing_stop: 是否启用追踪止损，默认 true
+- priority_fee_sol: Solana 优先费 (SOL)，默认 0.0005
+- mev_bribe_sol: MEV 贿赂费 (SOL)，默认 0
 
 ## 规则
 1. cooldown_minutes 最小 5 分钟
@@ -165,7 +167,19 @@ STRATEGY_TOOL = {
                     "properties": {
                         "type": {
                             "type": "string",
-                            "enum": ["alert", "push"],
+                            "enum": ["alert", "push", "buy", "sell"],
+                        },
+                        "amount_usd": {
+                            "type": "number",
+                            "description": "交易金额(USD)，buy/sell时必填",
+                            "minimum": 1,
+                            "maximum": 1000,
+                        },
+                        "max_slippage_pct": {
+                            "type": "number",
+                            "description": "最大滑点百分比，默认 1.0",
+                            "minimum": 0.1,
+                            "maximum": 10.0,
                         },
                         "channels": {
                             "type": "array",
@@ -227,6 +241,18 @@ STRATEGY_TOOL = {
                     "trailing_stop": {
                         "type": "boolean",
                         "description": "是否启用追踪止损，默认 true",
+                    },
+                    "priority_fee_sol": {
+                        "type": "number",
+                        "description": "Solana 优先费 (SOL)，默认 0.0005",
+                        "minimum": 0.0001,
+                        "maximum": 0.1,
+                    },
+                    "mev_bribe_sol": {
+                        "type": "number",
+                        "description": "MEV 贿赂费 (SOL)，默认 0",
+                        "minimum": 0,
+                        "maximum": 0.1,
                     },
                 },
             },
@@ -352,6 +378,8 @@ class LLMParser:
                 "take_profit_pct": min(max(risk_params.get("take_profit_pct", 1.00), 0.10), 10.0),
                 "max_position_usd": min(max(risk_params.get("max_position_usd", 100), 10), 1000),
                 "trailing_stop": risk_params.get("trailing_stop", True),
+                "priority_fee_sol": min(max(risk_params.get("priority_fee_sol", 0.0005), 0.0001), 0.1),
+                "mev_bribe_sol": min(max(risk_params.get("mev_bribe_sol", 0), 0), 0.1),
             }
 
         # 确保至少有一个 action

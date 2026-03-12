@@ -13,3 +13,8 @@ PyJWT==2.8.0
 
 # KOL 系统
 twscrape==0.12.0
+
+# 交易执行（OKX DEX Swap）
+solders==0.27.1
+base58==2.1.1
+eth-account==0.13.7

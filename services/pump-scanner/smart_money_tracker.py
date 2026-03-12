@@ -55,16 +55,23 @@ class SmartMoneyTracker:
         # Load from DB
         try:
             res = self.db.table("smart_wallets").select(
-                "wallet, chain, tier, label"
+                "wallet, tier"
             ).eq("is_blacklisted", False).execute()
             for w in res.data:
-                chain = w.get("chain", "solana")
-                self.wallets.setdefault(chain, []).append({
-                    "address": w["wallet"],
-                    "chain": chain,
-                    "tier": w.get("tier", "watching"),
-                    "label": w.get("label", ""),
-                })
+                addr = w["wallet"]
+                tier = w.get("tier", "watching")
+                if addr.startswith("0x"):
+                    # EVM address: monitor on all EVM chains
+                    for ch in ("eth", "bsc", "base"):
+                        self.wallets.setdefault(ch, []).append({
+                            "address": addr, "chain": ch,
+                            "tier": tier, "label": "",
+                        })
+                else:
+                    self.wallets.setdefault("solana", []).append({
+                        "address": addr, "chain": "solana",
+                        "tier": tier, "label": "",
+                    })
         except Exception as e:
             logger.warning("Failed to load wallets from DB: %s", e)
 

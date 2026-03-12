@@ -21,7 +21,7 @@ class SupabaseService {
   // 历史推荐（最近 N 天）
   // ─────────────────────────────────────────────────
   Future<Map<String, List<DailyPick>>> fetchHistoryPicks({int days = 14}) async {
-    final until = DateTime.now().subtract(const Duration(days: 1));
+    final until = DateTime.now().toUtc().subtract(const Duration(days: 1));
     final from  = until.subtract(Duration(days: days));
 
     final res = await _db
@@ -118,7 +118,7 @@ class SupabaseService {
         .toList();
   }
 
-  String _todayStr() => _dateStr(DateTime.now());
+  String _todayStr() => _dateStr(DateTime.now().toUtc());
   String _dateStr(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

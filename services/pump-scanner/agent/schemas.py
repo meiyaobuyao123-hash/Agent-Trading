@@ -127,9 +127,17 @@ class ActionSpec(BaseModel):
         default=AlertSeverity.INFO,
         description="告警级别"
     )
-    # Phase 3 交易参数
+    # 交易参数
     amount_usd: Optional[float] = Field(None, description="交易金额 (USD)")
     max_slippage_pct: Optional[float] = Field(None, description="最大滑点 %")
+    # 风控参数
+    stop_loss_pct: Optional[float] = Field(None, description="止损百分比 0.05-0.50")
+    take_profit_pct: Optional[float] = Field(None, description="止盈百分比 0.10-10.0")
+    max_position_usd: Optional[float] = Field(None, description="单笔最大金额 (USD)")
+    trailing_stop: Optional[bool] = Field(None, description="是否启用追踪止损")
+    # 交易执行参数（策略级）
+    priority_fee_sol: Optional[float] = Field(None, description="Solana 优先费 (SOL)")
+    mev_bribe_sol: Optional[float] = Field(None, description="MEV 贿赂费 (SOL)")
 
     class Config:
         use_enum_values = True

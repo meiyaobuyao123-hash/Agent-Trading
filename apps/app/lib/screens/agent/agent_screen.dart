@@ -94,6 +94,7 @@ class _ChatTabState extends State<_ChatTab> {
   /// 待确认的策略规范
   Map<String, dynamic>? _pendingStrategy;
   String? _pendingPrompt;
+  String? _strategyError;
 
   @override
   void initState() {
@@ -104,7 +105,7 @@ class _ChatTabState extends State<_ChatTab> {
           '你可以告诉我你的策略想法，比如：\n'
           '• "帮我找内盘进度 10%-25%、买卖比 > 2 的代币"\n'
           '• "当某代币有3个聪明钱买入时，提醒我"\n'
-          '• "监控 KOL 共振信号强度 > 5 的代币"\n\n'
+          '• "自动买入评分>85的热币，止损20%，止盈3倍"\n\n'
           '我会把你的想法转化为自动化策略。',
     ));
   }
@@ -127,66 +128,72 @@ class _ChatTabState extends State<_ChatTab> {
     _controller.clear();
     _scrollToBottom();
 
-    final response = await AgentService.instance.chat(text);
-
-    if (!mounted) return;
-
-    if (response == null) {
-      setState(() {
-        _messages.add(_ChatMessage(
-          isUser: false,
-          text: '网络连接失败，请检查后端服务是否启动。',
-        ));
-        _sending = false;
-      });
-    } else {
+    try {
+      final response = await AgentService.instance.chat(text);
+      if (!mounted) return;
       setState(() {
         _messages.add(_ChatMessage(isUser: false, text: response.message));
         if (response.requiresConfirmation && response.strategy != null) {
           _pendingStrategy = response.strategy;
           _pendingPrompt = text;
+          _strategyError = null;
         }
+        _sending = false;
+      });
+    } on AgentException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _messages.add(_ChatMessage(isUser: false, text: e.message));
         _sending = false;
       });
     }
     _scrollToBottom();
   }
 
-  Future<void> _confirmStrategy() async {
-    if (_pendingStrategy == null) return;
-    setState(() => _sending = true);
+  /// 确认创建策略 — 由 ConfirmCard 调用，返回 true 表示成功
+  Future<bool> _confirmStrategy(Map<String, dynamic> extraParams) async {
+    if (_pendingStrategy == null) return false;
 
-    final result = await AgentService.instance.createStrategy(
-      _pendingStrategy!,
-      sourcePrompt: _pendingPrompt,
-    );
+    // 合并交易参数到策略 risk_params
+    final spec = Map<String, dynamic>.from(_pendingStrategy!);
+    if (extraParams.isNotEmpty) {
+      spec['risk_params'] = {
+        ...?(spec['risk_params'] as Map<String, dynamic>?),
+        ...extraParams,
+      };
+    }
 
-    if (!mounted) return;
-    setState(() {
-      if (result != null) {
+    try {
+      final result = await AgentService.instance.createStrategy(
+        spec,
+        sourcePrompt: _pendingPrompt,
+      );
+      if (!mounted) return false;
+      setState(() {
         _messages.add(_ChatMessage(
           isUser: false,
           text: '策略「${result.name}」已创建并激活！\n'
               '系统将每 30 秒检查条件。\n'
               '可在「我的策略」标签页管理。',
         ));
-      } else {
-        _messages.add(_ChatMessage(
-          isUser: false,
-          text: '策略创建失败，请稍后重试。',
-        ));
-      }
-      _pendingStrategy = null;
-      _pendingPrompt = null;
-      _sending = false;
-    });
-    _scrollToBottom();
+        _pendingStrategy = null;
+        _pendingPrompt = null;
+        _strategyError = null;
+      });
+      _scrollToBottom();
+      return true;
+    } on AgentException catch (e) {
+      if (!mounted) return false;
+      setState(() => _strategyError = e.message);
+      return false;
+    }
   }
 
   void _cancelStrategy() {
     setState(() {
       _pendingStrategy = null;
       _pendingPrompt = null;
+      _strategyError = null;
       _messages.add(_ChatMessage(
         isUser: false,
         text: '已取消。你可以继续描述其他策略想法。',
@@ -230,6 +237,7 @@ class _ChatTabState extends State<_ChatTab> {
               if (_pendingStrategy != null && i == _messages.length) {
                 return _ConfirmCard(
                   strategy: _pendingStrategy!,
+                  error: _strategyError,
                   onConfirm: _confirmStrategy,
                   onCancel: _cancelStrategy,
                 );
@@ -435,13 +443,21 @@ class _PulseDotState extends State<_PulseDot>
   }
 }
 
-/// 策略确认卡片（含钱包选择）
+/// 策略确认卡片 — 含钱包选择 + 止盈止损 + 交易参数
+///
+/// UX 设计：
+/// 1. 点击「创建策略」→ 按钮显示 loading → 调用 API
+/// 2. 成功 → 卡片消失 → 成功消息出现在聊天中
+/// 3. 失败 → 卡片保留，显示错误，按钮恢复可点击
+/// 4. 点击「取消」→ 卡片立刻消失 → 取消消息
 class _ConfirmCard extends StatefulWidget {
   final Map<String, dynamic> strategy;
-  final VoidCallback onConfirm;
+  final String? error;
+  final Future<bool> Function(Map<String, dynamic> params) onConfirm;
   final VoidCallback onCancel;
   const _ConfirmCard({
     required this.strategy,
+    this.error,
     required this.onConfirm,
     required this.onCancel,
   });
@@ -452,6 +468,15 @@ class _ConfirmCard extends StatefulWidget {
 
 class _ConfirmCardState extends State<_ConfirmCard> {
   String? _selectedWalletId;
+  bool _loading = false;
+  bool _showAdvanced = false;
+
+  // 交易参数
+  double _slippage = 1.0;
+  double _stopLoss = 30.0;
+  double _takeProfit = 100.0;
+  double _priorityFee = 0.0005;
+  double _mevBribe = 0.0;
 
   @override
   void initState() {
@@ -459,6 +484,32 @@ class _ConfirmCardState extends State<_ConfirmCard> {
     final wallets = WalletService.instance.wallets;
     if (wallets.isNotEmpty) {
       _selectedWalletId = WalletService.instance.defaultWalletId ?? wallets.first.id;
+    }
+    // 从策略的 risk_params 初始化默认值
+    final rp = widget.strategy['risk_params'] as Map<String, dynamic>?;
+    if (rp != null) {
+      _stopLoss = ((rp['stop_loss_pct'] as num?) ?? 0.30) * 100;
+      _takeProfit = ((rp['take_profit_pct'] as num?) ?? 1.0) * 100;
+      _slippage = (rp['max_slippage_pct'] as num?)?.toDouble() ?? 1.0;
+      _priorityFee = (rp['priority_fee_sol'] as num?)?.toDouble() ?? 0.0005;
+      _mevBribe = (rp['mev_bribe_sol'] as num?)?.toDouble() ?? 0.0;
+    }
+  }
+
+  Future<void> _handleConfirm() async {
+    setState(() => _loading = true);
+    final params = <String, dynamic>{
+      'stop_loss_pct': _stopLoss / 100,
+      'take_profit_pct': _takeProfit / 100,
+      'max_slippage_pct': _slippage,
+      'priority_fee_sol': _priorityFee,
+      'mev_bribe_sol': _mevBribe,
+      'trailing_stop': true,
+      if (_selectedWalletId != null) 'wallet_id': _selectedWalletId,
+    };
+    final success = await widget.onConfirm(params);
+    if (mounted && !success) {
+      setState(() => _loading = false);
     }
   }
 
@@ -469,6 +520,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
     final desc = widget.strategy['description'] as String? ?? '';
     final cooldown = widget.strategy['cooldown_minutes'] as int? ?? 30;
     final wallets = WalletService.instance.wallets;
+    final hasTradeAction = _hasTradeAction();
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -482,6 +534,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── 策略名称 ──
             Row(
               children: [
                 Icon(Icons.auto_graph_rounded, color: c.primary, size: 18),
@@ -500,15 +553,59 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               const SizedBox(height: 6),
               Text(desc,
                   style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 13,
-                    height: 1.4,
+                    color: c.textSecondary, fontSize: 13, height: 1.4,
                   )),
             ],
             const SizedBox(height: 4),
             Text('冷却时间: $cooldown分钟',
                 style: TextStyle(color: c.textTertiary, fontSize: 12)),
-            // ── 钱包选择 ────────────────
+
+            // ── 止盈止损摘要（交易策略时显示） ──
+            if (hasTradeAction) ...[
+              const SizedBox(height: 12),
+              _paramRow(c, '止损', '${_stopLoss.toStringAsFixed(0)}%',
+                  Icons.trending_down, c.danger),
+              const SizedBox(height: 6),
+              _paramRow(c, '止盈', '${_takeProfit.toStringAsFixed(0)}%',
+                  Icons.trending_up, c.success),
+              const SizedBox(height: 6),
+              _paramRow(c, '滑点', '${_slippage.toStringAsFixed(1)}%',
+                  Icons.swap_horiz, c.warning),
+            ],
+
+            // ── 高级参数折叠区 ──
+            if (hasTradeAction) ...[
+              const SizedBox(height: 8),
+              GestureDetector(
+                onTap: () => setState(() => _showAdvanced = !_showAdvanced),
+                child: Row(
+                  children: [
+                    Icon(
+                      _showAdvanced ? Icons.expand_less : Icons.expand_more,
+                      color: c.textTertiary, size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text('高级交易设置',
+                        style: TextStyle(color: c.textTertiary, fontSize: 12)),
+                  ],
+                ),
+              ),
+              if (_showAdvanced) ...[
+                const SizedBox(height: 8),
+                _slider(c, '止损', _stopLoss, 5, 50,
+                    (v) => setState(() => _stopLoss = v), '%'),
+                _slider(c, '止盈', _takeProfit, 10, 1000,
+                    (v) => setState(() => _takeProfit = v), '%'),
+                _slider(c, '滑点', _slippage, 0.1, 10,
+                    (v) => setState(() => _slippage = v), '%'),
+                _slider(c, '优先费', _priorityFee, 0.0001, 0.01,
+                    (v) => setState(() => _priorityFee = v), ' SOL'),
+                _slider(c, 'MEV', _mevBribe, 0, 0.01,
+                    (v) => setState(() => _mevBribe = v), ' SOL'),
+              ],
+            ],
+
+            // ── 钱包选择 ──
             if (wallets.isNotEmpty) ...[
               const SizedBox(height: 10),
               Text('交易钱包', style: TextStyle(
@@ -545,7 +642,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                         ],
                       ),
                     )).toList(),
-                    onChanged: (v) => setState(() => _selectedWalletId = v),
+                    onChanged: _loading ? null : (v) => setState(() => _selectedWalletId = v),
                   ),
                 ),
               ),
@@ -571,12 +668,36 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                 ),
               ),
             ],
+
+            // ── 错误提示 ──
+            if (widget.error != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: c.dangerLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, color: c.danger, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(widget.error!,
+                          style: TextStyle(color: c.danger, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            // ── 操作按钮 ──
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: widget.onCancel,
+                    onPressed: _loading ? null : widget.onCancel,
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: c.border),
                       shape: RoundedRectangleBorder(
@@ -589,20 +710,96 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    onPressed: widget.onConfirm,
+                    onPressed: _loading ? null : _handleConfirm,
                     style: FilledButton.styleFrom(
                       backgroundColor: c.primary,
+                      disabledBackgroundColor: c.primary.withValues(alpha: 0.5),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: const Text('创建策略',
-                        style: TextStyle(color: Colors.white)),
+                    child: _loading
+                        ? const SizedBox(
+                            width: 18, height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              valueColor: AlwaysStoppedAnimation(Colors.white),
+                            ))
+                        : const Text('创建策略',
+                            style: TextStyle(color: Colors.white)),
                   ),
                 ),
               ],
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _hasTradeAction() {
+    final actions = widget.strategy['actions'] as List?;
+    if (actions == null) return false;
+    return actions.any((a) {
+      final type = (a as Map<String, dynamic>?)?['type'] as String?;
+      return type == 'buy' || type == 'sell';
+    });
+  }
+
+  Widget _paramRow(
+      AppColorScheme c, String label, String value, IconData icon, Color color) {
+    return Row(
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 6),
+        Text(label, style: TextStyle(color: c.textSecondary, fontSize: 12)),
+        const Spacer(),
+        Text(value, style: TextStyle(
+            color: c.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+      ],
+    );
+  }
+
+  Widget _slider(AppColorScheme c, String label, double value,
+      double min, double max, ValueChanged<double> onChanged, String suffix) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 52,
+            child: Text(label,
+                style: TextStyle(color: c.textSecondary, fontSize: 11)),
+          ),
+          Expanded(
+            child: SliderTheme(
+              data: SliderThemeData(
+                trackHeight: 2,
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                activeTrackColor: c.primary,
+                inactiveTrackColor: c.border,
+                thumbColor: c.primary,
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+              ),
+              child: Slider(
+                value: value.clamp(min, max),
+                min: min,
+                max: max,
+                onChanged: onChanged,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 60,
+            child: Text(
+              suffix == '%'
+                  ? '${value.toStringAsFixed(value < 1 ? 1 : 0)}$suffix'
+                  : '${value.toStringAsFixed(4)}$suffix',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                  color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -628,7 +825,7 @@ class _ChatInput extends StatelessWidget {
       ),
       padding: EdgeInsets.fromLTRB(
         16, 10, 16,
-        MediaQuery.of(context).padding.bottom + 80, // 安全区 + 浮动导航栏高度
+        MediaQuery.of(context).padding.bottom + 80,
       ),
       child: Row(
         children: [
@@ -869,7 +1066,7 @@ class _StrategyCard extends StatelessWidget {
             children: [
               Icon(Icons.bolt, size: 12, color: c.textTertiary),
               const SizedBox(width: 3),
-              Text('${strategy.triggerCount}次触发', // ignore: unnecessary_brace_in_string_interps
+              Text('${strategy.triggerCount}次触发',
                   style: TextStyle(color: c.textTertiary, fontSize: 11)),
               const SizedBox(width: 8),
               Icon(Icons.timer, size: 12, color: c.textTertiary),

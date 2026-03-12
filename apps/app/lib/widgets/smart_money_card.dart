@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import '../models/smart_money_signal.dart';
 import '../theme/app_colors.dart';
 
-/// 聪明钱信号卡片
-/// 显示: 代币头像 | Symbol·Chain | 买入/卖出钱包数 + 量 | 价格 + 热度
+/// 聪明钱信号卡片（重设计版）
+/// 4行布局: 代币信息 | 市值·流动性 | 流量条 | 钱包数·净流·涨跌
 class SmartMoneyCard extends StatefulWidget {
   final SmartMoneySignal signal;
   final int rank;
@@ -44,139 +44,149 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
         curve: Curves.easeOut,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── 排名 ────────────────────
-              SizedBox(
-                width: 24,
-                child: widget.rank <= 3
-                    ? _RankMedal(rank: widget.rank)
-                    : Text(
-                        '${widget.rank}',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: c.textTertiary,
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 8),
-
-              // ── 头像 ────────────────────
-              _SignalAvatar(signal: sig, size: 38),
-              const SizedBox(width: 10),
-
-              // ── 中间：名称 + 买卖指标 ────
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            sig.tokenSymbol.isNotEmpty
-                                ? sig.tokenSymbol.toUpperCase()
-                                : sig.tokenAddress.substring(0, 6),
+              // ── 第1行: 排名 + 头像 + Symbol + Chain + Signal + timeAgo ──
+              Row(
+                children: [
+                  SizedBox(
+                    width: 24,
+                    child: widget.rank <= 3
+                        ? _RankMedal(rank: widget.rank)
+                        : Text(
+                            '${widget.rank}',
+                            textAlign: TextAlign.center,
                             style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: c.textPrimary,
-                              letterSpacing: -0.3,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: c.textTertiary,
+                              fontFeatures: const [FontFeature.tabularFigures()],
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                        const SizedBox(width: 5),
-                        _ChainBadge(chain: sig.chain),
-                        if (isStrong) ...[
-                          const SizedBox(width: 4),
-                          _SignalBadge(strength: sig.signalStrength),
-                        ],
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-                    // 买卖指标行
-                    Row(
+                  ),
+                  const SizedBox(width: 8),
+                  _SignalAvatar(signal: sig, size: 36),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // 买入
-                        Icon(Icons.arrow_upward_rounded, size: 10,
-                            color: c.success),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${sig.uniqueBuyers}钱包',
-                          style: TextStyle(
-                            fontSize: 11, color: c.success,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        // 卖出
-                        Icon(Icons.arrow_downward_rounded, size: 10,
-                            color: c.danger),
-                        const SizedBox(width: 2),
-                        Text(
-                          '${sig.uniqueSellers}钱包',
-                          style: TextStyle(
-                            fontSize: 11, color: c.danger,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (sig.eliteBuyCount > 0) ...[
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: c.accentGold.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                            child: Text(
-                              '${sig.eliteBuyCount}精英',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w700,
-                                color: c.accentGold,
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                sig.tokenSymbol.isNotEmpty
+                                    ? sig.tokenSymbol.toUpperCase()
+                                    : sig.tokenAddress.substring(0, 6),
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: c.textPrimary,
+                                  letterSpacing: -0.3,
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: 5),
+                            _ChainBadge(chain: sig.chain),
+                            if (isStrong) ...[
+                              const SizedBox(width: 4),
+                              _SignalBadge(strength: sig.signalStrength),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        // 市值 · 流动性
+                        Text(
+                          'MC ${sig.marketCapShort} · 流动性 ${sig.liquidityShort}',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: c.textTertiary,
                           ),
-                        ],
+                        ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // ── 右侧：价格 + 热度 ─────────
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (sig.priceUsd > 0)
-                    Text(
-                      _fmtPrice(sig.priceUsd),
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: c.textPrimary,
-                        letterSpacing: -0.5,
-                        fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                  // timeAgo + 价格
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      if (sig.priceUsd > 0)
+                        Text(
+                          _fmtPrice(sig.priceUsd),
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: c.textPrimary,
+                            letterSpacing: -0.5,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      const SizedBox(height: 2),
+                      Text(
+                        sig.timeAgo,
+                        style: TextStyle(fontSize: 11, color: c.textTertiary),
                       ),
-                    )
-                  else
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              // ── 第2行: 流量条 ──
+              Padding(
+                padding: const EdgeInsets.only(left: 32),
+                child: _FlowBar(signal: sig),
+              ),
+
+              const SizedBox(height: 6),
+
+              // ── 第3行: 钱包数 + 净流 + 涨跌 ──
+              Padding(
+                padding: const EdgeInsets.only(left: 32),
+                child: Row(
+                  children: [
+                    // 买入钱包
+                    Icon(Icons.arrow_upward_rounded, size: 10, color: c.success),
+                    const SizedBox(width: 2),
                     Text(
-                      sig.timeAgo,
+                      '${sig.uniqueBuyers}钱包',
                       style: TextStyle(
-                        fontSize: 12, color: c.textTertiary,
+                        fontSize: 11, color: c.success,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                  const SizedBox(height: 4),
-                  _HeatBox(score: sig.heatScore, isBullish: sig.isBullish),
-                ],
+                    if (sig.eliteBuyCount > 0) ...[
+                      Text(
+                        '(${sig.eliteBuyCount}精英)',
+                        style: TextStyle(
+                          fontSize: 9, color: c.accentGold,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+                    // 卖出钱包
+                    Icon(Icons.arrow_downward_rounded, size: 10, color: c.danger),
+                    const SizedBox(width: 2),
+                    Text(
+                      '${sig.uniqueSellers}钱包',
+                      style: TextStyle(
+                        fontSize: 11, color: c.danger,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const Spacer(),
+                    // 净流入
+                    _NetFlowChip(signal: sig),
+                    const SizedBox(width: 6),
+                    // 涨跌幅
+                    if (sig.priceChange24h != 0)
+                      _ChangeChip(change: sig.priceChange24h),
+                  ],
+                ),
               ),
             ],
           ),
@@ -191,6 +201,136 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
     if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
     if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
     return '\$${p.toStringAsFixed(8)}';
+  }
+}
+
+// ─── 流量条: 绿(买入)/红(卖出) 比例可视化 ──────────────
+class _FlowBar extends StatelessWidget {
+  final SmartMoneySignal signal;
+  const _FlowBar({required this.signal});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final ratio = signal.buyVolumeRatio;
+    final buyFlex = (ratio * 100).round().clamp(5, 95);
+    final sellFlex = 100 - buyFlex;
+
+    return Column(
+      children: [
+        // 流量条
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: SizedBox(
+            height: 6,
+            child: Row(
+              children: [
+                Expanded(
+                  flex: buyFlex,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [c.success, c.success.withValues(alpha: 0.7)],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 1),
+                Expanded(
+                  flex: sellFlex,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [c.danger.withValues(alpha: 0.7), c.danger],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 3),
+        // 金额标注
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '买 ${signal.buyVolumeShort}',
+              style: TextStyle(
+                fontSize: 10, color: c.success,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              '卖 ${signal.sellVolumeShort}',
+              style: TextStyle(
+                fontSize: 10, color: c.danger,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+// ─── 净流入胶囊 ─────────────────────────────────
+class _NetFlowChip extends StatelessWidget {
+  final SmartMoneySignal signal;
+  const _NetFlowChip({required this.signal});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final isPos = signal.netFlowUsd >= 0;
+    final color = isPos ? c.success : c.danger;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        '净${signal.netFlowShort}',
+        style: TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w700,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ─── 涨跌幅胶囊 ─────────────────────────────────
+class _ChangeChip extends StatelessWidget {
+  final double change;
+  const _ChangeChip({required this.change});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final isPos = change >= 0;
+    final color = isPos ? c.success : c.danger;
+    final text = isPos
+        ? '+${change.toStringAsFixed(1)}%'
+        : '${change.toStringAsFixed(1)}%';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+      decoration: BoxDecoration(
+        gradient: isPos ? c.successGradient : c.dangerGradient,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          fontSize: 10, fontWeight: FontWeight.w700,
+          color: Colors.white,
+          fontFeatures: [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
   }
 }
 
@@ -337,41 +477,6 @@ class _SignalBadge extends StatelessWidget {
       child: Text(label, style: const TextStyle(
         color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800, letterSpacing: 0.5,
       )),
-    );
-  }
-}
-
-// ─── 热度框（替代涨跌框）─────────────────────────
-class _HeatBox extends StatelessWidget {
-  final double score;
-  final bool isBullish;
-  const _HeatBox({required this.score, required this.isBullish});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final gradient = isBullish ? c.successGradient : c.dangerGradient;
-    final label = isBullish ? '+${score.toStringAsFixed(0)}' : score.toStringAsFixed(0);
-
-    return Container(
-      constraints: const BoxConstraints(minWidth: 56),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      decoration: BoxDecoration(
-        gradient: gradient,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: [BoxShadow(
-          color: (isBullish ? c.success : c.danger).withValues(alpha: 0.2),
-          blurRadius: 4, offset: const Offset(0, 1),
-        )],
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        '$label 热度',
-        style: const TextStyle(
-          color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700,
-          fontFeatures: [FontFeature.tabularFigures()],
-        ),
-      ),
     );
   }
 }

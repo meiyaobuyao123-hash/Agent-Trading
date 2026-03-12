@@ -149,6 +149,33 @@ class AgentService {
   }
 
   // ═══════════════════════════════════════════════════════
+  // 交易记录
+  // ═══════════════════════════════════════════════════════
+
+  Future<ExecutionsResponse?> listExecutions(
+    String strategyId, {
+    int limit = 100,
+  }) async {
+    try {
+      final resp = await _client
+          .get(
+            Uri.parse(
+                '$_apiBase/api/agent/executions/$strategyId?limit=$limit'),
+            headers: _headers,
+          )
+          .timeout(_timeout);
+
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return ExecutionsResponse.fromJson(data);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
   // 告警
   // ═══════════════════════════════════════════════════════
 
@@ -356,5 +383,163 @@ class AlertsResponse {
             .toList(),
         total: json['total'] as int? ?? 0,
         unreadCount: json['unread_count'] as int? ?? 0,
+      );
+}
+
+// ═══════════════════════════════════════════════════════════
+// 交易记录模型
+// ═══════════════════════════════════════════════════════════
+
+class AgentExecution {
+  final String id;
+  final String? strategyId;
+  final String? chain;
+  final String? tokenAddress;
+  final String action; // buy / sell
+  final double amountUsd;
+  final double amountToken;
+  final String status; // pending / submitted / confirmed / failed
+  final String? txHash;
+  final double executedPrice;
+  final double slippagePct;
+  final double gasFeeUsd;
+  final String? errorMessage;
+  final String createdAt;
+  final String? confirmedAt;
+
+  const AgentExecution({
+    required this.id,
+    this.strategyId,
+    this.chain,
+    this.tokenAddress,
+    required this.action,
+    this.amountUsd = 0,
+    this.amountToken = 0,
+    required this.status,
+    this.txHash,
+    this.executedPrice = 0,
+    this.slippagePct = 0,
+    this.gasFeeUsd = 0,
+    this.errorMessage,
+    required this.createdAt,
+    this.confirmedAt,
+  });
+
+  factory AgentExecution.fromJson(Map<String, dynamic> json) =>
+      AgentExecution(
+        id: json['id'] as String? ?? '',
+        strategyId: json['strategy_id'] as String?,
+        chain: json['chain'] as String?,
+        tokenAddress: json['token_address'] as String?,
+        action: json['action'] as String? ?? 'buy',
+        amountUsd: (json['amount_usd'] as num?)?.toDouble() ?? 0,
+        amountToken: (json['amount_token'] as num?)?.toDouble() ?? 0,
+        status: json['status'] as String? ?? 'pending',
+        txHash: json['tx_hash'] as String?,
+        executedPrice: (json['executed_price'] as num?)?.toDouble() ?? 0,
+        slippagePct: (json['slippage_pct'] as num?)?.toDouble() ?? 0,
+        gasFeeUsd: (json['gas_fee_usd'] as num?)?.toDouble() ?? 0,
+        errorMessage: json['error_message'] as String?,
+        createdAt: json['created_at'] as String? ?? '',
+        confirmedAt: json['confirmed_at'] as String?,
+      );
+
+  bool get isBuy => action == 'buy';
+  bool get isConfirmed => status == 'confirmed';
+  bool get isFailed => status == 'failed';
+
+  String get chainLabel => switch (chain) {
+    'solana' => 'SOL',
+    'bsc' => 'BSC',
+    'base' => 'BASE',
+    'eth' => 'ETH',
+    _ => chain?.toUpperCase() ?? '',
+  };
+
+  String get statusLabel => switch (status) {
+    'confirmed' => '已确认',
+    'failed' => '失败',
+    'submitted' => '提交中',
+    'pending' => '等待中',
+    _ => status,
+  };
+
+  String get timeAgo {
+    if (createdAt.isEmpty) return '';
+    try {
+      final dt = DateTime.parse(createdAt);
+      final diff = DateTime.now().toUtc().difference(dt);
+      if (diff.inMinutes < 1) return '刚刚';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m前';
+      if (diff.inHours < 24) return '${diff.inHours}h前';
+      return '${diff.inDays}d前';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  String get addressShort {
+    final addr = tokenAddress ?? '';
+    if (addr.length < 12) return addr;
+    return '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}';
+  }
+}
+
+class ExecutionSummary {
+  final double totalBuyUsd;
+  final double totalSellUsd;
+  final double realizedPnl;
+  final double totalGasUsd;
+  final int buyCount;
+  final int sellCount;
+  final int confirmedCount;
+  final int failedCount;
+  final int totalCount;
+
+  const ExecutionSummary({
+    this.totalBuyUsd = 0,
+    this.totalSellUsd = 0,
+    this.realizedPnl = 0,
+    this.totalGasUsd = 0,
+    this.buyCount = 0,
+    this.sellCount = 0,
+    this.confirmedCount = 0,
+    this.failedCount = 0,
+    this.totalCount = 0,
+  });
+
+  factory ExecutionSummary.fromJson(Map<String, dynamic> json) =>
+      ExecutionSummary(
+        totalBuyUsd: (json['total_buy_usd'] as num?)?.toDouble() ?? 0,
+        totalSellUsd: (json['total_sell_usd'] as num?)?.toDouble() ?? 0,
+        realizedPnl: (json['realized_pnl'] as num?)?.toDouble() ?? 0,
+        totalGasUsd: (json['total_gas_usd'] as num?)?.toDouble() ?? 0,
+        buyCount: (json['buy_count'] as num?)?.toInt() ?? 0,
+        sellCount: (json['sell_count'] as num?)?.toInt() ?? 0,
+        confirmedCount: (json['confirmed_count'] as num?)?.toInt() ?? 0,
+        failedCount: (json['failed_count'] as num?)?.toInt() ?? 0,
+        totalCount: (json['total_count'] as num?)?.toInt() ?? 0,
+      );
+
+  bool get hasTrades => totalCount > 0;
+  bool get isProfit => realizedPnl > 0;
+}
+
+class ExecutionsResponse {
+  final List<AgentExecution> executions;
+  final ExecutionSummary summary;
+
+  const ExecutionsResponse({
+    required this.executions,
+    required this.summary,
+  });
+
+  factory ExecutionsResponse.fromJson(Map<String, dynamic> json) =>
+      ExecutionsResponse(
+        executions: (json['data'] as List<dynamic>? ?? [])
+            .map((e) => AgentExecution.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        summary: ExecutionSummary.fromJson(
+            json['summary'] as Map<String, dynamic>? ?? {}),
       );
 }

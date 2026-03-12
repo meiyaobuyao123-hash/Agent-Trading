@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
+import '../../widgets/strategy_detail_sheet.dart';
 
 /// Agent 策略中心 — 对话 + 策略管理 + 数据源
 class AgentScreen extends StatefulWidget {
@@ -960,6 +962,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab> {
           final s = _strategies![i];
           return _StrategyCard(
             strategy: s,
+            onTap: () => showStrategyDetailSheet(ctx, s),
             onToggle: () async {
               final newStatus = s.isActive ? 'paused' : 'active';
               await AgentService.instance
@@ -977,119 +980,219 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab> {
   }
 }
 
-class _StrategyCard extends StatelessWidget {
+class _StrategyCard extends StatefulWidget {
   final AgentStrategy strategy;
+  final VoidCallback onTap;
   final VoidCallback onToggle;
   final VoidCallback onDelete;
   const _StrategyCard({
     required this.strategy,
+    required this.onTap,
     required this.onToggle,
     required this.onDelete,
   });
 
   @override
+  State<_StrategyCard> createState() => _StrategyCardState();
+}
+
+class _StrategyCardState extends State<_StrategyCard> {
+  ExecutionSummary? _summary;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSummary();
+  }
+
+  Future<void> _loadSummary() async {
+    final resp = await AgentService.instance
+        .listExecutions(widget.strategy.id, limit: 200);
+    if (!mounted) return;
+    if (resp != null) {
+      setState(() => _summary = resp.summary);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final isActive = strategy.isActive;
+    final s = widget.strategy;
+    final isActive = s.isActive;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: c.cardGlass,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isActive ? c.primary.withValues(alpha: 0.3) : c.glassBorder,
-          width: 0.5,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  color: isActive ? c.success : c.textTertiary,
-                  shape: BoxShape.circle,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(strategy.name,
-                    style: TextStyle(
-                      color: c.textPrimary,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                    )),
-              ),
-              GestureDetector(
-                onTap: onToggle,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: isActive ? c.warningLight : c.successLight,
-                    borderRadius: BorderRadius.circular(6),
-                  ),
-                  child: Text(
-                    isActive ? '暂停' : '恢复',
-                    style: TextStyle(
-                      color: isActive ? c.warning : c.success,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 6),
-              GestureDetector(
-                onTap: onDelete,
-                child: Icon(Icons.delete_outline, color: c.danger, size: 18),
-              ),
-            ],
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        widget.onTap();
+      },
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: c.cardGlass,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isActive ? c.primary.withValues(alpha: 0.3) : c.glassBorder,
+            width: 0.5,
           ),
-          if (strategy.description != null) ...[
-            const SizedBox(height: 6),
-            Text(strategy.description!,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 12,
-                  height: 1.4,
-                )),
-          ],
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(Icons.bolt, size: 12, color: c.textTertiary),
-              const SizedBox(width: 3),
-              Text('${strategy.triggerCount}次触发',
-                  style: TextStyle(color: c.textTertiary, fontSize: 11)),
-              const SizedBox(width: 8),
-              Icon(Icons.timer, size: 12, color: c.textTertiary),
-              const SizedBox(width: 3),
-              Text('${strategy.cooldownMin}分钟冷却',
-                  style: TextStyle(color: c.textTertiary, fontSize: 11)),
-              const Spacer(),
-              ...strategy.dataSources.take(2).map((ds) => Padding(
-                    padding: const EdgeInsets.only(left: 4),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: c.primaryLight,
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(_dsLabel(ds),
-                          style: TextStyle(color: c.primary, fontSize: 10)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── 第1行: 状态 + 名称 + 操作按钮 ──
+            Row(
+              children: [
+                Container(
+                  width: 8, height: 8,
+                  decoration: BoxDecoration(
+                    color: isActive ? c.success : c.textTertiary,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(s.name,
+                      style: TextStyle(
+                        color: c.textPrimary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      )),
+                ),
+                GestureDetector(
+                  onTap: widget.onToggle,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isActive ? c.warningLight : c.successLight,
+                      borderRadius: BorderRadius.circular(6),
                     ),
+                    child: Text(
+                      isActive ? '暂停' : '恢复',
+                      style: TextStyle(
+                        color: isActive ? c.warning : c.success,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: widget.onDelete,
+                  child: Icon(Icons.delete_outline, color: c.danger, size: 18),
+                ),
+              ],
+            ),
+
+            // ── 第2行: 描述 ──
+            if (s.description != null) ...[
+              const SizedBox(height: 6),
+              Text(s.description!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: c.textSecondary,
+                    fontSize: 12,
+                    height: 1.4,
                   )),
             ],
-          ),
-        ],
+
+            const SizedBox(height: 8),
+
+            // ── 第3行: 触发 + 冷却 + 数据源 ──
+            Row(
+              children: [
+                Icon(Icons.bolt, size: 12, color: c.textTertiary),
+                const SizedBox(width: 3),
+                Text('${s.triggerCount}次触发',
+                    style: TextStyle(color: c.textTertiary, fontSize: 11)),
+                const SizedBox(width: 8),
+                Icon(Icons.timer, size: 12, color: c.textTertiary),
+                const SizedBox(width: 3),
+                Text('${s.cooldownMin}分钟冷却',
+                    style: TextStyle(color: c.textTertiary, fontSize: 11)),
+                const Spacer(),
+                ...s.dataSources.take(2).map((ds) => Padding(
+                      padding: const EdgeInsets.only(left: 4),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: c.primaryLight,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(_dsLabel(ds),
+                            style: TextStyle(color: c.primary, fontSize: 10)),
+                      ),
+                    )),
+              ],
+            ),
+
+            // ── 第4行: P&L 摘要 (有交易记录时显示) ──
+            if (_summary != null && _summary!.hasTrades) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.candlestick_chart_outlined,
+                        size: 14, color: c.textTertiary),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${_summary!.totalCount}笔交易',
+                      style: TextStyle(
+                        color: c.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    // P&L 值
+                    Text(
+                      '${_summary!.isProfit ? "+" : ""}\$${_summary!.realizedPnl.abs().toStringAsFixed(2)}',
+                      style: TextStyle(
+                        color: _summary!.isProfit ? c.success : c.danger,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(Icons.chevron_right_rounded,
+                        size: 16, color: c.textTertiary),
+                  ],
+                ),
+              ),
+            ] else if (_summary == null) ...[
+              // 加载中状态（微妙的占位）
+            ] else ...[
+              // 无交易时显示一行引导
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Icon(Icons.swap_vert_rounded,
+                      size: 12, color: c.textTertiary),
+                  const SizedBox(width: 4),
+                  Text(
+                    '暂无交易记录 · 点击查看详情',
+                    style: TextStyle(
+                      color: c.textTertiary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 16, color: c.textTertiary),
+                ],
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

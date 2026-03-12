@@ -14,6 +14,7 @@ import '../../theme/app_colors.dart';
 import '../../widgets/hot_coin_card.dart';
 import '../../widgets/pick_card.dart';
 import '../../widgets/smart_money_card.dart';
+import '../../widgets/smart_money_detail_sheet.dart';
 import '../../widgets/shimmer_list.dart';
 import '../detail/token_detail_page.dart';
 
@@ -148,39 +149,7 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   void _openSmartMoneyDetail(SmartMoneySignal sig) {
-    // Navigate to token detail page using smart money signal data
-    final detail = TokenDetail(
-      source: TokenSource.hotCoin,
-      chain: sig.chain,
-      address: sig.tokenAddress,
-      name: sig.tokenName,
-      symbol: sig.tokenSymbol,
-      priceUsd: sig.priceUsd,
-      marketCapUsd: sig.marketCapUsd,
-      liquidityUsd: sig.liquidityUsd,
-      volume1hUsd: 0,
-      volume24hUsd: sig.volume24hUsd,
-      priceChange1h: sig.priceChange1h,
-      priceChange6h: 0,
-      priceChange24h: sig.priceChange24h,
-      buys1h: 0,
-      sells1h: 0,
-      buys24h: 0,
-      sells24h: 0,
-      ageDays: 0,
-      holderCount: 0,
-      goplusRisk: false,
-      hasTwitter: false,
-      hasTelegram: false,
-      hasWebsite: false,
-      score: 0,
-      recommendation: '',
-      imageUri: sig.imageUrl,
-      pairAddress: sig.pairAddress,
-      dexId: sig.dexId,
-    );
-    Navigator.push(context,
-      CupertinoPageRoute(builder: (_) => TokenDetailPage(token: detail)));
+    showSmartMoneyDetailSheet(context, sig);
   }
 
   double _livePrice(HotCoin coin) =>

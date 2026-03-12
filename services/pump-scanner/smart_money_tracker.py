@@ -100,14 +100,19 @@ class SmartMoneyTracker:
         logger.info("Starting smart money scan across %d chains...",
                      len(self.wallets))
         all_signals: Dict[str, Dict[str, Any]] = {}
+        all_txns: List[Dict[str, Any]] = []
 
         for chain, wallets in self.wallets.items():
             try:
-                chain_signals = await self._scan_chain(chain, wallets)
+                chain_signals, chain_txns = await self._scan_chain(
+                    chain, wallets
+                )
                 for key, sig in chain_signals.items():
                     all_signals[key] = sig
-                logger.info("Chain %s: %d signals from %d wallets",
-                           chain, len(chain_signals), len(wallets))
+                all_txns.extend(chain_txns)
+                logger.info("Chain %s: %d signals, %d txns from %d wallets",
+                           chain, len(chain_signals), len(chain_txns),
+                           len(wallets))
             except Exception as e:
                 logger.error("Failed to scan chain %s: %s", chain, e)
 
@@ -124,25 +129,40 @@ class SmartMoneyTracker:
             sig["net_flow"] = sig.get("buy_count", 0) - sig.get("sell_count", 0)
             sig["signal_strength"] = self._calc_strength(sig)
 
-        # Upsert to DB
+        # Backfill market data into individual txns
+        for txn in all_txns:
+            key = "%s:%s" % (txn["chain"], txn["token_address"])
+            sig = all_signals.get(key)
+            if sig:
+                txn["market_cap_at_tx"] = sig.get("market_cap_usd", 0)
+                txn["price_at_tx"] = sig.get("price_usd", 0)
+
+        # Upsert aggregated signals + individual txns
         self._upsert_signals(list(all_signals.values()))
-        logger.info("Smart money scan complete: %d signals upserted",
-                     len(all_signals))
+        self._upsert_txns(all_txns)
+        self._cleanup_old_txns()
+        logger.info("Smart money scan complete: %d signals, %d txns upserted",
+                     len(all_signals), len(all_txns))
 
     async def _scan_chain(
         self, chain: str, wallets: List[Dict[str, Any]]
-    ) -> Dict[str, Dict[str, Any]]:
-        """Scan a single chain's wallets for recent token transactions."""
+    ):
+        """Scan a single chain's wallets for recent token transactions.
+
+        Returns:
+            (signals_dict, txns_list) — aggregated signals + individual txns
+        """
         signals: Dict[str, Dict[str, Any]] = {}
+        txns: List[Dict[str, Any]] = []
 
         for wallet in wallets:
             try:
-                txs = await self._get_wallet_transactions(
+                raw_txs = await self._get_wallet_transactions(
                     chain, wallet["address"]
                 )
                 tier = wallet.get("tier", "watching")
 
-                for tx in txs:
+                for tx in raw_txs:
                     token_addr = tx.get("token_address", "")
                     if not token_addr:
                         continue
@@ -190,6 +210,17 @@ class SmartMoneyTracker:
                     ):
                         sig["latest_signal_at"] = tx_time
 
+                    # 记录单笔交易（market_cap/price 在 enrich 后回填）
+                    txns.append({
+                        "chain": chain,
+                        "token_address": token_addr,
+                        "wallet_address": wallet["address"],
+                        "wallet_tier": tier,
+                        "tx_type": "buy" if is_buy else "sell",
+                        "volume_usd": volume,
+                        "tx_time": tx_time,
+                    })
+
                 await asyncio.sleep(0.3)  # Rate limiting
             except Exception as e:
                 logger.warning(
@@ -202,7 +233,7 @@ class SmartMoneyTracker:
             sig["unique_buyers"] = len(sig.pop("_buyers", set()))
             sig["unique_sellers"] = len(sig.pop("_sellers", set()))
 
-        return signals
+        return signals, txns
 
     async def _get_wallet_transactions(
         self, chain: str, address: str
@@ -447,6 +478,52 @@ class SmartMoneyTracker:
         if sig.get("elite_buy_count", 0) >= 1 or sig.get("net_flow", 0) >= 2:
             return "medium"
         return "weak"
+
+    def _upsert_txns(self, txns: List[Dict[str, Any]]):
+        """Batch upsert individual transactions to smart_money_txns."""
+        if not txns:
+            return
+        now = datetime.now(timezone.utc).isoformat()
+        for i in range(0, len(txns), 50):
+            batch = txns[i:i + 50]
+            rows = []
+            for t in batch:
+                if not t.get("tx_time"):
+                    continue
+                rows.append({
+                    "chain": t["chain"],
+                    "token_address": t["token_address"],
+                    "wallet_address": t["wallet_address"],
+                    "wallet_tier": t.get("wallet_tier", "watching"),
+                    "tx_type": t["tx_type"],
+                    "volume_usd": t.get("volume_usd", 0),
+                    "market_cap_at_tx": t.get("market_cap_at_tx", 0),
+                    "price_at_tx": t.get("price_at_tx", 0),
+                    "tx_time": t["tx_time"],
+                    "scan_time": now,
+                })
+            if not rows:
+                continue
+            try:
+                self.db.table("smart_money_txns").upsert(
+                    rows,
+                    on_conflict="chain,token_address,wallet_address,tx_type,tx_time",
+                ).execute()
+            except Exception as e:
+                logger.warning("Failed to upsert txns batch: %s", e)
+        logger.info("Upserted %d individual txns", len(txns))
+
+    def _cleanup_old_txns(self):
+        """Delete transactions older than 7 days."""
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=7)
+        ).isoformat()
+        try:
+            self.db.table("smart_money_txns").delete().lt(
+                "scan_time", cutoff
+            ).execute()
+        except Exception as e:
+            logger.debug("Cleanup old txns: %s", e)
 
     def _upsert_signals(self, signals: List[Dict[str, Any]]):
         """Upsert aggregated signals to smart_money_signals table."""

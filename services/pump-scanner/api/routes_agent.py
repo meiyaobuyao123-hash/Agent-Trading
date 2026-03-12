@@ -7,6 +7,7 @@ Agent API 路由
 - POST /api/agent/strategies  — 创建策略
 - PATCH /api/agent/strategies/:id — 更新策略
 - DELETE /api/agent/strategies/:id — 删除策略
+- GET  /api/agent/executions/:strategy_id — 策略交易记录 + 汇总
 - GET  /api/agent/alerts      — 告警列表
 - PATCH /api/agent/alerts/:id/read — 标记已读
 - GET  /api/agent/alerts/unread-count — 未读数
@@ -180,6 +181,82 @@ async def delete_strategy(
         raise HTTPException(status_code=500, detail="删除失败")
 
     return {"message": "策略已删除"}
+
+
+# ── 交易记录端点 ─────────────────────────────────────────────
+
+@router.get("/executions/{strategy_id}")
+async def list_executions(
+    strategy_id: str,
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user),
+):
+    """获取策略的交易记录 + 汇总统计"""
+    from database import get_db
+
+    # 验证策略归属
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+
+    try:
+        resp = (
+            get_db()
+            .table("agent_executions")
+            .select("*")
+            .eq("strategy_id", strategy_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = resp.data or []
+    except Exception as e:
+        log.warning("Failed to fetch executions: %s", e)
+        rows = []
+
+    # 计算汇总
+    total_buy = 0.0
+    total_sell = 0.0
+    buy_count = 0
+    sell_count = 0
+    confirmed = 0
+    failed = 0
+    total_gas = 0.0
+
+    for r in rows:
+        amt = float(r.get("amount_usd") or 0)
+        gas = float(r.get("gas_fee_usd") or 0)
+        total_gas += gas
+        status = r.get("status", "")
+        if status == "confirmed":
+            confirmed += 1
+        elif status == "failed":
+            failed += 1
+
+        if r.get("action") == "buy":
+            buy_count += 1
+            total_buy += amt
+        elif r.get("action") == "sell":
+            sell_count += 1
+            total_sell += amt
+
+    realized_pnl = total_sell - total_buy - total_gas
+
+    summary = {
+        "total_buy_usd": round(total_buy, 2),
+        "total_sell_usd": round(total_sell, 2),
+        "realized_pnl": round(realized_pnl, 2),
+        "total_gas_usd": round(total_gas, 2),
+        "buy_count": buy_count,
+        "sell_count": sell_count,
+        "confirmed_count": confirmed,
+        "failed_count": failed,
+        "total_count": len(rows),
+    }
+
+    return {"data": rows, "summary": summary}
 
 
 # ── 告警端点 ──────────────────────────────────────────────────

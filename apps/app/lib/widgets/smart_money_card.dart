@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/smart_money_signal.dart';
@@ -352,7 +351,7 @@ class _HeatBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final gradient = isBullish ? c.successGradient : c.dangerGradient;
-    final label = isBullish ? '+${score.toStringAsFixed(0)}' : '${score.toStringAsFixed(0)}';
+    final label = isBullish ? '+${score.toStringAsFixed(0)}' : score.toStringAsFixed(0);
 
     return Container(
       constraints: const BoxConstraints(minWidth: 56),

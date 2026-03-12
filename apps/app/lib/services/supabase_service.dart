@@ -84,15 +84,15 @@ class SupabaseService {
     var query = _db
         .from('smart_money_signals')
         .select()
-        .gte('heat_score', minHeat)
-        .order('heat_score', ascending: false)
-        .limit(limit);
+        .gte('heat_score', minHeat);
 
     if (chain != null) {
       query = query.eq('chain', chain);
     }
 
-    final res = await query;
+    final res = await query
+        .order('heat_score', ascending: false)
+        .limit(limit);
     return (res as List)
         .map((e) => SmartMoneySignal.fromJson(e as Map<String, dynamic>))
         .toList();

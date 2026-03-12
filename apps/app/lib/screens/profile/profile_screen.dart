@@ -209,27 +209,22 @@ class _WalletCardState extends State<_WalletCard> {
   void initState() {
     super.initState();
     _loadWallets();
-    WalletService().addListener(_loadWallets);
+    WalletService.instance.addListener(_loadWallets);
   }
 
   @override
   void dispose() {
-    WalletService().removeListener(_loadWallets);
+    WalletService.instance.removeListener(_loadWallets);
     super.dispose();
   }
 
   void _loadWallets() {
-    if (mounted) setState(() => _wallets = WalletService().wallets);
+    if (mounted) setState(() => _wallets = WalletService.instance.wallets);
   }
 
   Future<void> _openImport() async {
-    final result = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const WalletImportSheet(),
-    );
-    if (result == true) _loadWallets();
+    final wallet = await showWalletImportSheet(context);
+    if (wallet != null) _loadWallets();
   }
 
   void _confirmDelete(UserWallet wallet) {
@@ -248,7 +243,7 @@ class _WalletCardState extends State<_WalletCard> {
           ),
           TextButton(
             onPressed: () {
-              WalletService().deleteWallet(wallet.id);
+              WalletService.instance.deleteWallet(wallet.id);
               Navigator.pop(ctx);
             },
             child: Text('删除', style: TextStyle(color: c.danger)),
@@ -397,7 +392,7 @@ class _WalletCardState extends State<_WalletCard> {
                   // 操作
                   if (!w.isDefault)
                     GestureDetector(
-                      onTap: () => WalletService().setDefault(w.id),
+                      onTap: () => WalletService.instance.setDefault(w.id),
                       child: Padding(
                         padding: const EdgeInsets.all(4),
                         child: Icon(Icons.star_border_rounded,

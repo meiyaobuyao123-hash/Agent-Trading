@@ -158,9 +158,23 @@ class _MarketScreenState extends State<MarketScreen> {
       priceUsd: sig.priceUsd,
       marketCapUsd: sig.marketCapUsd,
       liquidityUsd: sig.liquidityUsd,
+      volume1hUsd: 0,
       volume24hUsd: sig.volume24hUsd,
-      priceChange24h: sig.priceChange24h,
       priceChange1h: sig.priceChange1h,
+      priceChange6h: 0,
+      priceChange24h: sig.priceChange24h,
+      buys1h: 0,
+      sells1h: 0,
+      buys24h: 0,
+      sells24h: 0,
+      ageDays: 0,
+      holderCount: 0,
+      goplusRisk: false,
+      hasTwitter: false,
+      hasTelegram: false,
+      hasWebsite: false,
+      score: 0,
+      recommendation: '',
       imageUri: sig.imageUrl,
       pairAddress: sig.pairAddress,
       dexId: sig.dexId,
@@ -244,7 +258,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         final label = i == 0 ? '全部' : (isSmartTab
                             ? switch (chainKey) { 'solana' => 'SOL', 'eth' => 'ETH', 'bsc' => 'BSC', 'base' => 'BASE', _ => '' }
                             : chainKey!);
-                        final count = isSmartTab ? _smartChainCount(chainKey as String?) : _chainCount(chainKey as String?);
+                        final count = isSmartTab ? _smartChainCount(chainKey) : _chainCount(chainKey);
                         return Padding(
                           padding: const EdgeInsets.only(right: 8),
                           child: GestureDetector(

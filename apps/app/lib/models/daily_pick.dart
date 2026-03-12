@@ -45,7 +45,11 @@ class DailyPick {
 
   factory DailyPick.fromJson(Map<String, dynamic> json) {
     final pt = (json['pump_tokens'] as Map<String, dynamic>?) ?? {};
-    final to = (json['token_outcomes'] as Map<String, dynamic>?) ?? {};
+    // token_outcomes 嵌套在 pump_tokens 内部（通过 FK 关联）
+    final toRaw = pt['token_outcomes'];
+    final to = toRaw is List
+        ? (toRaw.isNotEmpty ? toRaw.first as Map<String, dynamic> : <String, dynamic>{})
+        : (toRaw as Map<String, dynamic>?) ?? {};
 
     return DailyPick(
       mint:          json['mint'] as String? ?? '',

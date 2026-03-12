@@ -25,7 +25,7 @@ class StrategyManager:
         user_id: str,
         spec: Dict[str, Any],
         source_prompt: Optional[str] = None,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> Dict[str, Any]:
         """
         创建新策略
 
@@ -35,41 +35,66 @@ class StrategyManager:
             source_prompt: 用户原始自然语言输入
 
         Returns:
-            创建的策略记录，或 None（失败）
+            创建的策略记录
+
+        Raises:
+            ValueError: 策略规范不完整
+            RuntimeError: 数据库操作失败
         """
+        # ── 验证 ──
+        conditions = spec.get("conditions", {})
+        rules = conditions.get("rules", [])
+        if not rules:
+            raise ValueError("策略条件不能为空，请至少设置一个触发条件")
+
+        for rule in rules:
+            if "data_source" not in rule or "field" not in rule:
+                if "rules" not in rule:  # 非嵌套节点
+                    raise ValueError(
+                        "每条规则必须包含 data_source 和 field"
+                    )
+
+        actions = spec.get("actions", [])
+        if not actions:
+            raise ValueError("策略必须包含至少一个动作（alert/buy/sell）")
+
+        # ── 提取数据源 ──
+        data_sources = self._extract_data_sources(conditions)
+
+        # ── risk_params 合并到 filters 中持久化 ──
+        filters = spec.get("filters", {})
+        risk_params = spec.get("risk_params")
+        if risk_params:
+            filters["risk_params"] = risk_params
+
+        row = {
+            "user_id": user_id,
+            "name": spec.get("name", "未命名策略"),
+            "description": spec.get("description"),
+            "conditions": conditions,
+            "actions": actions,
+            "filters": filters,
+            "data_sources": data_sources,
+            "cooldown_min": max(spec.get("cooldown_minutes", 30), 5),
+            "status": "active",
+            "source_prompt": source_prompt,
+        }
+
         try:
-            # 提取数据源列表
-            data_sources = self._extract_data_sources(
-                spec.get("conditions", {})
-            )
-
-            row = {
-                "user_id": user_id,
-                "name": spec.get("name", "未命名策略"),
-                "description": spec.get("description"),
-                "conditions": spec.get("conditions", {}),
-                "actions": spec.get("actions", []),
-                "filters": spec.get("filters", {}),
-                "data_sources": data_sources,
-                "cooldown_min": max(spec.get("cooldown_minutes", 30), 5),
-                "status": "active",
-                "source_prompt": source_prompt,
-            }
-
             result = get_db().table("agent_strategies").insert(row).execute()
-
-            if result.data:
-                strategy = result.data[0]
-                log.info(
-                    f"Created strategy: {strategy['name']} "
-                    f"(id={strategy['id']}) for user {user_id}"
-                )
-                return strategy
-            return None
-
         except Exception as e:
-            log.error(f"create_strategy error: {e}")
-            return None
+            log.error("Supabase insert failed: %s", e)
+            raise RuntimeError("数据库写入失败: %s" % str(e)[:200])
+
+        if not result.data:
+            raise RuntimeError("数据库返回空结果")
+
+        strategy = result.data[0]
+        log.info(
+            "Created strategy: %s (id=%s) for user %s",
+            strategy["name"], strategy["id"], user_id,
+        )
+        return strategy
 
     # ── 读取 ──────────────────────────────────────────────────
 

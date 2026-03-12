@@ -111,17 +111,16 @@ async def create_strategy(
             detail="策略数量已达上限（最多 20 个活跃策略）",
         )
 
-    strategy = _strategy_mgr.create_strategy(
-        user_id=user_id,
-        spec=req.spec,
-        source_prompt=req.source_prompt,
-    )
-
-    if not strategy:
-        raise HTTPException(
-            status_code=500,
-            detail="策略创建失败",
+    try:
+        strategy = _strategy_mgr.create_strategy(
+            user_id=user_id,
+            spec=req.spec,
+            source_prompt=req.source_prompt,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
     return {"strategy": strategy, "message": "策略创建成功"}
 

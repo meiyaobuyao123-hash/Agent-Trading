@@ -29,8 +29,8 @@ class SupabaseService {
         .select('''
           mint, pick_date, rank, score, score_detail,
           bc_progress, market_cap_sol,
-          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator),
-          token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x)
+          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator,
+            token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x))
         ''')
         .gte('pick_date', _dateStr(from))
         .lte('pick_date', _dateStr(until))
@@ -107,8 +107,8 @@ class SupabaseService {
         .select('''
           mint, pick_date, rank, score, score_detail,
           bc_progress, market_cap_sol,
-          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator),
-          token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x)
+          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator,
+            token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x))
         ''')
         .eq('pick_date', date)
         .order('rank');

@@ -16,6 +16,7 @@ from datetime import datetime
 
 from database import get_db
 from agent.schemas import StrategyTriggeredEvent
+from agent.risk_manager import get_risk_manager
 
 log = logging.getLogger(__name__)
 
@@ -150,20 +151,72 @@ class ActionDispatcher:
         action: Dict[str, Any],
     ):
         """
-        处理 buy/sell 动作 → OKX DEX 执行
+        处理 buy/sell 动作 → 风控检查 → OKX DEX 执行
 
-        Phase 3 实现，当前仅记录日志
+        Phase 3 实现，当前仅记录日志 + 风控检查
         """
         action_type = action.get("type", "buy")
         amount_usd = action.get("amount_usd", 0)
+        token_address = event.matched_token or ""
+        chain = event.matched_chain or ""
+
+        # ── 风控检查 ──
+        risk_mgr = get_risk_manager()
+        token_data = event.trigger_context or {}
+        risk_result = risk_mgr.check_trade(
+            token_address=token_address,
+            chain=chain,
+            action=action_type,
+            amount_usd=amount_usd,
+            token_data=token_data,
+        )
+
+        if not risk_result.passed:
+            log.warning(
+                f"Trade BLOCKED by risk manager: {risk_result.reason} "
+                f"(token={event.token_name}, action={action_type})"
+            )
+            # 写入风控告警
+            try:
+                alert_row = {
+                    "user_id": event.user_id,
+                    "strategy_id": event.strategy_id,
+                    "trigger_context": {
+                        "type": "risk_blocked",
+                        "reason": risk_result.reason,
+                        "risk_level": risk_result.risk_level,
+                        "action_type": action_type,
+                        "amount_usd": amount_usd,
+                    },
+                    "token_address": token_address,
+                    "token_name": event.token_name,
+                    "chain": chain,
+                    "title": f"Risk Blocked: {event.strategy_name}",
+                    "message": f"Trade blocked: {risk_result.reason}",
+                    "severity": "warning",
+                    "is_read": False,
+                    "is_pushed": False,
+                }
+                get_db().table("agent_alerts").insert(alert_row).execute()
+            except Exception as e:
+                log.error(f"Failed to create risk block alert: {e}")
+            return
+
+        # 风控通过 — 记录日志（Phase 3 执行交易）
         log.info(
             f"[Trade TODO] {action_type} ${amount_usd} of "
-            f"{event.token_name} on {event.matched_chain}"
+            f"{event.token_name} on {chain} (risk: {risk_result.risk_level})"
         )
 
         # Phase 3: OKX DEX v6 API
         # from agent.trade_executor import execute_trade
-        # await execute_trade(event, action)
+        # result = await execute_trade(event, action)
+        # if result.success:
+        #     risk_mgr.record_trade(
+        #         token_address=token_address, chain=chain,
+        #         action=action_type, amount_usd=amount_usd,
+        #         price=result.price, pnl_usd=result.pnl,
+        #     )
 
     def _render_template(
         self,

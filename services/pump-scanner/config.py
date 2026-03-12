@@ -25,10 +25,10 @@ ENRICH_DELAY_S       = 3           # 新币出现后等 3s 再拉详情
 MAX_TRACKED_TOKENS   = 500         # 最多同时追踪的候选币数量
 DATA_RETENTION_DAYS  = 30          # 数据保留天数
 
-# 硬过滤阈值（一票否决）
-MIN_BUYERS_HARD      = 10          # 至少 10 个买家才进候选池
-MAX_DEV_SOLD_PCT     = 0.30        # dev 卖出超 30% 直接排除
-MIN_BUY_SELL_RATIO   = 0.6         # 买卖笔数比最低 0.6
+# 硬过滤阈值（一票否决）— 放宽以覆盖更多早期代币
+MIN_BUYERS_HARD      = 5           # 至少 5 个买家才进候选池（早期代币60s内不到10人正常）
+MAX_DEV_SOLD_PCT     = 0.50        # dev 卖出超 50% 直接排除（30%太严格）
+MIN_BUY_SELL_RATIO   = 0.4         # 买卖笔数比最低 0.4（早期波动大，放宽）
 
 # 打分：进入候选池的 BC 进度窗口
 BC_MIN_PCT           = 3.0         # 至少 3% 才有足够数据

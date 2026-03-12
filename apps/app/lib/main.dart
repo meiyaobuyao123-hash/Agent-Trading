@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'app.dart';
+import 'services/wallet_service.dart';
 
 // ─── Supabase 配置 ────────────────────────────────────
 const _supabaseUrl = 'https://qmzsruqgwaqusywprxlj.supabase.co';
@@ -21,6 +22,9 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // 初始化钱包服务
+  await WalletService.instance.init();
 
   // 捕获详细错误信息
   FlutterError.onError = (details) {

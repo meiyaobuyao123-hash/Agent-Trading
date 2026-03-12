@@ -261,6 +261,11 @@ class PumpScanner:
 
             passed, reason = hard_filter(f)
             if not passed:
+                log.debug(
+                    f"[过滤] {f.symbol}({mint[:6]}…) 被拒: {reason} "
+                    f"(buyers={f.unique_buyers} ratio={f.buy_sell_ratio_count:.2f} "
+                    f"bc={f.bc_progress:.1f}%)"
+                )
                 continue
 
             snap = to_snapshot_dict(f, f.age_minutes)

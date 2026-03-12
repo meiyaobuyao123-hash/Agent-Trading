@@ -88,12 +88,27 @@ SYSTEM_PROMPT = """你是一个加密货币交易策略解析专家。用户会�
 - alert: App 内通知（默认）
 - push: 推送通知
 
+## 风控参数（可选，用于交易策略）
+当策略包含 buy/sell 动作时，可以设置以下风控参数：
+- stop_loss_pct: 止损百分比，默认 0.30（30%），范围 0.05-0.50
+- take_profit_pct: 止盈百分比，默认 1.00（100%，即翻倍），范围 0.10-10.0
+- max_position_usd: 单笔最大金额（美元），默认 100，范围 10-1000
+- trailing_stop: 是否启用追踪止损，默认 true
+
 ## 规则
 1. cooldown_minutes 最小 5 分钟
 2. 条件必须具体、可量化
 3. 模板变量用 {{变量名}}：token_name, chain, score, score_m, score_q, score_p, price_change_5m, price_change_1h, price_change_4h, price_change_24h, volume_5m_usd, market_cap_usd 等
 4. 如果用户没指定链，不要添加 chains 过滤
 5. 如果用户意图不明确，返回一个合理的默认配置并解释
+
+## 示例：包含风控参数的交易策略
+用户："帮我自动买入评分超过 85 的 Solana 热币，每笔不超过 50 美元，止损 20%，止盈 3 倍"
+→ 应生成：
+  - conditions: hot_coins.score >= 85
+  - filters: chains=["solana"]
+  - actions: [{type: "buy", amount_usd: 50, max_slippage_pct: 1.0}]
+  - risk_params: {stop_loss_pct: 0.20, take_profit_pct: 2.0, max_position_usd: 50, trailing_stop: true}
 """
 
 # Tool 定义（Claude Tool Use）
@@ -186,6 +201,34 @@ STRATEGY_TOOL = {
                 "minimum": 5,
                 "maximum": 1440,
                 "default": 30,
+            },
+            "risk_params": {
+                "type": "object",
+                "description": "风控参数（交易策略专用）",
+                "properties": {
+                    "stop_loss_pct": {
+                        "type": "number",
+                        "description": "止损百分比 0.05-0.50，默认 0.30",
+                        "minimum": 0.05,
+                        "maximum": 0.50,
+                    },
+                    "take_profit_pct": {
+                        "type": "number",
+                        "description": "止盈百分比 0.10-10.0，默认 1.00",
+                        "minimum": 0.10,
+                        "maximum": 10.0,
+                    },
+                    "max_position_usd": {
+                        "type": "number",
+                        "description": "单笔最大金额(USD) 10-1000，默认 100",
+                        "minimum": 10,
+                        "maximum": 1000,
+                    },
+                    "trailing_stop": {
+                        "type": "boolean",
+                        "description": "是否启用追踪止损，默认 true",
+                    },
+                },
             },
         },
     },
@@ -300,6 +343,16 @@ class LLMParser:
             "filters": raw.get("filters", {}),
             "cooldown_minutes": max(raw.get("cooldown_minutes", 30), 5),
         }
+
+        # 风控参数（交易策略专用）
+        risk_params = raw.get("risk_params")
+        if risk_params:
+            spec["risk_params"] = {
+                "stop_loss_pct": min(max(risk_params.get("stop_loss_pct", 0.30), 0.05), 0.50),
+                "take_profit_pct": min(max(risk_params.get("take_profit_pct", 1.00), 0.10), 10.0),
+                "max_position_usd": min(max(risk_params.get("max_position_usd", 100), 10), 1000),
+                "trailing_stop": risk_params.get("trailing_stop", True),
+            }
 
         # 确保至少有一个 action
         if not spec["actions"]:

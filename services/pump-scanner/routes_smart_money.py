@@ -1,0 +1,66 @@
+"""
+Smart Money Signal API Routes
+Provides endpoints for Flutter app to fetch smart money data
+"""
+import logging
+from typing import Optional
+from fastapi import APIRouter, Query
+
+from database import get_db
+
+logger = logging.getLogger("routes_smart_money")
+router = APIRouter(prefix="/api/smart-money", tags=["smart_money"])
+
+
+@router.get("/signals")
+async def get_signals(
+    chain: Optional[str] = Query(None, description="Filter by chain: solana, eth, bsc, base"),
+    min_heat: float = Query(0, description="Minimum heat score"),
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Get aggregated smart money signals, ordered by heat score."""
+    db = get_db()
+    query = db.table("smart_money_signals") \
+        .select("*") \
+        .gte("heat_score", min_heat) \
+        .order("heat_score", desc=True) \
+        .limit(limit)
+
+    if chain:
+        query = query.eq("chain", chain)
+
+    res = query.execute()
+    return {"data": res.data, "count": len(res.data)}
+
+
+@router.get("/wallets")
+async def get_wallets(
+    tier: Optional[str] = Query(None, description="Filter by tier: elite, verified, watching"),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Get tracked smart wallets."""
+    db = get_db()
+    query = db.table("smart_wallets") \
+        .select("wallet, tier, win_rate, total_trades, avg_profit_pct, last_seen, is_seed") \
+        .eq("is_blacklisted", False) \
+        .order("win_rate", desc=True) \
+        .limit(limit)
+
+    if tier:
+        query = query.eq("tier", tier)
+
+    res = query.execute()
+    return {"data": res.data, "count": len(res.data)}
+
+
+@router.get("/token/{chain}/{address}")
+async def get_token_signals(chain: str, address: str):
+    """Get smart money activity for a specific token."""
+    db = get_db()
+    res = db.table("smart_money_signals") \
+        .select("*") \
+        .eq("chain", chain) \
+        .eq("token_address", address) \
+        .maybe_single() \
+        .execute()
+    return {"data": res.data}

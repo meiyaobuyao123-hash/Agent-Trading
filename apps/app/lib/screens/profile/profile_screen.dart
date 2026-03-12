@@ -1,7 +1,10 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../app.dart';
+import '../../services/wallet_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/wallet_import_sheet.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -191,9 +194,85 @@ class ProfileScreen extends StatelessWidget {
   }
 }
 
-// ─── 钱包绑定卡 ──────────────────────────────────────
-class _WalletCard extends StatelessWidget {
+// ─── 钱包管理卡 ──────────────────────────────────────
+class _WalletCard extends StatefulWidget {
   const _WalletCard();
+
+  @override
+  State<_WalletCard> createState() => _WalletCardState();
+}
+
+class _WalletCardState extends State<_WalletCard> {
+  List<UserWallet> _wallets = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWallets();
+    WalletService().addListener(_loadWallets);
+  }
+
+  @override
+  void dispose() {
+    WalletService().removeListener(_loadWallets);
+    super.dispose();
+  }
+
+  void _loadWallets() {
+    if (mounted) setState(() => _wallets = WalletService().wallets);
+  }
+
+  Future<void> _openImport() async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const WalletImportSheet(),
+    );
+    if (result == true) _loadWallets();
+  }
+
+  void _confirmDelete(UserWallet wallet) {
+    final c = context.colors;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.bg,
+        title: Text('删除钱包', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        content: Text('确定删除 "${wallet.name}" 吗？密钥将从设备中移除。',
+            style: TextStyle(color: c.textSecondary)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () {
+              WalletService().deleteWallet(wallet.id);
+              Navigator.pop(ctx);
+            },
+            child: Text('删除', style: TextStyle(color: c.danger)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _chainColor(String chain) => switch (chain) {
+    'solana' => const Color(0xFF9945FF),
+    'eth' => const Color(0xFF627EEA),
+    'bsc' => const Color(0xFFF3BA2F),
+    'base' => const Color(0xFF0052FF),
+    _ => const Color(0xFF3B82F6),
+  };
+
+  String _chainLabel(String chain) => switch (chain) {
+    'solana' => 'SOL',
+    'eth' => 'ETH',
+    'bsc' => 'BSC',
+    'base' => 'BASE',
+    _ => chain.toUpperCase(),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -205,195 +284,172 @@ class _WalletCard extends StatelessWidget {
         gradient: context.isDark
             ? const LinearGradient(
                 colors: [Color(0xFF1A2550), Color(0xFF0D1530)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
               )
             : LinearGradient(
                 colors: [
                   c.primary.withValues(alpha: 0.08),
                   c.primary.withValues(alpha: 0.03),
                 ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
               ),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: c.primary.withValues(alpha: 0.3),
-          width: 1,
-        ),
+        border: Border.all(color: c.primary.withValues(alpha: 0.3), width: 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.account_balance_wallet_rounded,
-                  color: c.primary, size: 20),
+              Icon(Icons.account_balance_wallet_rounded, color: c.primary, size: 20),
               const SizedBox(width: 8),
-              Text(
-                'Solana 钱包',
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+              Text('我的钱包', style: TextStyle(
+                color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w500,
+              )),
               const Spacer(),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: c.surfaceAlt,
+                  color: _wallets.isEmpty
+                      ? c.surfaceAlt
+                      : c.success.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  '未连接',
-                  style: TextStyle(color: c.textTertiary, fontSize: 11),
+                  _wallets.isEmpty ? '未导入' : '${_wallets.length} 个',
+                  style: TextStyle(
+                    color: _wallets.isEmpty ? c.textTertiary : c.success,
+                    fontSize: 11, fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            '连接钱包后，Agent 可以代你\n自动执行交易策略',
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              height: 1.5,
-            ),
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
+
+          // 钱包列表
+          if (_wallets.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                '导入钱包后，Agent 可以代你自动执行交易策略',
+                style: TextStyle(color: c.textPrimary, fontSize: 14,
+                    fontWeight: FontWeight.w500, height: 1.5),
+              ),
+            )
+          else
+            ...(_wallets.map((w) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: c.cardGlass,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: c.glassBorder, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  // 链标识
+                  Container(
+                    width: 28, height: 28,
+                    decoration: BoxDecoration(
+                      color: _chainColor(w.chain).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(_chainLabel(w.chain), style: TextStyle(
+                      color: _chainColor(w.chain), fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    )),
+                  ),
+                  const SizedBox(width: 10),
+                  // 名称 + 地址
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Text(w.name, style: TextStyle(
+                            color: c.textPrimary, fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          )),
+                          if (w.isDefault) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: c.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text('默认', style: TextStyle(
+                                color: c.primary, fontSize: 9, fontWeight: FontWeight.w700,
+                              )),
+                            ),
+                          ],
+                        ]),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${w.address.substring(0, 6)}...${w.address.substring(w.address.length - 4)}',
+                          style: TextStyle(color: c.textTertiary, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 操作
+                  if (!w.isDefault)
+                    GestureDetector(
+                      onTap: () => WalletService().setDefault(w.id),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.star_border_rounded,
+                            color: c.textTertiary, size: 18),
+                      ),
+                    ),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: w.address));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('地址已复制', style: TextStyle(color: c.textPrimary)),
+                        backgroundColor: c.cardGlass,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 1),
+                      ));
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.copy_rounded, color: c.textTertiary, size: 16),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _confirmDelete(w),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.delete_outline_rounded,
+                          color: c.danger.withValues(alpha: 0.6), size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ))),
+
+          // 导入按钮
           SizedBox(
             width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () => _showConnectWallet(context),
+            child: ElevatedButton.icon(
+              onPressed: _openImport,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text(
+                _wallets.isEmpty ? '导入钱包' : '添加钱包',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: c.primary,
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 elevation: 0,
-              ),
-              child: const Text(
-                '导入钱包（即将开放）',
-                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  void _showConnectWallet(BuildContext context) {
-    final c = context.colors;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: c.bg,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetCtx) {
-        final sc = sheetCtx.colors;
-        return Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '连接钱包',
-                style: TextStyle(
-                  color: sc.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: sc.warningLight,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded,
-                        color: sc.warning, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        '私钥仅存储于本设备，不会上传任何服务器',
-                        style:
-                            TextStyle(color: sc.warning, fontSize: 12),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              // 两种方式（占位）
-              _ConnectOption(
-                icon: Icons.vpn_key_rounded,
-                title: '导入私钥',
-                desc: '粘贴 Base58 格式私钥',
-              ),
-              const SizedBox(height: 8),
-              _ConnectOption(
-                icon: Icons.list_alt_rounded,
-                title: '导入助记词',
-                desc: '输入 12 / 24 个单词',
-              ),
-              const SizedBox(height: 20),
-            ],
-          ),
-        );
-      },
-    );
-  }
-}
-
-class _ConnectOption extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String desc;
-  const _ConnectOption(
-      {required this.icon, required this.title, required this.desc});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: c.cardGlass,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: c.glassBorder, width: 0.5),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: c.primary, size: 20),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  )),
-              Text(desc,
-                  style: TextStyle(color: c.textSecondary, fontSize: 12)),
-            ],
-          ),
-          const Spacer(),
-          Text('即将开放',
-              style: TextStyle(color: c.textTertiary, fontSize: 11)),
         ],
       ),
     );

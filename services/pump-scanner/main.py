@@ -56,6 +56,9 @@ from kol_job import (
 from agent.monitor_job import run_agent_monitor
 from agent.event_bus import get_event_bus
 
+# 聪明钱多链追踪
+from smart_money_tracker import run_smart_money_scan
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -208,6 +211,16 @@ async def main():
         misfire_grace_time=10,
     )
 
+    # ── 聪明钱多链扫描（每15分钟）────────────────────────────
+    scheduler.add_job(
+        run_smart_money_scan,
+        trigger="interval",
+        minutes=15,
+        id="smart_money_scan",
+        name="聪明钱多链扫描",
+        misfire_grace_time=120,
+    )
+
     scheduler.start()
     log.info(
         "定时任务已启动:\n"
@@ -226,6 +239,7 @@ async def main():
         "  每日 UTC 03:00 → kol_accuracy_eval\n"
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
+        "  每15分钟       → smart_money_scan (多链聪明钱)\n"
         "  ── 常驻协程 ──\n"
         "  1秒循环        → performance_loop (OKX+pump.fun 秒级追踪)"
     )

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
+import '../../services/wallet_service.dart';
 
 /// Agent 策略中心 — 对话 + 策略管理 + 数据源
 class AgentScreen extends StatefulWidget {
@@ -434,8 +435,8 @@ class _PulseDotState extends State<_PulseDot>
   }
 }
 
-/// 策略确认卡片
-class _ConfirmCard extends StatelessWidget {
+/// 策略确认卡片（含钱包选择）
+class _ConfirmCard extends StatefulWidget {
   final Map<String, dynamic> strategy;
   final VoidCallback onConfirm;
   final VoidCallback onCancel;
@@ -446,11 +447,28 @@ class _ConfirmCard extends StatelessWidget {
   });
 
   @override
+  State<_ConfirmCard> createState() => _ConfirmCardState();
+}
+
+class _ConfirmCardState extends State<_ConfirmCard> {
+  String? _selectedWalletId;
+
+  @override
+  void initState() {
+    super.initState();
+    final wallets = WalletService.instance.wallets;
+    if (wallets.isNotEmpty) {
+      _selectedWalletId = WalletService.instance.defaultWalletId ?? wallets.first.id;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final name = strategy['name'] as String? ?? '未命名策略';
-    final desc = strategy['description'] as String? ?? '';
-    final cooldown = strategy['cooldown_minutes'] as int? ?? 30;
+    final name = widget.strategy['name'] as String? ?? '未命名策略';
+    final desc = widget.strategy['description'] as String? ?? '';
+    final cooldown = widget.strategy['cooldown_minutes'] as int? ?? 30;
+    final wallets = WalletService.instance.wallets;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -490,12 +508,75 @@ class _ConfirmCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text('冷却时间: $cooldown分钟',
                 style: TextStyle(color: c.textTertiary, fontSize: 12)),
+            // ── 钱包选择 ────────────────
+            if (wallets.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text('交易钱包', style: TextStyle(
+                color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w600,
+              )),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: c.border, width: 0.5),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedWalletId,
+                    isExpanded: true,
+                    dropdownColor: c.surface,
+                    style: TextStyle(color: c.textPrimary, fontSize: 13),
+                    icon: Icon(Icons.keyboard_arrow_down, color: c.textTertiary, size: 20),
+                    items: wallets.map((w) => DropdownMenuItem(
+                      value: w.id,
+                      child: Row(
+                        children: [
+                          Icon(Icons.account_balance_wallet_outlined,
+                              size: 14, color: c.primary),
+                          const SizedBox(width: 8),
+                          Text(w.name, style: TextStyle(color: c.textPrimary, fontSize: 13)),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${w.address.substring(0, 6)}...${w.address.substring(w.address.length - 4)}',
+                            style: TextStyle(color: c.textTertiary, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    )).toList(),
+                    onChanged: (v) => setState(() => _selectedWalletId = v),
+                  ),
+                ),
+              ),
+            ] else ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: c.warningLight,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: c.warning, size: 16),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '未导入钱包，策略仅发送告警，不会自动交易',
+                        style: TextStyle(color: c.warning, fontSize: 12),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: onCancel,
+                    onPressed: widget.onCancel,
                     style: OutlinedButton.styleFrom(
                       side: BorderSide(color: c.border),
                       shape: RoundedRectangleBorder(
@@ -508,7 +589,7 @@ class _ConfirmCard extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: FilledButton(
-                    onPressed: onConfirm,
+                    onPressed: widget.onConfirm,
                     style: FilledButton.styleFrom(
                       backgroundColor: c.primary,
                       shape: RoundedRectangleBorder(

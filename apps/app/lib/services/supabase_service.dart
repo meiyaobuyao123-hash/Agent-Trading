@@ -1,6 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/daily_pick.dart';
 import '../models/hot_coin.dart';
+import '../models/smart_money_signal.dart';
 
 class SupabaseService {
   static final SupabaseService instance = SupabaseService._();
@@ -69,6 +70,31 @@ class SupabaseService {
 
     return (res as List)
         .map((e) => HotCoin.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  // ─────────────────────────────────────────────────
+  // 聪明钱信号：多链聪明钱买卖聚合
+  // ─────────────────────────────────────────────────
+  Future<List<SmartMoneySignal>> fetchSmartMoneySignals({
+    String? chain,
+    int limit = 50,
+    double minHeat = 0,
+  }) async {
+    var query = _db
+        .from('smart_money_signals')
+        .select()
+        .gte('heat_score', minHeat)
+        .order('heat_score', ascending: false)
+        .limit(limit);
+
+    if (chain != null) {
+      query = query.eq('chain', chain);
+    }
+
+    final res = await query;
+    return (res as List)
+        .map((e) => SmartMoneySignal.fromJson(e as Map<String, dynamic>))
         .toList();
   }
 

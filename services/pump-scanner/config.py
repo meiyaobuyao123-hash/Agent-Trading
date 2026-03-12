@@ -37,6 +37,20 @@ BC_MAX_PCT           = 35.0        # 超过 35% 空间已小，不推
 # 大单定义
 LARGE_BUY_SOL        = 0.5         # 单笔 >= 0.5 SOL 算大单
 
+# ── OKX DEX Market API v6 ─────────────────────────────────────
+OKX_API_KEY    = os.getenv("OKX_API_KEY", "264f720b-1324-41b4-9c85-0b5f20d3696e")
+OKX_SECRET_KEY = os.getenv("OKX_SECRET_KEY", "57FDDAF653008E120F35631E9929FA91")
+OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "7745098wei@W")
+OKX_API_BASE   = "https://www.okx.com"
+
+# OKX chainIndex（与 HOT_CHAINS key 对应）
+OKX_CHAIN_INDEX = {
+    "solana": "501",
+    "bsc":    "56",
+    "base":   "8453",
+    "eth":    "1",
+}
+
 # ── 热币榜（多链外盘）────────────────────────────────────────
 
 # API 基础地址
@@ -47,12 +61,13 @@ HELIUS_RPC       = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
 # 链配置：gecko_net → GeckoTerminal 网络名；goplus_chain → GoPlus 链ID
 # mc_max_usd / liq_max_usd：各链独立上限覆盖（None → 使用全局常量）
-# 注：仅 SOL/BSC/Base 的 trending_pools 含大量 3~90d 新兴项目（符合热币策略）
-#     ETH/Arbitrum/Polygon/Avalanche/TON 趋势池均为成熟协议(>90d)或过新(<3d)，不适合
+# 4链覆盖：SOL/BSC/Base/ETH
+# ETH trending_pools 偏成熟，故放宽年龄上限(mc_max_usd/liq_max_usd 不变)
 HOT_CHAINS = {
     "solana": {"gecko_net": "solana", "goplus_chain": "solana", "mc_max_usd": None, "liq_max_usd": None},
     "bsc":    {"gecko_net": "bsc",    "goplus_chain": "56",     "mc_max_usd": None, "liq_max_usd": None},
     "base":   {"gecko_net": "base",   "goplus_chain": "8453",   "mc_max_usd": None, "liq_max_usd": None},
+    "eth":    {"gecko_net": "eth",    "goplus_chain": "1",      "mc_max_usd": None, "liq_max_usd": None},
 }
 
 # GeckoTerminal 分页（trending + new_pools 各 GECKO_PAGES 页，每页20条）

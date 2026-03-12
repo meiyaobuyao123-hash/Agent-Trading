@@ -6,6 +6,7 @@ import '../../models/ohlcv_data.dart';
 import '../../theme/app_colors.dart';
 
 /// KLineChart 专业K线图 — 内置 MA/BOLL/MACD/KDJ/RSI/WR/VOL 全部指标
+/// chartType: 'candle_solid' (默认K线) 或 'area' (折线面积图)
 class TradingViewChart extends StatefulWidget {
   final List<OhlcvCandle> candles;
   final String selectedTimeframe;
@@ -13,6 +14,7 @@ class TradingViewChart extends StatefulWidget {
   final bool loading;
   final bool showControls;
   final Set<String> activeIndicators;
+  final String chartType; // 'candle_solid' | 'area'
 
   const TradingViewChart({
     super.key,
@@ -22,6 +24,7 @@ class TradingViewChart extends StatefulWidget {
     this.loading = false,
     this.showControls = true,
     this.activeIndicators = const {'VOL', 'MA'},
+    this.chartType = 'candle_solid',
   });
 
   @override
@@ -33,6 +36,7 @@ class _TradingViewChartState extends State<TradingViewChart> {
   // JS 图表库是否已初始化完成（FlutterBridge 收到 'ready'）
   bool _chartReady = false;
   Set<String> _lastIndicators = {};
+  String _lastChartType = '';
 
   static const _timeframes = ['5m', '15m', '1h', '4h', '1d'];
 
@@ -41,7 +45,7 @@ class _TradingViewChartState extends State<TradingViewChart> {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(context.colors.chartBg)
+      ..setBackgroundColor(const Color(0xFF1C1C2E)) // 固定暗色背景，避免 initState 中访问 context
       ..addJavaScriptChannel('FlutterBridge', onMessageReceived: (msg) {
         debugPrint('[KLineChart] FlutterBridge 收到: ${msg.message}');
         if (msg.message == 'ready') {
@@ -49,6 +53,7 @@ class _TradingViewChartState extends State<TradingViewChart> {
           _chartReady = true;
           _pushData();
           _syncIndicators(force: true);
+          _syncChartType(force: true);
         }
       })
       ..setNavigationDelegate(NavigationDelegate(
@@ -61,6 +66,7 @@ class _TradingViewChartState extends State<TradingViewChart> {
               _chartReady = true;
               _pushData();
               _syncIndicators(force: true);
+              _syncChartType(force: true);
             }
           });
         },
@@ -80,6 +86,11 @@ class _TradingViewChartState extends State<TradingViewChart> {
     if (!_setEq(old.activeIndicators, widget.activeIndicators)) {
       debugPrint('[KLineChart] didUpdateWidget: 指标变化 ${widget.activeIndicators}');
       _syncIndicators();
+    }
+    // 图表类型变化时同步到 JS
+    if (old.chartType != widget.chartType) {
+      debugPrint('[KLineChart] didUpdateWidget: chartType 变化 ${widget.chartType}');
+      _syncChartType();
     }
   }
 
@@ -115,6 +126,15 @@ class _TradingViewChartState extends State<TradingViewChart> {
     debugPrint('[KLineChart] _syncIndicators: 设置指标 ${widget.activeIndicators}');
     _controller.runJavaScript('setIndicators($json)');
     _lastIndicators = Set.from(widget.activeIndicators);
+  }
+
+  /// 同步图表类型（candle_solid / area）到 JS
+  void _syncChartType({bool force = false}) {
+    if (!_chartReady) return;
+    if (!force && _lastChartType == widget.chartType) return;
+    debugPrint('[KLineChart] _syncChartType: 设置图表类型 ${widget.chartType}');
+    _controller.runJavaScript("setChartType('${widget.chartType}')");
+    _lastChartType = widget.chartType;
   }
 
   @override
@@ -431,6 +451,69 @@ function setIndicators(names) {
       }
     });
   } catch(e) { console.error('setIndicators:', e); }
+}
+
+function setChartType(type) {
+  if (!chart || !ready) return;
+  try {
+    if (type === 'area') {
+      chart.setStyles({
+        candle: {
+          type: 'area',
+          area: {
+            lineSize: 2,
+            lineColor: '#007AFF',
+            value: 'close',
+            smooth: true,
+            backgroundColor: [{
+              offset: 0,
+              color: 'rgba(0, 122, 255, 0.25)'
+            }, {
+              offset: 1,
+              color: 'rgba(0, 122, 255, 0.01)'
+            }],
+            point: {
+              show: true,
+              color: '#007AFF',
+              radius: 3,
+              rippleColor: 'rgba(0, 122, 255, 0.3)',
+              rippleRadius: 6,
+              animation: true,
+              animationDuration: 1000
+            }
+          },
+          priceMark: {
+            high: { show: false },
+            low: { show: false },
+            last: {
+              show: true, upColor: '#007AFF', downColor: '#007AFF', noChangeColor: '#007AFF',
+              line: { show: true, style: 'dashed', dashedValue: [4, 4], size: 1 },
+              text: { show: true, size: 10, color: '#fff', family: 'Menlo',
+                      paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+                      borderRadius: 2 }
+            }
+          }
+        }
+      });
+    } else {
+      chart.setStyles({
+        candle: {
+          type: 'candle_solid',
+          priceMark: {
+            high: { show: true, color: '#D1D1D6', textOffset: 5, textSize: 10, textFamily: 'Menlo' },
+            low: { show: true, color: '#D1D1D6', textOffset: 5, textSize: 10, textFamily: 'Menlo' },
+            last: {
+              show: true, upColor: '#34C759', downColor: '#FF3B30', noChangeColor: '#888',
+              line: { show: true, style: 'dashed', dashedValue: [4, 4], size: 1 },
+              text: { show: true, size: 10, color: '#fff', family: 'Menlo',
+                      paddingLeft: 4, paddingRight: 4, paddingTop: 2, paddingBottom: 2,
+                      borderRadius: 2 }
+            }
+          }
+        }
+      });
+    }
+  } catch(e) { console.error('setChartType:', e); }
 }
 </script>
 </body>

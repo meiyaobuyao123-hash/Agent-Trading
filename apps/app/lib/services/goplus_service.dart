@@ -9,7 +9,7 @@ class GoPlusService {
   static const _baseUrl = 'https://api.gopluslabs.io/api/v1';
 
   /// 获取代币安全报告
-  /// [chain]: solana | bsc | base
+  /// [chain]: solana | bsc | base | eth
   /// [address]: 代币合约地址
   Future<GoPlusReport?> fetchReport({
     required String chain,
@@ -19,6 +19,7 @@ class GoPlusService {
       'solana' => 'solana',
       'bsc' => '56',
       'base' => '8453',
+      'eth' => '1',
       _ => chain,
     };
 

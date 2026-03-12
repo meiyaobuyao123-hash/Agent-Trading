@@ -15,10 +15,14 @@ class TokenDetail {
   final double priceUsd;
   final double marketCapUsd;
   final double liquidityUsd;
-  final double volume24hUsd;
+  final double volume5mUsd;
   final double volume1hUsd;
+  final double volume4hUsd;
+  final double volume24hUsd;
 
+  final double priceChange5m;
   final double priceChange1h;
+  final double priceChange4h;
   final double priceChange6h;
   final double priceChange24h;
 
@@ -64,9 +68,13 @@ class TokenDetail {
     required this.priceUsd,
     required this.marketCapUsd,
     required this.liquidityUsd,
-    required this.volume24hUsd,
+    this.volume5mUsd = 0,
     required this.volume1hUsd,
+    this.volume4hUsd = 0,
+    required this.volume24hUsd,
+    this.priceChange5m = 0,
     required this.priceChange1h,
+    this.priceChange4h = 0,
     required this.priceChange6h,
     required this.priceChange24h,
     required this.buys1h,
@@ -107,9 +115,13 @@ class TokenDetail {
       priceUsd: coin.priceUsd,
       marketCapUsd: coin.marketCapUsd,
       liquidityUsd: coin.liquidityUsd,
-      volume24hUsd: coin.volume24hUsd,
+      volume5mUsd: coin.volume5mUsd,
       volume1hUsd: coin.volume1hUsd,
+      volume4hUsd: coin.volume4hUsd,
+      volume24hUsd: coin.volume24hUsd,
+      priceChange5m: coin.priceChange5m,
       priceChange1h: coin.priceChange1h,
+      priceChange4h: coin.priceChange4h,
       priceChange6h: coin.priceChange6h,
       priceChange24h: coin.priceChange24h,
       buys1h: coin.buys1h,
@@ -178,6 +190,7 @@ class TokenDetail {
         'solana' => 'solana',
         'bsc' => '56',
         'base' => '8453',
+        'eth' => '1',
         _ => chain,
       };
 
@@ -185,6 +198,7 @@ class TokenDetail {
         'solana' => 'https://solscan.io/token/$address',
         'bsc' => 'https://bscscan.com/token/$address',
         'base' => 'https://basescan.org/token/$address',
+        'eth' => 'https://etherscan.io/token/$address',
         _ => '',
       };
 
@@ -200,6 +214,7 @@ class TokenDetail {
         'solana' => 'SOL',
         'bsc' => 'BSC',
         'base' => 'BASE',
+        'eth' => 'ETH',
         _ => chain.toUpperCase(),
       };
 

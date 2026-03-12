@@ -53,9 +53,10 @@ const RISK_OPTIONS = [
   { value: 'high',   label: '高风险 🔴' },
 ]
 const CHAIN_OPTIONS = [
-  { value: '56',      label: 'BSC', color: '#F0B90B' },
-  { value: '1',       label: 'ETH', color: '#627EEA' },
-  { value: '900',     label: 'SOL', color: '#9945FF' },
+  { value: '56',      label: 'BSC',  color: '#F0B90B' },
+  { value: '1',       label: 'ETH',  color: '#627EEA' },
+  { value: '900',     label: 'SOL',  color: '#9945FF' },
+  { value: '8453',    label: 'BASE', color: '#0052FF' },
 ]
 
 function defaultCondition(): Condition {

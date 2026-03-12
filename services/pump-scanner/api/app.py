@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes_agent import router as agent_router
+from api.routes_price import router as price_router
 
 log = logging.getLogger(__name__)
 
@@ -48,6 +49,7 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(agent_router)
+app.include_router(price_router)
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

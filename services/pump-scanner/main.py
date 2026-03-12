@@ -11,8 +11,9 @@ pump-scanner 入口
   01:00  创建者成功率更新（creator_stats_updater）
   02:00  热币日榜 Top20 生成（hot_coin_job）
   每1h   结果回填（outcome_labeler）
-  每2h   热币全链扫描（hot_coin_job）
-  每4h   推荐代币表现追踪
+  每10m  热币增量扫描（hot_coin_job，增量模式 ~30s/轮）
+  每5s   OKX 热币市场数据刷新+打分（hot_coin_job）
+  每1s   推荐代币表现追踪（performance_tracker 常驻协程）
   每6h   聪明钱钱包更新（smart_wallet_updater）
   每30m  KOL 推文采集
   每30m  KOL 推文分析
@@ -37,9 +38,10 @@ from collector import PumpScanner
 from daily_job import run_daily_job
 from outcome_labeler import run_outcome_labeler
 from smart_wallet_updater import run_smart_wallet_updater
+from smart_wallet_seed import initialize_smart_wallets
 from creator_stats_updater import run_creator_stats_updater
-from hot_coin_job import run_hot_coin_scan, run_hot_daily_picks
-from performance_tracker import run_performance_tracker
+from hot_coin_job import run_hot_coin_scan, run_hot_daily_picks, run_hot_price_refresh
+from performance_tracker import run_performance_loop
 
 # KOL 系统
 from kol_job import (
@@ -111,14 +113,29 @@ async def main():
         misfire_grace_time=600,
     )
 
-    # ── 热币全链扫描（每2小时）──────────────────────────────
+    # ── 热币增量扫描（每10分钟）─────────────────────────────
+    # 增量模式：已入库代币复用安全/社交数据，仅新代币走 GoPlus/Helius/DexScreener
+    # 每轮 ~30s（vs 全量 3-5min），发现新代币延迟从 2h → 10min
     scheduler.add_job(
         run_hot_coin_scan,
         trigger="interval",
-        hours=2,
+        minutes=10,
         id="hot_coin_scan",
-        name="热币全链扫描",
-        misfire_grace_time=600,
+        name="热币增量扫描",
+        misfire_grace_time=120,
+    )
+
+    # ── OKX 市场数据刷新（每5秒）───────────────────────────
+    # OKX lastPriceUsd 毫秒级更新，volume/change 按窗口聚合(5M/1H/4H/24H)
+    # 所有字段来自同一 price-info 接口，5s 全量刷新 + 打分
+    # 单轮耗时：OKX 4链 ≈ 2s + 打分 ≈ 0.1s + DB写 ≈ 0.5s ≈ 3s
+    scheduler.add_job(
+        run_hot_price_refresh,
+        trigger="interval",
+        seconds=5,
+        id="hot_price_refresh",
+        name="OKX 热币市场数据刷新",
+        misfire_grace_time=3,
     )
 
     # ── 热币日榜生成（每天 UTC 02:00）───────────────────────
@@ -130,15 +147,10 @@ async def main():
         misfire_grace_time=600,
     )
 
-    # ── 表现追踪（每4小时）──────────────────────────────────
-    scheduler.add_job(
-        run_performance_tracker,
-        trigger="interval",
-        hours=4,
-        id="performance_tracker",
-        name="推荐代币表现追踪",
-        misfire_grace_time=600,
-    )
+    # ── 表现追踪（1秒常驻协程，不走 APScheduler）─────────────
+    # 由 asyncio.create_task() 在 scheduler.start() 后启动
+    # hot 代币: 直调 OKX API（1s循环）  pump 代币: pump.fun API
+    # 内存缓存 daily_highs → 每 30s 批量落盘 DB
 
     # ══════════════════════════════════════════════════════════
     # KOL 系统定时任务
@@ -205,8 +217,8 @@ async def main():
         "  每日 UTC 01:00 → creator_stats\n"
         "  每日 UTC 02:00 → hot_daily_picks\n"
         "  每1小时        → outcome_labeler\n"
-        "  每2小时        → hot_coin_scan\n"
-        "  每4小时        → performance_tracker\n"
+        "  每10分钟       → hot_coin_scan (增量发现)\n"
+        "  每5秒          → hot_price_refresh (OKX 全字段+打分)\n"
         "  每6小时        → smart_wallet_updater\n"
         "  ── KOL 系统 ──\n"
         "  每30分钟       → kol_collect\n"
@@ -214,11 +226,18 @@ async def main():
         "  每1小时        → kol_signal_detect\n"
         "  每日 UTC 03:00 → kol_accuracy_eval\n"
         "  ── Agent 系统 ──\n"
-        "  每30秒         → agent_monitor"
+        "  每30秒         → agent_monitor\n"
+        "  ── 常驻协程 ──\n"
+        "  1秒循环        → performance_loop (OKX+pump.fun 秒级追踪)"
     )
 
-    # 初始化 KOL 种子账号
+    # 初始化种子数据
     await initialize_kol_accounts()
+    initialize_smart_wallets()
+
+    # 启动表现追踪常驻协程（1秒循环）
+    asyncio.create_task(run_performance_loop())
+    log.info("📊 表现追踪协程已启动 (1s loop)")
 
     # 启动事件总线
     event_bus = get_event_bus()

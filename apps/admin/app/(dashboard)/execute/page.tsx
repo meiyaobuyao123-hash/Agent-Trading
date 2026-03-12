@@ -53,11 +53,12 @@ interface Trade {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CHAINS = [
+  { index: '501',   name: 'SOL',      color: '#9945FF' },
   { index: '56',    name: 'BSC',      color: '#F0B90B' },
   { index: '1',     name: 'ETH',      color: '#627EEA' },
+  { index: '8453',  name: 'Base',     color: '#0052FF' },
   { index: '137',   name: 'Polygon',  color: '#8247E5' },
   { index: '42161', name: 'Arbitrum', color: '#28A0F0' },
-  { index: '8453',  name: 'Base',     color: '#0052FF' },
 ]
 
 const STATUS_STYLE: Record<string, { label: string; color: string }> = {
@@ -68,6 +69,7 @@ const STATUS_STYLE: Record<string, { label: string; color: string }> = {
 }
 
 const EXPLORER: Record<string, string> = {
+  '501':   'https://solscan.io/tx/',
   '56':    'https://bscscan.com/tx/',
   '1':     'https://etherscan.io/tx/',
   '137':   'https://polygonscan.com/tx/',

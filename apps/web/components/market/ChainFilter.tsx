@@ -6,6 +6,7 @@ const chains: { label: string; value: ChainFilter }[] = [
   { label: 'BSC', value: '56' },
   { label: 'ETH', value: '1' },
   { label: 'SOL', value: 'CT_501' },
+  { label: 'BASE', value: '8453' },
 ]
 
 interface ChainFilterTabsProps {

@@ -1,15 +1,16 @@
 """
-热币榜多链数据采集器
+热币榜多链数据采集器 — OKX 优先
 
 数据流：
-  GeckoTerminal（发现）
+  GeckoTerminal（仅发现新代币地址 + 年龄）
+    → OKX Market API（批量价格/市值/流动性/volume/change/holders/tax）
     → 硬过滤（年龄/流动性/市值/成交量）
-    → GoPlus（安全检测 + 持有者数量 + 集中度）
+    → GoPlus（安全检测：蜜罐/开源/Top10集中度 — OKX 无此数据）
     → Helius（SOL链：Top1持有者精确占比）
-    → DexScreener（社交链接：Twitter/Telegram/网站）
+    → DexScreener（社交链接：Twitter/Telegram/网站 — OKX 无此数据）
     → 返回富化后的候选列表，供 hot_scorer 打分
 
-覆盖链：SOL / BSC / Base（三链均有活跃新项目生态，GeckoTerminal trending 含大量 3~90d 目标）
+覆盖链：SOL / BSC / Base / ETH
 """
 
 import asyncio
@@ -21,13 +22,14 @@ import aiohttp
 
 from config import (
     GECKO_API, GOPLUS_API, DEXSCREENER_API, HELIUS_RPC,
-    HOT_CHAINS, GECKO_PAGES,
+    HOT_CHAINS, GECKO_PAGES, OKX_CHAIN_INDEX,
     HOT_MIN_AGE_DAYS, HOT_MAX_AGE_DAYS,
     HOT_MIN_LIQ_USD, HOT_MAX_LIQ_USD,
     HOT_MIN_MC_USD, HOT_MAX_MC_USD,
     HOT_MIN_VOL_24H_USD, HOT_MIN_LIQ_MC_RATIO,
     HOT_MAX_TAX, HOT_MAX_TOP10_PCT,
 )
+import okx_market_client as okx
 
 log = logging.getLogger(__name__)
 
@@ -35,12 +37,12 @@ log = logging.getLogger(__name__)
 _GECKO_HEADERS = {"Accept": "application/json;version=20230302"}
 _TIMEOUT = aiohttp.ClientTimeout(total=12)
 
-# 稳定币符号，作为 base_token 时跳过（防止把 USDC 本身选进来）
+# 稳定币符号，作为 base_token 时跳过
 _STABLECOINS = {"USDC", "USDT", "BUSD", "DAI", "TUSD", "FRAX", "USDD", "USDP"}
 
 
 # ═══════════════════════════════════════════════════════════
-# Step 1 — GeckoTerminal：发现候选池
+# Step 1 — GeckoTerminal：发现候选池（仅取地址+年龄）
 # ═══════════════════════════════════════════════════════════
 
 async def _fetch_gecko_pools(
@@ -48,51 +50,47 @@ async def _fetch_gecko_pools(
     gecko_net: str,
     endpoint: str,          # 'trending_pools' | 'new_pools'
 ) -> List[dict]:
-    """拉取 GeckoTerminal 池列表（多页，含 base_token 信息）"""
-    results: List[dict] = []
+    """拉取 GeckoTerminal 池列表，仅提取 address + pair_created_at"""
+    results = []  # type: List[dict]
 
     for page in range(1, GECKO_PAGES + 1):
         url = f"{GECKO_API}/networks/{gecko_net}/{endpoint}"
         params = {"include": "base_token", "page": page}
 
-        # 内层重试循环：专门处理 429 限速
-        page_result = None   # None=未成功, False=终止翻页, (pools, map)=成功
+        page_result = None
         for attempt in range(3):
             try:
                 async with session.get(
                     url, params=params, headers=_GECKO_HEADERS, timeout=_TIMEOUT
                 ) as resp:
                     if resp.status == 429:
-                        wait = 25 * (attempt + 1)   # 25s / 50s / 75s 递增等待
+                        wait = 25 * (attempt + 1)
                         log.warning(
-                            f"GeckoTerminal 限速(429)，等待{wait}s 后重试 "
+                            f"GeckoTerminal 限速(429)，等待{wait}s "
                             f"{gecko_net}/{endpoint} p{page} (第{attempt+1}次)"
                         )
                         await asyncio.sleep(wait)
-                        continue                     # ← 重试同一页（而非跳到下一页）
+                        continue
 
                     if resp.status != 200:
-                        log.debug(f"GeckoTerminal {gecko_net}/{endpoint} p{page} → {resp.status}")
-                        page_result = False           # 非限速错误，停止翻页
+                        page_result = False
                         break
 
-                    data  = await resp.json()
+                    data = await resp.json()
                     pools = data.get("data", [])
                     if not pools:
-                        page_result = False           # 无数据，后续页也没有意义
+                        page_result = False
                         break
 
-                    # 构建 included token 映射（id → attributes）
-                    included_map: Dict[str, dict] = {}
+                    included_map = {}  # type: Dict[str, dict]
                     for item in data.get("included", []):
                         if item.get("type") == "token":
                             included_map[item["id"]] = item.get("attributes", {})
 
                     page_result = (pools, included_map)
-                    break                             # 成功，退出重试循环
+                    break
 
             except asyncio.TimeoutError:
-                log.warning(f"GeckoTerminal timeout: {gecko_net}/{endpoint} p{page}")
                 page_result = False
                 break
             except Exception as e:
@@ -100,9 +98,8 @@ async def _fetch_gecko_pools(
                 page_result = False
                 break
 
-        # 外层：根据内层结果决定是否继续翻页
         if page_result is False:
-            break                                     # 停止翻页
+            break
         if isinstance(page_result, tuple):
             pools, included_map = page_result
             for pool in pools:
@@ -110,21 +107,20 @@ async def _fetch_gecko_pools(
                 if parsed:
                     results.append(parsed)
 
-        await asyncio.sleep(2.5)   # GeckoTerminal 免费：~30 req/min ≈ 2s/req，保守2.5s
+        await asyncio.sleep(2.5)
 
     return results
 
 
 def _parse_gecko_pool(pool: dict, included_map: dict) -> Optional[dict]:
-    """解析单个 GeckoTerminal Pool，返回标准化 dict 或 None"""
+    """解析 GeckoTerminal Pool — 仅提取地址、名称、年龄"""
     try:
         attr = pool.get("attributes", {})
-        rel  = pool.get("relationships", {})
+        rel = pool.get("relationships", {})
 
-        # base_token 信息
-        base_id    = rel.get("base_token", {}).get("data", {}).get("id", "")
+        base_id = rel.get("base_token", {}).get("data", {}).get("id", "")
         token_attr = included_map.get(base_id, {})
-        address    = token_attr.get("address", "")
+        address = token_attr.get("address", "")
         if not address:
             return None
 
@@ -134,31 +130,9 @@ def _parse_gecko_pool(pool: dict, included_map: dict) -> Optional[dict]:
 
         name = token_attr.get("name", "")
 
-        # 市场数据
-        fdv = float(attr.get("fdv_usd") or 0)
-        mc  = float(attr.get("market_cap_usd") or fdv)   # market_cap_usd 有时为 null
-        liq = float(attr.get("reserve_in_usd") or 0)
-
-        vol      = attr.get("volume_usd", {})
-        vol_24h  = float(vol.get("h24") or 0)
-        vol_1h   = float(vol.get("h1")  or 0)
-
-        pct      = attr.get("price_change_percentage", {})
-        pc_1h    = float(pct.get("h1")  or 0)
-        pc_6h    = float(pct.get("h6")  or 0)
-        pc_24h   = float(pct.get("h24") or 0)
-
-        price_usd = float(attr.get("base_token_price_usd") or 0)
-
-        txns      = attr.get("transactions", {})
-        buys_1h   = int(txns.get("h1", {}).get("buys",  0) or 0)
-        sells_1h  = int(txns.get("h1", {}).get("sells", 0) or 0)
-        buys_24h  = int(txns.get("h24", {}).get("buys",  0) or 0)
-        sells_24h = int(txns.get("h24", {}).get("sells", 0) or 0)
-
-        # 代币年龄
-        pair_created_at: Optional[datetime] = None
-        age_days: Optional[float] = None
+        # 年龄计算
+        pair_created_at = None  # type: Optional[datetime]
+        age_days = None  # type: Optional[float]
         created_str = attr.get("pool_created_at")
         if created_str:
             pair_created_at = datetime.fromisoformat(
@@ -166,29 +140,17 @@ def _parse_gecko_pool(pool: dict, included_map: dict) -> Optional[dict]:
             )
             age_days = (datetime.now(timezone.utc) - pair_created_at).total_seconds() / 86400
 
-        dex_id       = rel.get("dex", {}).get("data", {}).get("id", "")
+        dex_id = rel.get("dex", {}).get("data", {}).get("id", "")
         pair_address = attr.get("address", "")
 
         return {
-            "address":         address,
-            "name":            name,
-            "symbol":          symbol,
-            "pair_address":    pair_address,
-            "dex_id":          dex_id,
-            "price_usd":       price_usd,
-            "market_cap_usd":  mc,
-            "liquidity_usd":   liq,
-            "volume_24h_usd":  vol_24h,
-            "volume_1h_usd":   vol_1h,
-            "price_change_1h":  pc_1h,
-            "price_change_6h":  pc_6h,
-            "price_change_24h": pc_24h,
-            "buys_1h":         buys_1h,
-            "sells_1h":        sells_1h,
-            "buys_24h":        buys_24h,
-            "sells_24h":       sells_24h,
+            "address": address,
+            "name": name,
+            "symbol": symbol,
+            "pair_address": pair_address,
+            "dex_id": dex_id,
             "pair_created_at": pair_created_at,
-            "age_days":        age_days,
+            "age_days": age_days,
         }
     except Exception as e:
         log.debug(f"_parse_gecko_pool: {e}")
@@ -196,7 +158,134 @@ def _parse_gecko_pool(pool: dict, included_map: dict) -> Optional[dict]:
 
 
 # ═══════════════════════════════════════════════════════════
-# Step 2 — 硬过滤
+# Step 2 — OKX 批量市场数据
+# ═══════════════════════════════════════════════════════════
+
+async def _enrich_with_okx(
+    session: aiohttp.ClientSession,
+    chain: str,
+    coins: List[dict],
+) -> List[dict]:
+    """用 OKX price-info 批量获取市场数据，替换 GeckoTerminal 的价格数据"""
+    chain_index = OKX_CHAIN_INDEX.get(chain)
+    if not chain_index:
+        log.warning(f"OKX 不支持链 {chain}，跳过")
+        return coins
+
+    addresses = [c["address"] for c in coins]
+    okx_data = await okx.batch_price_info(chain_index, addresses, session=session)
+
+    enriched = []  # type: List[dict]
+    okx_hit = 0
+    for coin in coins:
+        addr_lower = coin["address"].lower()
+        info = okx_data.get(addr_lower)
+        if info and info["lastPriceUsd"] > 0:
+            # OKX 数据可用 → 替换
+            coin["price_usd"] = info["lastPriceUsd"]
+            coin["market_cap_usd"] = info["marketCap"]
+            coin["liquidity_usd"] = info["liquidity"]
+            coin["volume_24h_usd"] = info["volume24H"]
+            coin["volume_1h_usd"] = info["volume1H"]
+            coin["volume_5m_usd"] = info["volume5M"]
+            coin["volume_4h_usd"] = info["volume4H"]
+            coin["price_change_1h"] = info["change1H"]
+            coin["price_change_6h"] = 0  # OKX 无 6h，保留 0
+            coin["price_change_24h"] = info["change24H"]
+            coin["price_change_5m"] = info["change5M"]
+            coin["price_change_4h"] = info["change4H"]
+            coin["buys_1h"] = info["txsBuy1H"]
+            coin["sells_1h"] = info["txsSell1H"]
+            coin["buys_24h"] = info["txsBuy24H"]
+            coin["sells_24h"] = info["txsSell24H"]
+            coin["buys_5m"] = info["txsBuy5M"]
+            coin["sells_5m"] = info["txsSell5M"]
+            coin["okx_holders"] = info["holders"]
+            coin["okx_buy_tax"] = info["buyTaxRate"]
+            coin["okx_sell_tax"] = info["sellTaxRate"]
+            coin["circ_supply"] = info["circulatingSupply"]
+            coin["token_logo_url"] = info["tokenLogoUrl"]
+            coin["data_source"] = "okx"
+            okx_hit += 1
+        else:
+            # OKX 无数据 → 该代币可能太新/太小，标记为 gecko fallback
+            coin["data_source"] = "gecko_fallback"
+        enriched.append(coin)
+
+    log.info(f"  OKX 命中 {okx_hit}/{len(coins)} 个代币")
+    return enriched
+
+
+# ═══════════════════════════════════════════════════════════
+# Step 2b — GeckoTerminal Fallback（仅对 OKX 无数据的代币）
+# ═══════════════════════════════════════════════════════════
+
+async def _fallback_gecko_market_data(
+    session: aiohttp.ClientSession,
+    gecko_net: str,
+    coins: List[dict],
+) -> List[dict]:
+    """对 OKX 无数据的代币，从 GeckoTerminal 原始池数据补充市场数据"""
+    # GeckoTerminal 的数据已经在 _parse_gecko_pool 中被简化掉了
+    # 对于 fallback 情况，重新查询单个代币的池数据
+    for coin in coins:
+        if coin.get("data_source") != "gecko_fallback":
+            continue
+
+        addr = coin["address"]
+        try:
+            url = f"{GECKO_API}/networks/{gecko_net}/tokens/{addr}/pools"
+            params = {"page": 1}
+            async with session.get(
+                url, params=params, headers=_GECKO_HEADERS, timeout=_TIMEOUT
+            ) as resp:
+                if resp.status != 200:
+                    continue
+
+                data = await resp.json()
+                pools = data.get("data", [])
+                if not pools:
+                    continue
+
+                # 取第一个池的数据
+                attr = pools[0].get("attributes", {})
+                fdv = float(attr.get("fdv_usd") or 0)
+                mc = float(attr.get("market_cap_usd") or fdv)
+                liq = float(attr.get("reserve_in_usd") or 0)
+
+                vol = attr.get("volume_usd", {})
+                pct = attr.get("price_change_percentage", {})
+                txns = attr.get("transactions", {})
+
+                coin["price_usd"] = float(attr.get("base_token_price_usd") or 0)
+                coin["market_cap_usd"] = mc
+                coin["liquidity_usd"] = liq
+                coin["volume_24h_usd"] = float(vol.get("h24") or 0)
+                coin["volume_1h_usd"] = float(vol.get("h1") or 0)
+                coin["volume_5m_usd"] = 0
+                coin["volume_4h_usd"] = 0
+                coin["price_change_1h"] = float(pct.get("h1") or 0)
+                coin["price_change_6h"] = float(pct.get("h6") or 0)
+                coin["price_change_24h"] = float(pct.get("h24") or 0)
+                coin["price_change_5m"] = 0
+                coin["price_change_4h"] = 0
+                coin["buys_1h"] = int(txns.get("h1", {}).get("buys", 0) or 0)
+                coin["sells_1h"] = int(txns.get("h1", {}).get("sells", 0) or 0)
+                coin["buys_24h"] = int(txns.get("h24", {}).get("buys", 0) or 0)
+                coin["sells_24h"] = int(txns.get("h24", {}).get("sells", 0) or 0)
+                coin["buys_5m"] = 0
+                coin["sells_5m"] = 0
+
+            await asyncio.sleep(2.5)  # GeckoTerminal 限速
+
+        except Exception as e:
+            log.debug(f"GeckoTerminal fallback {addr[:8]}: {e}")
+
+    return coins
+
+
+# ═══════════════════════════════════════════════════════════
+# Step 3 — 硬过滤
 # ═══════════════════════════════════════════════════════════
 
 def apply_hard_filter(
@@ -204,22 +293,19 @@ def apply_hard_filter(
     mc_max_usd: float = None,
     liq_max_usd: float = None,
 ) -> Tuple[bool, str]:
-    """
-    返回 (通过, 拒绝原因)
-    mc_max_usd / liq_max_usd: 链级别上限覆盖（None → 使用全局常量）
-    """
+    """返回 (通过, 拒绝原因)"""
     age = coin.get("age_days")
     if age is None:
         return False, "年龄未知"
     if not (HOT_MIN_AGE_DAYS <= age <= HOT_MAX_AGE_DAYS):
         return False, f"年龄不符 {age:.1f}d"
 
-    liq     = coin.get("liquidity_usd", 0)
+    liq = coin.get("liquidity_usd", 0)
     liq_max = liq_max_usd if liq_max_usd is not None else HOT_MAX_LIQ_USD
     if not (HOT_MIN_LIQ_USD <= liq <= liq_max):
         return False, f"流动性不符 ${liq:,.0f}"
 
-    mc     = coin.get("market_cap_usd", 0)
+    mc = coin.get("market_cap_usd", 0)
     mc_max = mc_max_usd if mc_max_usd is not None else HOT_MAX_MC_USD
     if not (HOT_MIN_MC_USD <= mc <= mc_max):
         return False, f"市值不符 ${mc:,.0f}"
@@ -234,7 +320,7 @@ def apply_hard_filter(
 
 
 # ═══════════════════════════════════════════════════════════
-# Step 3 — GoPlus：安全检测 + 持有者数据
+# Step 4 — GoPlus：安全检测 + 持有者数据
 # ═══════════════════════════════════════════════════════════
 
 async def _check_goplus(
@@ -243,11 +329,7 @@ async def _check_goplus(
     address: str,
     goplus_chain: str,
 ) -> dict:
-    """
-    返回字段：
-      holder_count, top10_holder_pct,
-      is_honeypot, is_open_source, buy_tax, sell_tax, goplus_risk
-    """
+    """返回安全检测字段"""
     try:
         if chain == "solana":
             url = f"{GOPLUS_API}/solana/token_security"
@@ -263,7 +345,6 @@ async def _check_goplus(
             data = await resp.json()
             result = data.get("result", {})
 
-            # GoPlus 以 address（可能大小写不一致）为 key
             token_data = (
                 result.get(address)
                 or result.get(address.lower())
@@ -272,37 +353,35 @@ async def _check_goplus(
             if not token_data:
                 return {}
 
-            holder_count  = int(token_data.get("holder_count") or 0)
-            top10_pct     = float(token_data.get("top10_holder_rate") or 0)
+            holder_count = int(token_data.get("holder_count") or 0)
+            top10_pct = float(token_data.get("top10_holder_rate") or 0)
 
-            # EVM 专属字段（SOL 链这些字段通常缺失，默认安全值）
-            is_honeypot   = str(token_data.get("is_honeypot",   "0")) == "1"
-            is_open       = str(token_data.get("is_open_source","1")) != "0"
-            buy_tax       = float(token_data.get("buy_tax")  or 0)
-            sell_tax      = float(token_data.get("sell_tax") or 0)
-            cannot_sell   = str(token_data.get("cannot_sell_all", "0")) == "1"
+            is_honeypot = str(token_data.get("is_honeypot", "0")) == "1"
+            is_open = str(token_data.get("is_open_source", "1")) != "0"
+            buy_tax = float(token_data.get("buy_tax") or 0)
+            sell_tax = float(token_data.get("sell_tax") or 0)
+            cannot_sell = str(token_data.get("cannot_sell_all", "0")) == "1"
 
-            # SOL 无法检测蜜罐，用 cannot_buy 替代
             if chain == "solana":
                 is_honeypot = str(token_data.get("cannot_buy", "0")) == "1"
-                is_open     = True   # SOL 合约开源难验证，默认 True
+                is_open = True
 
             goplus_risk = (
                 is_honeypot
                 or cannot_sell
-                or buy_tax  > HOT_MAX_TAX
+                or buy_tax > HOT_MAX_TAX
                 or sell_tax > HOT_MAX_TAX
                 or (top10_pct > HOT_MAX_TOP10_PCT and top10_pct > 0)
             )
 
             return {
-                "holder_count":     holder_count,
+                "holder_count": holder_count,
                 "top10_holder_pct": top10_pct,
-                "is_honeypot":      is_honeypot,
-                "is_open_source":   is_open,
-                "buy_tax":          buy_tax,
-                "sell_tax":         sell_tax,
-                "goplus_risk":      goplus_risk,
+                "is_honeypot": is_honeypot,
+                "is_open_source": is_open,
+                "buy_tax": buy_tax,
+                "sell_tax": sell_tax,
+                "goplus_risk": goplus_risk,
             }
 
     except asyncio.TimeoutError:
@@ -314,19 +393,14 @@ async def _check_goplus(
 
 
 # ═══════════════════════════════════════════════════════════
-# Step 4 — Helius：SOL Top1 持有者精确占比
+# Step 5 — Helius：SOL Top1 持有者精确占比
 # ═══════════════════════════════════════════════════════════
 
 async def _get_sol_top1_pct(
     session: aiohttp.ClientSession,
     mint: str,
 ) -> Optional[float]:
-    """
-    使用 Helius RPC 同时查询：
-      getTokenSupply         → 总供应量
-      getTokenLargestAccounts → Top20 账户持仓
-    计算 Top1 持有者占比（排除流动性池地址误差已被GoPlus top10分析覆盖）
-    """
+    """Helius RPC 查询 Top1 持有者占比"""
     supply_payload = {
         "jsonrpc": "2.0", "id": 1,
         "method": "getTokenSupply",
@@ -368,35 +442,35 @@ async def _get_sol_top1_pct(
 
 
 # ═══════════════════════════════════════════════════════════
-# Step 5 — DexScreener：社交链接
+# Step 6 — DexScreener：社交链接
 # ═══════════════════════════════════════════════════════════
 
 async def _get_dexscreener_socials(
     session: aiohttp.ClientSession,
     address: str,
 ) -> dict:
-    """从 DexScreener 获取 Twitter / Telegram / 网站 存在性 + 代币图标"""
+    """从 DexScreener 获取 Twitter / Telegram / 网站 + 图标"""
     try:
         url = f"{DEXSCREENER_API}/latest/dex/tokens/{address}"
         async with session.get(url, timeout=_TIMEOUT) as resp:
             if resp.status != 200:
                 return {}
 
-            data  = await resp.json()
+            data = await resp.json()
             pairs = data.get("pairs") or []
             if not pairs:
                 return {}
 
-            info     = pairs[0].get("info", {})
-            socials  = info.get("socials", [])
+            info = pairs[0].get("info", {})
+            socials = info.get("socials", [])
             websites = info.get("websites", [])
             image_url = info.get("imageUrl") or ""
 
             return {
-                "has_twitter":  any(s.get("type") == "twitter"  for s in socials),
+                "has_twitter": any(s.get("type") == "twitter" for s in socials),
                 "has_telegram": any(s.get("type") == "telegram" for s in socials),
-                "has_website":  len(websites) > 0,
-                "image_url":    image_url,
+                "has_website": len(websites) > 0,
+                "image_url": image_url,
             }
     except Exception as e:
         log.debug(f"DexScreener socials {address[:8]}: {e}")
@@ -404,73 +478,175 @@ async def _get_dexscreener_socials(
 
 
 # ═══════════════════════════════════════════════════════════
-# 主函数：全链扫描并富化
+# 辅助：获取已入库代币地址集合
 # ═══════════════════════════════════════════════════════════
 
-async def fetch_hot_coin_candidates() -> List[dict]:
+def _get_known_addresses(chain: str) -> set:
+    """从 hot_coins 表读取指定链已入库的代币地址（小写集合）"""
+    try:
+        from database import get_db
+        db = get_db()
+        res = (
+            db.table("hot_coins")
+            .select("address")
+            .eq("chain", chain)
+            .execute()
+        )
+        return {r["address"].lower() for r in (res.data or [])}
+    except Exception as e:
+        log.warning(f"读取已入库地址失败 {chain}: {e}")
+        return set()
+
+
+def _get_known_addresses_with_data(chain: str) -> Dict[str, dict]:
+    """从 hot_coins 表读取指定链已入库代币的安全/社交字段（用于增量跳过）"""
+    try:
+        from database import get_db
+        db = get_db()
+        res = (
+            db.table("hot_coins")
+            .select("address, name, symbol, pair_address, dex_id, "
+                    "pair_created_at, age_days, "
+                    "top10_holder_pct, top1_holder_pct, "
+                    "is_honeypot, is_open_source, buy_tax, sell_tax, goplus_risk, "
+                    "has_twitter, has_telegram, has_website, "
+                    "holder_count, image_url, token_logo_url, circ_supply")
+            .eq("chain", chain)
+            .execute()
+        )
+        return {r["address"].lower(): r for r in (res.data or [])}
+    except Exception as e:
+        log.warning(f"读取已入库数据失败 {chain}: {e}")
+        return {}
+
+
+# ═══════════════════════════════════════════════════════════
+# 主函数：全链扫描并富化（支持增量模式）
+# ═══════════════════════════════════════════════════════════
+
+async def fetch_hot_coin_candidates(incremental: bool = True) -> List[dict]:
     """
     扫描所有目标链（SOL / BSC / ETH / Base），
-    经过硬过滤 → GoPlus → Helius → DexScreener 富化后返回候选列表。
-    每条 dict 包含打分所需的全部字段。
+    GeckoTerminal 发现 → OKX 市场数据 → 硬过滤 → GoPlus → Helius → DexScreener
+
+    incremental=True（默认）:
+      已入库代币跳过 GoPlus/Helius/DexScreener，复用 DB 中的安全/社交数据。
+      仅新发现的代币走完整富化流程。扫描时间从 3-5min 降至 ~30s。
+
+    incremental=False:
+      所有候选全量富化（用于首次全量扫描或定期安全刷新）。
     """
-    all_candidates: List[dict] = []
+    all_candidates = []  # type: List[dict]
 
     async with aiohttp.ClientSession() as session:
         for chain, cfg in HOT_CHAINS.items():
-            log.info(f"🔍 扫描 {chain}...")
-            gecko_net    = cfg["gecko_net"]
+            log.info(f"扫描 {chain}...")
+            gecko_net = cfg["gecko_net"]
             goplus_chain = cfg["goplus_chain"]
 
-            # ── 1. GeckoTerminal：获取候选池 ───────────────────
-            trending  = await _fetch_gecko_pools(session, gecko_net, "trending_pools")
+            # ── 增量模式：加载已入库数据 ──────────────────────
+            known_data = {}  # type: Dict[str, dict]
+            if incremental:
+                known_data = _get_known_addresses_with_data(chain)
+                log.info(f"  {chain}: 已入库 {len(known_data)} 个代币")
+
+            # ── 1. GeckoTerminal：发现候选地址 ──────────────────
+            trending = await _fetch_gecko_pools(session, gecko_net, "trending_pools")
             new_pools = await _fetch_gecko_pools(session, gecko_net, "new_pools")
 
-            # 按 address 去重（trending 和 new_pools 可能重叠）
-            seen: Dict[str, dict] = {}
+            # 按 address 去重
+            seen = {}  # type: Dict[str, dict]
             for coin in trending + new_pools:
                 addr = coin["address"]
-                # 若已存在，保留 volume 更大的（trending 数据通常更新）
-                if addr not in seen or coin.get("volume_24h_usd", 0) > seen[addr].get("volume_24h_usd", 0):
+                if addr not in seen:
                     seen[addr] = coin
             raw = list(seen.values())
-            log.info(f"  {chain}: 原始候选 {len(raw)} 个")
+            log.info(f"  {chain}: 发现 {len(raw)} 个候选地址")
 
-            # ── 2. 硬过滤 ──────────────────────────────────────
-            mc_max_usd  = cfg.get("mc_max_usd")   # 链级别覆盖，None→使用全局值
+            if not raw:
+                continue
+
+            # ── 2. OKX 批量获取市场数据 ─────────────────────────
+            raw = await _enrich_with_okx(session, chain, raw)
+
+            # 对 OKX 无数据的代币用 GeckoTerminal fallback
+            fallback_count = sum(1 for c in raw if c.get("data_source") == "gecko_fallback")
+            if fallback_count > 0:
+                log.info(f"  {chain}: {fallback_count} 个代币 OKX 无数据，GeckoTerminal fallback")
+                raw = await _fallback_gecko_market_data(session, gecko_net, raw)
+
+            # ── 3. 硬过滤（用 OKX 数据） ───────────────────────
+            mc_max_usd = cfg.get("mc_max_usd")
             liq_max_usd = cfg.get("liq_max_usd")
-            filtered: List[dict] = []
+            filtered = []  # type: List[dict]
             for coin in raw:
+                # 无价格数据的跳过
+                if not coin.get("price_usd"):
+                    continue
                 ok, reason = apply_hard_filter(
                     coin, mc_max_usd=mc_max_usd, liq_max_usd=liq_max_usd
                 )
                 if ok:
                     filtered.append(coin)
                 else:
-                    log.debug(f"  ✗ {coin.get('symbol','?')} ({coin['address'][:8]}): {reason}")
+                    log.debug(f"  x {coin.get('symbol', '?')} ({coin['address'][:8]}): {reason}")
             log.info(f"  {chain}: 硬过滤后 {len(filtered)} 个")
 
-            # ── 3. GoPlus + Helius + DexScreener 富化 ─────────
-            enriched: List[dict] = []
+            # ── 4. 分流：已入库 vs 新发现 ──────────────────────
+            new_coins = []     # type: List[dict]
+            reuse_coins = []   # type: List[dict]
             for coin in filtered:
+                addr_lower = coin["address"].lower()
+                if incremental and addr_lower in known_data:
+                    # 已入库：复用 DB 中的安全/社交字段，只用 OKX 新价格
+                    db_row = known_data[addr_lower]
+                    coin.update({
+                        "chain": chain,
+                        "holder_count": db_row.get("holder_count", 0),
+                        "top10_holder_pct": db_row.get("top10_holder_pct"),
+                        "top1_holder_pct": db_row.get("top1_holder_pct"),
+                        "is_honeypot": db_row.get("is_honeypot", False),
+                        "is_open_source": db_row.get("is_open_source", True),
+                        "buy_tax": db_row.get("buy_tax", 0.0),
+                        "sell_tax": db_row.get("sell_tax", 0.0),
+                        "goplus_risk": db_row.get("goplus_risk", False),
+                        "has_twitter": db_row.get("has_twitter", False),
+                        "has_telegram": db_row.get("has_telegram", False),
+                        "has_website": db_row.get("has_website", False),
+                        "image_url": db_row.get("image_url") or db_row.get("token_logo_url", ""),
+                    })
+                    reuse_coins.append(coin)
+                else:
+                    new_coins.append(coin)
+
+            if incremental:
+                log.info(f"  {chain}: 复用已入库 {len(reuse_coins)} 个，新发现 {len(new_coins)} 个需富化")
+
+            # ── 5a. 新代币：完整 GoPlus + Helius + DexScreener ─
+            enriched = []  # type: List[dict]
+            for coin in new_coins:
                 addr = coin["address"]
 
                 # GoPlus 安全检测
                 gp = await _check_goplus(session, chain, addr, goplus_chain)
-                await asyncio.sleep(0.35)   # GoPlus 速率保护
+                await asyncio.sleep(0.35)
 
-                # 蜜罐直接排除（不进打分池）
                 if gp.get("is_honeypot"):
-                    log.debug(f"  ⚠ 蜜罐排除: {coin.get('symbol')} ({addr[:8]})")
+                    log.debug(f"  蜜罐排除: {coin.get('symbol')} ({addr[:8]})")
                     continue
 
-                # GoPlus 持有者数量过滤（> 0 才过滤，= 0 表示 GoPlus 无数据，放行）
-                holder_count = gp.get("holder_count", 0)
+                # GoPlus 持有者数量
+                gp_holder_count = gp.get("holder_count", 0)
+                # 优先用 OKX holders，GoPlus 作为补充
+                okx_holders = coin.get("okx_holders", 0)
+                holder_count = okx_holders if okx_holders > 0 else gp_holder_count
+
                 if 0 < holder_count < 150:
-                    log.debug(f"  ✗ 持有者不足 {holder_count}: {coin.get('symbol')}")
+                    log.debug(f"  x 持有者不足 {holder_count}: {coin.get('symbol')}")
                     continue
 
                 # Helius：SOL 链 Top1 精确占比
-                top1_pct: Optional[float] = None
+                top1_pct = None  # type: Optional[float]
                 if chain == "solana":
                     top1_pct = await _get_sol_top1_pct(session, addr)
                     await asyncio.sleep(0.1)
@@ -479,28 +655,151 @@ async def fetch_hot_coin_candidates() -> List[dict]:
                 socials = await _get_dexscreener_socials(session, addr)
                 await asyncio.sleep(0.2)
 
+                # 买卖税：OKX 有则用 OKX，否则用 GoPlus
+                buy_tax = coin.get("okx_buy_tax", 0)
+                sell_tax = coin.get("okx_sell_tax", 0)
+                if buy_tax == 0 and sell_tax == 0:
+                    buy_tax = gp.get("buy_tax", 0.0)
+                    sell_tax = gp.get("sell_tax", 0.0)
+
+                # 图标：OKX 有则用 OKX，否则用 DexScreener
+                image_url = coin.get("token_logo_url") or socials.get("image_url", "")
+
                 enriched.append({
                     **coin,
-                    "chain":            chain,
-                    "holder_count":     holder_count,
+                    "chain": chain,
+                    "holder_count": holder_count,
                     "top10_holder_pct": gp.get("top10_holder_pct"),
-                    "top1_holder_pct":  top1_pct,
-                    "is_honeypot":      gp.get("is_honeypot", False),
-                    "is_open_source":   gp.get("is_open_source", True),
-                    "buy_tax":          gp.get("buy_tax", 0.0),
-                    "sell_tax":         gp.get("sell_tax", 0.0),
-                    "goplus_risk":      gp.get("goplus_risk", False),
-                    "has_twitter":      socials.get("has_twitter", False),
-                    "has_telegram":     socials.get("has_telegram", False),
-                    "has_website":      socials.get("has_website", False),
-                    "image_url":        socials.get("image_url", ""),
+                    "top1_holder_pct": top1_pct,
+                    "is_honeypot": gp.get("is_honeypot", False),
+                    "is_open_source": gp.get("is_open_source", True),
+                    "buy_tax": buy_tax,
+                    "sell_tax": sell_tax,
+                    "goplus_risk": gp.get("goplus_risk", False),
+                    "has_twitter": socials.get("has_twitter", False),
+                    "has_telegram": socials.get("has_telegram", False),
+                    "has_website": socials.get("has_website", False),
+                    "image_url": image_url,
                 })
 
-            log.info(f"  {chain}: 富化完成 {len(enriched)} 个进入打分")
-            all_candidates.extend(enriched)
+            # ── 5b. 合并：已入库复用 + 新富化 ─────────────────
+            chain_total = reuse_coins + enriched
+            log.info(f"  {chain}: 富化完成 {len(chain_total)} 个进入打分 (复用={len(reuse_coins)} 新={len(enriched)})")
+            all_candidates.extend(chain_total)
 
-            # ── 链间冷却：等待 GeckoTerminal 全局限速恢复 ──────
-            await asyncio.sleep(8)
+            # ── 链间冷却（增量模式缩短） ──────────────────────
+            await asyncio.sleep(2 if incremental else 5)
 
-    log.info(f"✅ 全链扫描完成，候选总计: {len(all_candidates)} 个")
+    log.info(f"全链扫描完成，候选总计: {len(all_candidates)} 个")
     return all_candidates
+
+
+# ═══════════════════════════════════════════════════════════
+# 每5秒：OKX 全字段刷新已入库代币
+# OKX price-info 一次返回：
+#   实时字段：lastPriceUsd(毫秒级), liquidity(每笔成交), marketCap
+#   聚合窗口：volume/change/txs 的 5M/1H/4H/24H
+#   延迟字段：holders(5-15min), circulatingSupply(稳定)
+# 所有字段来自同一接口，无额外 API 开销
+# ═══════════════════════════════════════════════════════════
+
+async def refresh_okx_prices() -> List[dict]:
+    """
+    从 hot_coins 表读取已入库代币，批量调用 OKX price-info 刷新全量市场数据。
+    每 5 秒调用一次，匹配 OKX 各字段实际更新频率：
+      - price/liquidity: 每笔成交即更新 → 5s 轮询近实时
+      - 5M 窗口数据: 5分钟聚合 → 5s 轮询可捕获最新窗口
+      - 1H/4H/24H: 更长窗口 → 搭载获取，无额外开销
+      - holders: 5-15min 延迟 → 搭载获取
+    返回更新后的行列表（供 hot_coin_job 重新打分）。
+    """
+    from database import get_db
+
+    updated_rows = []  # type: List[dict]
+
+    try:
+        db = get_db()
+
+        async with aiohttp.ClientSession() as session:
+            for chain, cfg in HOT_CHAINS.items():
+                chain_index = OKX_CHAIN_INDEX.get(chain)
+                if not chain_index:
+                    continue
+
+                # 从 DB 读取该链所有代币
+                res = (
+                    db.table("hot_coins")
+                    .select("address, name, symbol, pair_address, dex_id, "
+                            "pair_created_at, age_days, "
+                            "top10_holder_pct, top1_holder_pct, "
+                            "is_honeypot, is_open_source, goplus_risk, "
+                            "has_twitter, has_telegram, has_website")
+                    .eq("chain", chain)
+                    .eq("is_honeypot", False)
+                    .execute()
+                )
+                if not res.data:
+                    continue
+
+                addresses = [r["address"] for r in res.data]
+                log.info(f"  OKX 刷新 {chain}: {len(addresses)} 个代币")
+
+                # OKX 批量查询
+                okx_data = await okx.batch_price_info(
+                    chain_index, addresses, session=session
+                )
+
+                for row in res.data:
+                    addr_lower = row["address"].lower()
+                    info = okx_data.get(addr_lower)
+                    if not info or info["lastPriceUsd"] <= 0:
+                        continue
+
+                    okx_holders = info["holders"]
+                    updated_rows.append({
+                        "chain": chain,
+                        "address": row["address"],
+                        "name": row.get("name"),
+                        "symbol": row.get("symbol"),
+                        "pair_address": row.get("pair_address"),
+                        "dex_id": row.get("dex_id"),
+                        "price_usd": info["lastPriceUsd"],
+                        "market_cap_usd": info["marketCap"],
+                        "liquidity_usd": info["liquidity"],
+                        "volume_24h_usd": info["volume24H"],
+                        "volume_1h_usd": info["volume1H"],
+                        "volume_5m_usd": info["volume5M"],
+                        "volume_4h_usd": info["volume4H"],
+                        "price_change_1h": info["change1H"],
+                        "price_change_6h": 0,
+                        "price_change_24h": info["change24H"],
+                        "price_change_5m": info["change5M"],
+                        "price_change_4h": info["change4H"],
+                        "buys_1h": info["txsBuy1H"],
+                        "sells_1h": info["txsSell1H"],
+                        "buys_24h": info["txsBuy24H"],
+                        "sells_24h": info["txsSell24H"],
+                        "pair_created_at": row.get("pair_created_at"),
+                        "age_days": row.get("age_days"),
+                        "holder_count": okx_holders if okx_holders > 0 else 0,
+                        "top10_holder_pct": row.get("top10_holder_pct"),
+                        "top1_holder_pct": row.get("top1_holder_pct"),
+                        "is_honeypot": row.get("is_honeypot", False),
+                        "is_open_source": row.get("is_open_source", True),
+                        "buy_tax": info["buyTaxRate"],
+                        "sell_tax": info["sellTaxRate"],
+                        "goplus_risk": row.get("goplus_risk", False),
+                        "has_twitter": row.get("has_twitter", False),
+                        "has_telegram": row.get("has_telegram", False),
+                        "has_website": row.get("has_website", False),
+                        "circ_supply": info["circulatingSupply"],
+                        "token_logo_url": info["tokenLogoUrl"],
+                    })
+
+                await asyncio.sleep(0.5)
+
+    except Exception as e:
+        log.error(f"OKX 价格刷新失败: {e}", exc_info=True)
+
+    log.info(f"OKX 刷新完成: {len(updated_rows)} 个代币已更新")
+    return updated_rows

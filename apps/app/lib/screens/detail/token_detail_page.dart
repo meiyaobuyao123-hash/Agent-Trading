@@ -32,6 +32,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   DexScreenerInfo? _dexInfo;
   CoinGeckoTokenInfo? _coinGecko;
   double? _top1Pct;
+  double? _top10PctRpc;  // 链 RPC 精确 Top10 占比
   String? _resolvedPair;
 
   List<OhlcvCandle> _candles = [];
@@ -42,7 +43,8 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   bool _enrichLoading = true;
   bool _goplusLoading = true;
 
-  // ── Bitget: 指标 + 子Tab + 动态筛选 ──
+  // ── Bitget: 图表类型 + 指标 + 子Tab + 动态筛选 ──
+  String _chartType = 'candle_solid'; // 'candle_solid' | 'area'
   Set<String> _activeIndicators = {'VOL', 'MA'};
   int _subTabIndex = 0;
   String _dynamicsTf = '1h';
@@ -83,6 +85,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
         _dexInfo = result.dexScreenerInfo;
         _coinGecko = result.coinGeckoInfo;
         _top1Pct = result.top1HolderPct;
+        _top10PctRpc = result.top10HolderPctRpc;
         _resolvedPair = result.resolvedPairAddress;
         _candles = result.initialCandles;
         _candleCache['1h'] = result.initialCandles;
@@ -268,6 +271,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
                 loading: _candleLoading,
                 showControls: false,
                 activeIndicators: _activeIndicators,
+                chartType: _chartType,
               ),
             ),
             SliverToBoxAdapter(child: _buildIndicatorSelector()),
@@ -365,8 +369,12 @@ class _TokenDetailPageState extends State<TokenDetailPage>
                 token.liquidityUsd > 0 ? token.liquidityUsd
                 : (_dexInfo?.pairs.isNotEmpty == true ? _dexInfo!.pairs.first.liquidity : 0)
               )),
-              _statRow('持币地址数', token.holderCount > 0 ? _fmtNum(token.holderCount) : '-'),
-              _statRow('Top 10 占比', token.top10HolderPct != null ? '${token.top10HolderPct!.toStringAsFixed(0)}%' : '-'),
+              _statRow('持币地址数', (_goplus?.holderCount ?? token.holderCount) > 0 ? _fmtNum(_goplus?.holderCount ?? token.holderCount) : '-'),
+              _statRow('Top 10 占比', () {
+                // 优先用链 RPC 精确数据，fallback 到 GoPlus
+                final pct = _top10PctRpc ?? _goplus?.top10HolderPct ?? token.top10HolderPct;
+                return pct != null ? '${pct.toStringAsFixed(1)}%' : '-';
+              }()),
               _statRow('24h交易地址数', _fmtNum(token.buys24h + token.sells24h)),
             ]),
           ),
@@ -420,6 +428,29 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           Text('更多', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
           Icon(Icons.arrow_drop_down, size: 16, color: context.colors.textSecondary),
           const Spacer(),
+          // 图表类型切换按钮（K线 / 折线）
+          GestureDetector(
+            onTap: () {
+              setState(() {
+                _chartType = _chartType == 'candle_solid' ? 'area' : 'candle_solid';
+              });
+            },
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: context.colors.textPrimary.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Icon(
+                _chartType == 'candle_solid'
+                    ? Icons.candlestick_chart
+                    : Icons.show_chart,
+                size: 18,
+                color: context.colors.textPrimary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
           Text('价格', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
           Icon(Icons.arrow_drop_down, size: 16, color: context.colors.textSecondary),
           const SizedBox(width: 8),
@@ -710,15 +741,21 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       volume = tfData.volume;
       change = tfData.priceChange;
     } else {
-      // 回退到 token 静态数据
-      final bool use24h = _detailDynTf == '24h' || _detailDynTf == '4h';
+      // 回退到 token 静态数据（OKX 新字段）
+      final bool use24h = _detailDynTf == '24h';
       buys = use24h ? token.buys24h : token.buys1h;
       sells = use24h ? token.sells24h : token.sells1h;
-      volume = use24h ? token.volume24hUsd : token.volume1hUsd;
+      volume = switch (_detailDynTf) {
+        '5m' => token.volume5mUsd,
+        '1h' => token.volume1hUsd,
+        '4h' => token.volume4hUsd,
+        '24h' => token.volume24hUsd,
+        _ => token.volume1hUsd,
+      };
       change = switch (_detailDynTf) {
-        '5m' => token.priceChange1h,
+        '5m' => token.priceChange5m,
         '1h' => token.priceChange1h,
-        '4h' => token.priceChange6h,
+        '4h' => token.priceChange4h,
         '24h' => token.priceChange24h,
         _ => token.priceChange1h,
       };
@@ -840,11 +877,12 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   Widget _buildDetailKeyData(TokenDetail token) {
     final mktCap = _dexInfo?.marketCap ?? token.marketCapUsd;
     final fdv = _dexInfo?.fdv ?? mktCap;
-    final holderPctStr = token.top10HolderPct != null
-        ? '(${token.top10HolderPct!.toStringAsFixed(2)}%)'
-        : '';
-    final holderStr = token.holderCount > 0
-        ? '${_fmtNum(token.holderCount)}$holderPctStr'
+    // 优先用链 RPC 精确 Top10 占比，fallback 到 GoPlus → token 静态数据
+    final top10Pct = _top10PctRpc ?? _goplus?.top10HolderPct ?? token.top10HolderPct;
+    final holderPctStr = top10Pct != null ? '(${top10Pct.toStringAsFixed(2)}%)' : '';
+    final holderCount = _goplus?.holderCount ?? token.holderCount;
+    final holderStr = holderCount > 0
+        ? '${_fmtNum(holderCount)}$holderPctStr'
         : '-';
 
     // 流通供应量 = marketCap / price（优先用 DexScreener 实时数据）
@@ -910,12 +948,14 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       'solana' => const Color(0xFF9945FF),
       'bsc' => const Color(0xFFF3BA2F),
       'base' => const Color(0xFF0052FF),
+      'eth' => const Color(0xFF627EEA),
       _ => context.colors.primary,
     };
     final chainName = switch (token.chain) {
       'solana' => 'Solana',
       'bsc' => 'BNB Chain',
       'base' => 'Base',
+      'eth' => 'Ethereum',
       _ => token.chain,
     };
 
@@ -1201,7 +1241,8 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   Widget _miniAvatar(TokenDetail token) {
     final c = switch (token.chain) {
       'solana' => const Color(0xFF9945FF), 'bsc' => const Color(0xFFF3BA2F),
-      'base' => const Color(0xFF0052FF), _ => context.colors.primary,
+      'base' => const Color(0xFF0052FF), 'eth' => const Color(0xFF627EEA),
+      _ => context.colors.primary,
     };
     return Container(width: 28, height: 28,
       decoration: BoxDecoration(

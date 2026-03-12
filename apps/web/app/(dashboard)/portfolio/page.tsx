@@ -8,11 +8,12 @@ import { useOfficialPortfolio, type PortfolioToken } from '@/hooks/useOfficialPo
 // =====================================================
 // Utils
 // =====================================================
-const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL' }
+const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL', 8453: 'BASE' }
 const CHAIN_COLORS: Record<number, string> = {
   1: 'var(--blue)',
   56: 'var(--yellow)',
   900: 'var(--purple)',
+  8453: '#0052FF',
 }
 const RISK_COLORS: Record<string, string> = {
   low: 'var(--green)',

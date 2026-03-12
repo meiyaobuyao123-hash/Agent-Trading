@@ -1,23 +1,27 @@
 /// 多链热币榜模型
-/// 对应 Supabase `hot_coins` 表（GeckoTerminal + GoPlus + Helius + DexScreener 富化）
-/// 覆盖链：SOL / BSC / Base
+/// 对应 Supabase `hot_coins` 表（OKX 主数据源 + GoPlus + Helius + DexScreener 富化）
+/// 覆盖链：SOL / BSC / Base / ETH
 class HotCoin {
-  final String chain;          // 'solana' | 'bsc' | 'base'
+  final String chain;          // 'solana' | 'bsc' | 'base' | 'eth'
   final String address;        // 代币合约地址
   final String name;
   final String symbol;
   final String? pairAddress;
   final String? dexId;         // 'raydium' | 'pancakeswap' | 'aerodrome' 等
 
-  // 市场数据
+  // 市场数据（OKX 毫秒级更新）
   final double priceUsd;
   final double marketCapUsd;
   final double liquidityUsd;
-  final double volume24hUsd;
+  final double volume5mUsd;    // OKX 5分钟成交量
   final double volume1hUsd;
+  final double volume4hUsd;    // OKX 4小时成交量
+  final double volume24hUsd;
 
-  // 价格变化
+  // 价格变化（OKX 聚合窗口）
+  final double priceChange5m;  // OKX 5分钟涨跌
   final double priceChange1h;
+  final double priceChange4h;  // OKX 4小时涨跌
   final double priceChange6h;
   final double priceChange24h;
 
@@ -65,9 +69,13 @@ class HotCoin {
     required this.priceUsd,
     required this.marketCapUsd,
     required this.liquidityUsd,
-    required this.volume24hUsd,
+    this.volume5mUsd = 0,
     required this.volume1hUsd,
+    this.volume4hUsd = 0,
+    required this.volume24hUsd,
+    this.priceChange5m = 0,
     required this.priceChange1h,
+    this.priceChange4h = 0,
     required this.priceChange6h,
     required this.priceChange24h,
     required this.buys1h,
@@ -102,9 +110,13 @@ class HotCoin {
       priceUsd:        (json['price_usd']         as num?)?.toDouble() ?? 0.0,
       marketCapUsd:    (json['market_cap_usd']     as num?)?.toDouble() ?? 0.0,
       liquidityUsd:    (json['liquidity_usd']      as num?)?.toDouble() ?? 0.0,
-      volume24hUsd:    (json['volume_24h_usd']     as num?)?.toDouble() ?? 0.0,
+      volume5mUsd:     (json['volume_5m_usd']      as num?)?.toDouble() ?? 0.0,
       volume1hUsd:     (json['volume_1h_usd']      as num?)?.toDouble() ?? 0.0,
+      volume4hUsd:     (json['volume_4h_usd']      as num?)?.toDouble() ?? 0.0,
+      volume24hUsd:    (json['volume_24h_usd']     as num?)?.toDouble() ?? 0.0,
+      priceChange5m:   (json['price_change_5m']    as num?)?.toDouble() ?? 0.0,
       priceChange1h:   (json['price_change_1h']    as num?)?.toDouble() ?? 0.0,
+      priceChange4h:   (json['price_change_4h']    as num?)?.toDouble() ?? 0.0,
       priceChange6h:   (json['price_change_6h']    as num?)?.toDouble() ?? 0.0,
       priceChange24h:  (json['price_change_24h']   as num?)?.toDouble() ?? 0.0,
       buys1h:          (json['buys_1h']            as num?)?.toInt()    ?? 0,
@@ -149,6 +161,7 @@ class HotCoin {
       'solana' => 'SOL',
       'bsc'    => 'BSC',
       'base'   => 'BASE',
+      'eth'    => 'ETH',
       _        => chain.toUpperCase(),
     };
   }

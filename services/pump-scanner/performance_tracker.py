@@ -1,15 +1,29 @@
 """
-推荐代币表现追踪器
+推荐代币表现追踪器 — 秒级更新
 
-每4小时运行：
-  1. 从 daily_picks + hot_daily_picks 初始化新追踪行
-  2. 对所有活跃行获取当前价格
-  3. 更新 daily_highs 中对应天数的最高价
-  4. 超过 30 天的行标记为停用
+运行模式：asyncio 常驻协程，持续循环：
+  hot 代币 → 直调 OKX API（~2-3s/周期），不经 DB 中转
+  pump 代币 → pump.fun API（~5s/周期）
+  内存缓存 daily_highs → 每 30s 批量落盘 DB
 
-价格来源：
-  - pump.fun 代币: pump.fun REST API → marketCapSol
-  - 多链热币: DexScreener API → priceUsd
+每5分钟慢速检查：
+  初始化新推荐 + 停用 >30天的追踪行
+
+架构：
+  ┌─ OKX API ──────────────────┐    ┌─ pump.fun API ─────┐
+  │ batch_price_info (2-3s)    │    │ /coins/{mint} 逐个  │
+  └──────────┬─────────────────┘    └──────────┬──────────┘
+             │                                  │
+             ▼                                  ▼
+  ┌──────────────────────────────────────────────────────┐
+  │     内存 _daily_highs_cache (dict)                    │
+  │     每次比较 current > existing.high → 更新           │
+  └──────────────────┬───────────────────────────────────┘
+                     │ 每 30s flush
+                     ▼
+  ┌──────────────────────────────────────────────────────┐
+  │     Supabase token_performance 表                     │
+  └──────────────────────────────────────────────────────┘
 """
 
 import logging
@@ -17,53 +31,359 @@ import asyncio
 import json
 import aiohttp
 from datetime import date, datetime, timezone, timedelta
-from typing import Optional, Dict, List, Any
+from typing import Optional, Dict, List
 
 from database import get_db, upsert_performance, get_active_performance
-from config import PUMP_REST, DEXSCREENER_API
+from config import PUMP_REST
 
 log = logging.getLogger(__name__)
 
 TRACK_DAYS = 30
-DEXSCREENER_DELAY = 0.3   # 请求间隔 (秒)
-PUMP_API_DELAY = 0.5
-BATCH_SIZE = 50
 
+# ── 内存缓存 ──────────────────────────────────────────────
+# key = "source|pick_date|chain|address"
+# value = row dict (含 daily_highs, best_price 等)
+_cache = {}           # type: Dict[str, dict]
+_cache_dirty = set()  # type: set  # 有更新的 key 集合
+_last_flush = 0.0     # 上次落盘时间
+_FLUSH_INTERVAL = 30  # 每 30 秒落盘一次
+
+# 慢速检查
+_INIT_INTERVAL = 300  # 每 5 分钟初始化+停用
+_last_init = 0.0
+
+
+def _cache_key(row: dict) -> str:
+    return f"{row['source']}|{row['pick_date']}|{row['chain']}|{row['address']}"
+
+
+# ══════════════════════════════════════════════════════════════
+#  主入口：常驻协程
+# ══════════════════════════════════════════════════════════════
+
+async def run_performance_loop():
+    """
+    常驻协程，由 main.py 用 asyncio.create_task() 启动。
+    无限循环：OKX 价格 → 更新 daily_highs → pump 价格 → flush DB
+    """
+    global _last_flush, _last_init
+
+    log.info("📊 表现追踪器启动 — 秒级模式")
+
+    # 首次加载缓存
+    _load_cache()
+    _last_init = asyncio.get_event_loop().time()
+    _last_flush = asyncio.get_event_loop().time()
+
+    while True:
+        try:
+            now = asyncio.get_event_loop().time()
+
+            # ── 慢速路径：初始化 + 停用（每 5 分钟） ──
+            if now - _last_init >= _INIT_INTERVAL:
+                _run_init_and_cleanup()
+                _last_init = now
+
+            # ── 快速路径：拉价格 + 更新内存 ──
+            async with aiohttp.ClientSession() as session:
+                # Hot 代币：直调 OKX API
+                hot_updated = await _tick_hot(session)
+
+                # Pump 代币：pump.fun API
+                pump_updated = await _tick_pump(session)
+
+            # ── 定期落盘 ──
+            if now - _last_flush >= _FLUSH_INTERVAL and _cache_dirty:
+                _flush_to_db()
+                _last_flush = now
+
+            total = hot_updated + pump_updated
+            if total > 0:
+                log.debug(f"📊 秒级追踪: hot={hot_updated} pump={pump_updated} dirty={len(_cache_dirty)}")
+
+            # 短暂休眠，避免空转
+            await asyncio.sleep(1)
+
+        except asyncio.CancelledError:
+            # 优雅关闭：最后一次落盘
+            if _cache_dirty:
+                _flush_to_db()
+            log.info("📊 表现追踪器停止")
+            break
+        except Exception as e:
+            log.error(f"表现追踪循环异常: {e}", exc_info=True)
+            await asyncio.sleep(5)
+
+
+# ── 兼容 APScheduler 的入口（如果不用常驻协程模式） ──
 
 async def run_performance_tracker():
-    """主入口，由 APScheduler 每 4 小时调用"""
-    log.info("📊 表现追踪器启动...")
+    """APScheduler 兼容入口，每次调用执行一轮追踪"""
+    global _last_flush, _last_init
+
+    if not _cache:
+        _load_cache()
+        _last_init = asyncio.get_event_loop().time()
+        _last_flush = asyncio.get_event_loop().time()
 
     try:
-        # Step 1: 初始化新推荐的追踪行
-        new_pump = _init_pump_picks()
-        new_hot = _init_hot_picks()
-        log.info(f"初始化新追踪: pump={new_pump}, hot={new_hot}")
+        now = asyncio.get_event_loop().time()
 
-        # Step 2: 获取价格并更新活跃行
-        active_rows = get_active_performance()
-        if not active_rows:
-            log.info("无活跃追踪行，跳过价格更新")
-            return
-
-        log.info(f"活跃追踪行: {len(active_rows)}")
+        # 慢速检查
+        if now - _last_init >= _INIT_INTERVAL:
+            _run_init_and_cleanup()
+            _last_init = now
 
         async with aiohttp.ClientSession() as session:
-            updated = await _update_prices(session, active_rows)
-            log.info(f"价格更新完成: {updated} 个代币")
+            await _tick_hot(session)
+            await _tick_pump(session)
 
-        # Step 3: 停用超过 30 天的行
-        deactivated = _deactivate_old()
-        if deactivated > 0:
-            log.info(f"停用过期追踪: {deactivated} 个")
+        # 落盘
+        if now - _last_flush >= _FLUSH_INTERVAL and _cache_dirty:
+            _flush_to_db()
+            _last_flush = now
 
     except Exception as e:
-        log.error(f"表现追踪器异常: {e}", exc_info=True)
-
-    log.info("✅ 表现追踪器完成")
+        log.error(f"表现追踪异常: {e}", exc_info=True)
 
 
-# ── Step 1: 初始化新推荐 ──────────────────────────────────────
+# ══════════════════════════════════════════════════════════════
+#  Hot 代币：直调 OKX API（秒级）
+# ══════════════════════════════════════════════════════════════
+
+async def _tick_hot(session: aiohttp.ClientSession) -> int:
+    """直接调用 OKX batch_price_info 获取最新价格"""
+    hot_rows = [v for v in _cache.values() if v["source"] == "hot" and v.get("is_active")]
+    if not hot_rows:
+        return 0
+
+    # 按链分组
+    by_chain = {}  # type: Dict[str, List[dict]]
+    for row in hot_rows:
+        chain = row["chain"]
+        by_chain.setdefault(chain, []).append(row)
+
+    try:
+        from hot_coin_fetcher import OKX_CHAIN_INDEX
+        import okx_market_client as okx
+    except ImportError:
+        log.warning("OKX client 不可用，跳过 hot 追踪")
+        return 0
+
+    updated = 0
+    for chain, rows in by_chain.items():
+        chain_index = OKX_CHAIN_INDEX.get(chain)
+        if not chain_index:
+            continue
+
+        addresses = [r["address"] for r in rows]
+        try:
+            okx_data = await okx.batch_price_info(chain_index, addresses, session=session)
+        except Exception as e:
+            log.warning(f"OKX 价格查询失败 {chain}: {e}")
+            continue
+
+        for row in rows:
+            addr_lower = row["address"].lower()
+            info = okx_data.get(addr_lower)
+            if not info:
+                continue
+            price = info.get("lastPriceUsd", 0)
+            if price <= 0:
+                continue
+
+            if _apply_price_update(row, price):
+                updated += 1
+
+    return updated
+
+
+# ══════════════════════════════════════════════════════════════
+#  Pump 代币：pump.fun API（秒级）
+# ══════════════════════════════════════════════════════════════
+
+async def _tick_pump(session: aiohttp.ClientSession) -> int:
+    """逐个调用 pump.fun API"""
+    pump_rows = [v for v in _cache.values() if v["source"] == "pump" and v.get("is_active")]
+    if not pump_rows:
+        return 0
+
+    updated = 0
+    for row in pump_rows[:20]:  # 每轮最多20个，控制总耗时
+        try:
+            price = await _fetch_pump_price(session, row["address"])
+            if price is not None and price > 0:
+                if _apply_price_update(row, price):
+                    updated += 1
+            await asyncio.sleep(0.1)
+        except Exception as e:
+            log.warning(f"pump 价格失败 {row.get('symbol', '?')}: {e}")
+
+    return updated
+
+
+async def _fetch_pump_price(session: aiohttp.ClientSession, mint: str) -> Optional[float]:
+    """从 pump.fun API 获取代币当前 marketCapSol"""
+    try:
+        async with session.get(
+            f"{PUMP_REST}/coins/{mint}",
+            timeout=aiohttp.ClientTimeout(total=5)
+        ) as r:
+            if r.status == 200:
+                data = await r.json()
+                mc = data.get("marketCapSol") or data.get("market_cap_sol")
+                if mc is not None:
+                    return float(mc)
+                usd_mc = data.get("usdMarketCap")
+                if usd_mc is not None:
+                    return float(usd_mc)
+            elif r.status == 429:
+                await asyncio.sleep(3)
+    except Exception:
+        pass
+    return None
+
+
+# ══════════════════════════════════════════════════════════════
+#  核心：价格更新 + daily_highs（纯内存操作）
+# ══════════════════════════════════════════════════════════════
+
+def _apply_price_update(row: dict, current_price: float) -> bool:
+    """
+    将当前价格应用到追踪行，更新 daily_highs + best。
+    纯内存操作，不写 DB。返回 True 表示有新的 high。
+    """
+    price_at_pick = float(row.get("price_at_pick") or 0)
+    if price_at_pick <= 0:
+        return False
+
+    current_pct = (current_price - price_at_pick) / price_at_pick * 100
+    row["current_price"] = current_price
+    row["current_pct"] = round(current_pct, 2)
+
+    try:
+        pick_date = date.fromisoformat(str(row["pick_date"]))
+    except (ValueError, TypeError):
+        return False
+
+    day_number = (date.today() - pick_date).days
+    row["tracking_days"] = day_number
+
+    # 更新 daily_highs
+    daily_highs = row.get("daily_highs") or {}
+    if isinstance(daily_highs, str):
+        try:
+            daily_highs = json.loads(daily_highs)
+        except Exception:
+            daily_highs = {}
+
+    new_high = False
+    if 0 <= day_number <= TRACK_DAYS:
+        day_key = f"D{day_number}"
+        existing = daily_highs.get(day_key)
+        if existing is None or current_price > float(existing.get("high", 0)):
+            daily_highs[day_key] = {
+                "high": round(current_price, 10),
+                "pct": round(current_pct, 2),
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+            new_high = True
+
+    row["daily_highs"] = daily_highs
+
+    # 全周期最佳
+    best_price = float(row.get("best_price") or 0)
+    if best_price <= 0 or current_price > best_price:
+        row["best_price"] = current_price
+        row["best_pct"] = round(current_pct, 2)
+        row["best_day"] = day_number
+        new_high = True
+
+    # 标记 dirty
+    key = _cache_key(row)
+    _cache_dirty.add(key)
+
+    return new_high
+
+
+# ══════════════════════════════════════════════════════════════
+#  缓存管理
+# ══════════════════════════════════════════════════════════════
+
+def _load_cache():
+    """从 DB 加载所有活跃追踪行到内存"""
+    global _cache
+    rows = get_active_performance()
+    _cache = {}
+    for r in rows:
+        key = _cache_key(r)
+        # 确保 daily_highs 是 dict
+        dh = r.get("daily_highs") or {}
+        if isinstance(dh, str):
+            try:
+                dh = json.loads(dh)
+            except Exception:
+                dh = {}
+        r["daily_highs"] = dh
+        _cache[key] = r
+    log.info(f"📊 缓存加载: {len(_cache)} 条追踪行 (hot={sum(1 for v in _cache.values() if v['source']=='hot')}, pump={sum(1 for v in _cache.values() if v['source']=='pump')})")
+
+
+def _flush_to_db():
+    """将 dirty 行批量写回 DB"""
+    global _cache_dirty
+    if not _cache_dirty:
+        return
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates = []
+    for key in list(_cache_dirty):
+        row = _cache.get(key)
+        if not row:
+            continue
+        updates.append({
+            "source": row["source"],
+            "pick_date": row["pick_date"],
+            "chain": row["chain"],
+            "address": row["address"],
+            "price_at_pick": row["price_at_pick"],
+            "denomination": row.get("denomination", "usd"),
+            "current_price": row.get("current_price"),
+            "current_pct": row.get("current_pct"),
+            "current_updated_at": now_iso,
+            "daily_highs": row.get("daily_highs"),
+            "best_price": row.get("best_price"),
+            "best_pct": row.get("best_pct"),
+            "best_day": row.get("best_day"),
+            "tracking_days": row.get("tracking_days", 0),
+            "updated_at": now_iso,
+        })
+
+    if updates:
+        upsert_performance(updates)
+        log.info(f"📊 落盘: {len(updates)} 条 dirty 行写入 DB")
+
+    _cache_dirty.clear()
+
+
+# ══════════════════════════════════════════════════════════════
+#  慢速路径：初始化 + 停用
+# ══════════════════════════════════════════════════════════════
+
+def _run_init_and_cleanup():
+    """初始化新推荐 + 停用过期行 + 刷新缓存"""
+    new_pump = _init_pump_picks()
+    new_hot = _init_hot_picks()
+    if new_pump or new_hot:
+        log.info(f"📊 初始化新追踪: pump={new_pump}, hot={new_hot}")
+
+    deactivated = _deactivate_old()
+    if deactivated:
+        log.info(f"📊 停用过期追踪: {deactivated}")
+
+    # 刷新缓存（包含新行）
+    _load_cache()
+
 
 def _init_pump_picks() -> int:
     """从 daily_picks 初始化 pump.fun 内盘追踪行"""
@@ -71,7 +391,6 @@ def _init_pump_picks() -> int:
     cutoff = (date.today() - timedelta(days=TRACK_DAYS + 1)).isoformat()
 
     try:
-        # 获取最近 31 天的 daily_picks
         picks_res = (
             db.table("daily_picks")
             .select("mint, pick_date, rank, score, bc_progress, market_cap_sol, pump_tokens(symbol, name)")
@@ -82,7 +401,6 @@ def _init_pump_picks() -> int:
         if not picks:
             return 0
 
-        # 获取已存在的追踪行
         existing = _get_existing_keys("pump")
 
         new_rows = []
@@ -119,7 +437,6 @@ def _init_pump_picks() -> int:
 
         if new_rows:
             upsert_performance(new_rows)
-
         return len(new_rows)
 
     except Exception as e:
@@ -152,7 +469,6 @@ def _init_hot_picks() -> int:
             if key in existing:
                 continue
 
-            # 从 snapshot JSONB 中提取推荐时价格
             snapshot = p.get("snapshot") or {}
             if isinstance(snapshot, str):
                 try:
@@ -162,9 +478,6 @@ def _init_hot_picks() -> int:
 
             price_usd = float(snapshot.get("price_usd") or 0)
             if price_usd <= 0:
-                # price_usd 必须是实际单价，不能用 market_cap 替代
-                # 因为后续 current_price 来自 DexScreener priceUsd（单价）
-                log.debug(f"hot pick 无价格快照: {p.get('symbol')} {p.get('address','')[:8]}")
                 continue
 
             new_rows.append({
@@ -190,7 +503,6 @@ def _init_hot_picks() -> int:
 
         if new_rows:
             upsert_performance(new_rows)
-
         return len(new_rows)
 
     except Exception as e:
@@ -199,7 +511,6 @@ def _init_hot_picks() -> int:
 
 
 def _get_existing_keys(source: str) -> set:
-    """获取已存在的追踪行 key 集合"""
     db = get_db()
     try:
         res = (
@@ -208,178 +519,15 @@ def _get_existing_keys(source: str) -> set:
             .eq("source", source)
             .execute()
         )
-        return {
-            f"{r['source']}|{r['pick_date']}|{r['chain']}|{r['address']}"
-            for r in res.data
-        }
+        return {f"{r['source']}|{r['pick_date']}|{r['chain']}|{r['address']}" for r in res.data}
     except Exception as e:
         log.error(f"获取已存在 keys 失败: {e}")
         return set()
 
 
-# ── Step 2: 获取价格并更新 ──────────────────────────────────────
-
-async def _update_prices(session: aiohttp.ClientSession, rows: List[Dict]) -> int:
-    """获取所有活跃代币的当前价格并更新"""
-    pump_rows = [r for r in rows if r["source"] == "pump"]
-    hot_rows = [r for r in rows if r["source"] == "hot"]
-
-    updated = 0
-
-    # 更新 pump 代币
-    for row in pump_rows:
-        try:
-            price = await _fetch_pump_price(session, row["address"])
-            if price is not None and price > 0:
-                _apply_price_update(row, price)
-                updated += 1
-            await asyncio.sleep(PUMP_API_DELAY)
-        except Exception as e:
-            log.warning(f"pump 价格获取失败 {row.get('symbol', row['address'][:8])}: {e}")
-
-    # 更新 hot 代币
-    for row in hot_rows:
-        try:
-            price = await _fetch_dexscreener_price(session, row["address"])
-            if price is not None and price > 0:
-                _apply_price_update(row, price)
-                updated += 1
-            await asyncio.sleep(DEXSCREENER_DELAY)
-        except Exception as e:
-            log.warning(f"hot 价格获取失败 {row.get('symbol', row['address'][:8])}: {e}")
-
-    # 批量写入更新
-    if rows:
-        updates = []
-        for r in rows:
-            if r.get("_updated"):
-                updates.append({
-                    "source": r["source"],
-                    "pick_date": r["pick_date"],
-                    "chain": r["chain"],
-                    "address": r["address"],
-                    "price_at_pick": r["price_at_pick"],
-                    "denomination": r.get("denomination", "usd"),
-                    "current_price": r["current_price"],
-                    "current_pct": r["current_pct"],
-                    "current_updated_at": datetime.now(timezone.utc).isoformat(),
-                    "daily_highs": r["daily_highs"],
-                    "best_price": r.get("best_price"),
-                    "best_pct": r.get("best_pct"),
-                    "best_day": r.get("best_day"),
-                    "tracking_days": r.get("tracking_days", 0),
-                    "updated_at": datetime.now(timezone.utc).isoformat(),
-                })
-        if updates:
-            upsert_performance(updates)
-
-    return updated
-
-
-def _apply_price_update(row: Dict, current_price: float):
-    """将当前价格应用到追踪行"""
-    price_at_pick = float(row["price_at_pick"])
-    if price_at_pick <= 0:
-        return
-
-    # 计算当前涨跌幅
-    current_pct = (current_price - price_at_pick) / price_at_pick * 100
-    row["current_price"] = current_price
-    row["current_pct"] = round(current_pct, 2)
-    row["_updated"] = True
-
-    # 确定当前是推荐后第几天
-    try:
-        pick_date = date.fromisoformat(str(row["pick_date"]))
-    except (ValueError, TypeError):
-        return
-
-    day_number = (date.today() - pick_date).days
-    row["tracking_days"] = day_number
-
-    # 更新 daily_highs — 从 D0 开始记录（修复: 原来从 D1 开始导致永远为空）
-    daily_highs = row.get("daily_highs") or {}
-    if isinstance(daily_highs, str):
-        try:
-            daily_highs = json.loads(daily_highs)
-        except Exception:
-            daily_highs = {}
-
-    if 0 <= day_number <= TRACK_DAYS:
-        day_key = f"D{day_number}"
-        existing = daily_highs.get(day_key)
-
-        if existing is None or current_price > float(existing.get("high", 0)):
-            daily_highs[day_key] = {
-                "high": round(current_price, 10),
-                "pct": round(current_pct, 2),
-                "at": datetime.now(timezone.utc).strftime("%H:%M"),
-            }
-
-    row["daily_highs"] = daily_highs
-
-    # 更新全周期最佳（修复: best_price=0 时也要更新）
-    best_price = float(row.get("best_price") or 0)
-    if best_price <= 0 or current_price > best_price:
-        row["best_price"] = current_price
-        row["best_pct"] = round(current_pct, 2)
-        row["best_day"] = day_number
-
-
-async def _fetch_pump_price(session: aiohttp.ClientSession, mint: str) -> Optional[float]:
-    """从 pump.fun API 获取代币当前 marketCapSol"""
-    try:
-        async with session.get(
-            f"{PUMP_REST}/coins/{mint}",
-            timeout=aiohttp.ClientTimeout(total=8)
-        ) as r:
-            if r.status == 200:
-                data = await r.json()
-                mc = data.get("marketCapSol") or data.get("market_cap_sol")
-                if mc is not None:
-                    return float(mc)
-                # 如果有 usdMarketCap 也可以用
-                usd_mc = data.get("usdMarketCap")
-                if usd_mc is not None:
-                    return float(usd_mc)
-            elif r.status == 429:
-                log.warning("pump.fun API 429, 等待 10s")
-                await asyncio.sleep(10)
-    except Exception as e:
-        log.warning(f"fetch pump price {mint[:8]} 失败: {e}")
-    return None
-
-
-async def _fetch_dexscreener_price(session: aiohttp.ClientSession, address: str) -> Optional[float]:
-    """从 DexScreener API 获取代币当前 USD 价格"""
-    try:
-        async with session.get(
-            f"{DEXSCREENER_API}/latest/dex/tokens/{address}",
-            timeout=aiohttp.ClientTimeout(total=8)
-        ) as r:
-            if r.status == 200:
-                data = await r.json()
-                pairs = data.get("pairs") or []
-                if pairs:
-                    # 取第一个 pair 的价格（流动性最高的）
-                    price_str = pairs[0].get("priceUsd")
-                    if price_str:
-                        return float(price_str)
-            elif r.status == 429:
-                log.warning("DexScreener API 429, 等待 5s")
-                await asyncio.sleep(5)
-    except Exception as e:
-        log.warning(f"fetch dexscreener price {address[:8]} 失败: {e}")
-    return None
-
-
-# ── Step 3: 停用过期追踪 ──────────────────────────────────────
-
 def _deactivate_old() -> int:
-    """停用超过 30 天的追踪行"""
     db = get_db()
     cutoff = (date.today() - timedelta(days=TRACK_DAYS)).isoformat()
-
     try:
         res = (
             db.table("token_performance")
@@ -394,8 +542,6 @@ def _deactivate_old() -> int:
         return 0
 
 
-# ── 手动运行 ──────────────────────────────────────────────────
-
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-    asyncio.run(run_performance_tracker())
+    asyncio.run(run_performance_loop())

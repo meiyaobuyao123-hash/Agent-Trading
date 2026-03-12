@@ -20,8 +20,8 @@ class _HotScreenState extends State<HotScreen> {
   bool _loading = true;
   String? _error;
 
-  int _chainIndex = 0; // 0=全部, 1=SOL, 2=BSC, 3=BASE
-  static const _chainKeys = [null, 'SOL', 'BSC', 'BASE'];
+  int _chainIndex = 0; // 0=全部, 1=SOL, 2=BSC, 3=BASE, 4=ETH
+  static const _chainKeys = [null, 'SOL', 'BSC', 'BASE', 'ETH'];
 
   @override
   void initState() {

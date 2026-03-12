@@ -236,6 +236,7 @@ class _TokenAvatar extends StatelessWidget {
     'solana' => const Color(0xFF9945FF),
     'bsc'    => const Color(0xFFF3BA2F),
     'base'   => const Color(0xFF0052FF),
+    'eth'    => const Color(0xFF627EEA),
     _        => const Color(0xFF3B82F6),
   };
 
@@ -296,6 +297,7 @@ class _ChainBadge extends StatelessWidget {
     'solana' => const Color(0xFF9945FF),
     'bsc'    => const Color(0xFFF3BA2F),
     'base'   => const Color(0xFF0052FF),
+    'eth'    => const Color(0xFF627EEA),
     _        => const Color(0xFF64748B),
   };
 
@@ -303,6 +305,7 @@ class _ChainBadge extends StatelessWidget {
     'solana' => 'SOL',
     'bsc'    => 'BSC',
     'base'   => 'BASE',
+    'eth'    => 'ETH',
     _        => chain.toUpperCase(),
   };
 

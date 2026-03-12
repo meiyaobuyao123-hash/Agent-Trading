@@ -22,6 +22,7 @@ const CHAIN_LABELS: Record<string, string> = {
   '1': 'ETH',
   '56': 'BSC',
   'CT_501': 'SOL',
+  '8453': 'BASE',
 }
 
 interface TokenTableProps {

@@ -117,31 +117,74 @@ async def _process_events(
 # ── 数据源事件构建 ────────────────────────────────────────────
 
 async def _build_pump_events() -> List[DataEvent]:
-    """从 pump_tokens 表构建数据事件"""
+    """从 token_snapshots + pump_tokens 构建数据事件"""
     try:
-        # 获取最近更新的内盘代币
-        result = (
-            get_db()
-            .table("pump_tokens")
-            .select("mint, name, symbol, bc_progress, score, "
-                    "smart_money_count, buyer_count, seller_count, "
-                    "dev_sold_pct, buy_sell_ratio")
-            .eq("complete", False)
-            .eq("is_banned", False)
+        db = get_db()
+
+        # token_snapshots 有 bc_progress、buy_sell_ratio 等计算字段
+        # 取最近快照中 bc_progress >= 3 的代币
+        snap_res = (
+            db.table("token_snapshots")
+            .select("mint, bc_progress, buy_sell_ratio_count, "
+                    "dev_sold_pct, unique_buyers, unique_sellers, "
+                    "market_cap_sol")
             .gte("bc_progress", 3.0)
-            .order("updated_at", desc=True)
-            .limit(100)
+            .order("snapshot_at", desc=True)
+            .limit(200)
             .execute()
         )
 
+        if not snap_res.data:
+            return []
+
+        # 去重，每个 mint 只取最新快照
+        seen = set()  # type: set
+        snap_map = {}  # type: Dict[str, dict]
+        for row in snap_res.data:
+            mint = row.get("mint", "")
+            if mint and mint not in seen:
+                seen.add(mint)
+                snap_map[mint] = row
+
+        # 从 pump_tokens 补充 name/symbol
+        mints = list(snap_map.keys())[:100]
+        token_res = (
+            db.table("pump_tokens")
+            .select("mint, name, symbol")
+            .in_("mint", mints)
+            .eq("complete", False)
+            .eq("is_banned", False)
+            .execute()
+        )
+
+        name_map = {}  # type: Dict[str, dict]
+        for t in (token_res.data or []):
+            name_map[t["mint"]] = t
+
         events = []  # type: List[DataEvent]
-        for row in (result.data or []):
+        for mint in mints:
+            snap = snap_map[mint]
+            token = name_map.get(mint, {})
+            if not token:
+                continue  # 已完成或被封禁
+
+            data = {
+                "mint": mint,
+                "name": token.get("name"),
+                "symbol": token.get("symbol"),
+                "bc_progress": snap.get("bc_progress"),
+                "buy_sell_ratio": snap.get("buy_sell_ratio_count"),
+                "dev_sold_pct": snap.get("dev_sold_pct"),
+                "buyer_count": snap.get("unique_buyers"),
+                "seller_count": snap.get("unique_sellers"),
+                "market_cap_sol": snap.get("market_cap_sol"),
+            }
             events.append(DataEvent(
                 source="pump_tokens",
-                data=row,
+                data=data,
                 chain="solana",
-                token_address=row.get("mint"),
-                token_name=row.get("name") or row.get("symbol"),
+                token_address=mint,
+                token_name=data.get("name") or data.get("symbol"),
             ))
         return events
 
@@ -151,15 +194,18 @@ async def _build_pump_events() -> List[DataEvent]:
 
 
 async def _build_hot_coin_events() -> List[DataEvent]:
-    """从 hot_coins 表构建数据事件"""
+    """从 hot_coins 表构建数据事件（含 OKX 新字段）"""
     try:
         result = (
             get_db()
             .table("hot_coins")
             .select("chain, address, name, symbol, score, "
-                    "price_change_1h, price_change_24h, "
-                    "market_cap_usd, liquidity_usd, volume_24h_usd, "
-                    "holder_count")
+                    "price_usd, price_change_5m, price_change_1h, "
+                    "price_change_4h, price_change_24h, "
+                    "market_cap_usd, liquidity_usd, "
+                    "volume_5m_usd, volume_1h_usd, volume_4h_usd, volume_24h_usd, "
+                    "holder_count, buys_1h, sells_1h, buys_24h, sells_24h, "
+                    "score_m, score_q, score_p, recommendation")
             .gte("score", 40)
             .order("score", desc=True)
             .limit(200)

@@ -30,7 +30,7 @@ class _MarketScreenState extends State<MarketScreen> {
   bool _hotLoading = true;
   String? _hotError;
   int _chainIndex = 0;
-  static const _chainKeys = [null, 'SOL', 'BSC', 'BASE'];
+  static const _chainKeys = [null, 'SOL', 'BSC', 'BASE', 'ETH'];
 
   Map<String, PriceTick> _livePrices = {};
   StreamSubscription? _priceSub;

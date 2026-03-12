@@ -102,10 +102,12 @@ class DetailHeader extends StatelessWidget {
 
           // 多时段涨跌胶囊
           Row(children: [
+            _ChangePill(label: '5m', pct: token.priceChange5m),
+            const SizedBox(width: 6),
             _ChangePill(label: '1h', pct: token.priceChange1h),
-            const SizedBox(width: 8),
-            _ChangePill(label: '6h', pct: token.priceChange6h),
-            const SizedBox(width: 8),
+            const SizedBox(width: 6),
+            _ChangePill(label: '4h', pct: token.priceChange4h),
+            const SizedBox(width: 6),
             _ChangePill(label: '24h', pct: token.priceChange24h),
           ]),
         ],
@@ -130,6 +132,7 @@ class _TokenAvatar extends StatelessWidget {
     'solana' => const Color(0xFF9945FF),
     'bsc' => const Color(0xFFF3BA2F),
     'base' => const Color(0xFF0052FF),
+    'eth' => const Color(0xFF627EEA),
     _ => context.colors.primary,
   };
 
@@ -185,13 +188,14 @@ class _ChainBadge extends StatelessWidget {
     'solana' => const Color(0xFF9945FF),
     'bsc' => const Color(0xFFF3BA2F),
     'base' => const Color(0xFF0052FF),
+    'eth' => const Color(0xFF627EEA),
     _ => context.colors.textSecondary,
   };
 
   @override
   Widget build(BuildContext context) {
     final cc = _color(context);
-    final label = switch (chain) { 'solana' => 'SOL', 'bsc' => 'BSC', 'base' => 'BASE', _ => chain.toUpperCase() };
+    final label = switch (chain) { 'solana' => 'SOL', 'bsc' => 'BSC', 'base' => 'BASE', 'eth' => 'ETH', _ => chain.toUpperCase() };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(

@@ -19,7 +19,7 @@ interface Signal {
   expires_at?: string
 }
 
-const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL' }
+const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL', 8453: 'BASE' }
 const DIR_CONFIG: Record<string, { label: string; color: string }> = {
   long: { label: '做多', color: 'var(--green)' },
   watch: { label: '观察', color: 'var(--yellow)' },

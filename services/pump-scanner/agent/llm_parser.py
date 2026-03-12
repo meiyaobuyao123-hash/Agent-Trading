@@ -38,15 +38,29 @@ SYSTEM_PROMPT = """你是一个加密货币交易策略解析专家。用户会�
 - dev_sold_pct: 开发者卖出比例 0-1
 - buy_sell_ratio: 买卖笔数比
 
-### hot_coins（外盘热币 - SOL/BSC/Base）
+### hot_coins（外盘热币 - SOL/BSC/Base/ETH，数据源：OKX DEX Market API）
 - score: 外盘评分 0-100
+- score_m: 动量分 0-50
+- score_q: 质量分 0-30
+- score_p: 潜力分 0-20
+- price_usd: 当前价格（毫秒级更新）
+- price_change_5m: 5分钟涨幅百分比
 - price_change_1h: 1小时涨幅百分比
+- price_change_4h: 4小时涨幅百分比
 - price_change_24h: 24小时涨幅百分比
 - holder_count: 持有者数
 - market_cap_usd: 市值（美元）
 - liquidity_usd: 流动性（美元）
+- volume_5m_usd: 5分钟交易量（美元）
+- volume_1h_usd: 1小时交易量（美元）
+- volume_4h_usd: 4小时交易量（美元）
 - volume_24h_usd: 24小时交易量（美元）
-- chain: 链名（solana/bsc/base）
+- buys_1h: 1小时买入笔数
+- sells_1h: 1小时卖出笔数
+- buys_24h: 24小时买入笔数
+- sells_24h: 24小时卖出笔数
+- recommendation: 推荐等级（strong/normal/skip）
+- chain: 链名（solana/bsc/base/eth）
 
 ### kol_mentions（KOL提及）
 - mention_count_2h: 2小时内KOL提及次数

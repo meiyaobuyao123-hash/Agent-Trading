@@ -43,7 +43,7 @@ interface AddFormData {
 // =====================================================
 // Utils
 // =====================================================
-const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL' }
+const CHAIN_LABELS: Record<number, string> = { 1: 'ETH', 56: 'BSC', 900: 'SOL', 8453: 'BASE' }
 const RISK_COLORS: Record<string, string> = {
   low: 'var(--green)',
   medium: 'var(--yellow)',
@@ -183,6 +183,7 @@ function AddTokenModal({
                 <option value="56">BSC (56)</option>
                 <option value="1">ETH (1)</option>
                 <option value="900">SOL (900)</option>
+                <option value="8453">BASE (8453)</option>
               </select>
             </div>
             <div>

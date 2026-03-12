@@ -24,6 +24,9 @@ class EvmExplorerService {
         case 'base':
           baseUrl = 'https://api.basescan.org/api';
           break;
+        case 'eth':
+          baseUrl = 'https://api.etherscan.io/api';
+          break;
         default:
           return [];
       }

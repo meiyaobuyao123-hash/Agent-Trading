@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react'
 
-// Binance 支持链: 1=ETH, 56=BSC, CT_501=Solana
-export type ChainFilter = '' | '1' | '56' | 'CT_501'
+// Binance 支持链: 1=ETH, 56=BSC, CT_501=Solana, 8453=Base
+export type ChainFilter = '' | '1' | '56' | 'CT_501' | '8453'
 
 export interface TokenRankItem {
   address: string

@@ -111,7 +111,7 @@ async def batch_price_info(
 
                     data = await resp.json()
                     if data.get("code") != "0":
-                        log.warning(f"OKX price-info error: {data.get('msg')}")
+                        log.debug(f"OKX price-info code={data.get('code')}: {data.get('msg')}")
                         continue
 
                     for item in (data.get("data") or []):

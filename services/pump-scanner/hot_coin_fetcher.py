@@ -705,12 +705,8 @@ async def fetch_hot_coin_candidates(incremental: bool = True) -> List[dict]:
 
 async def refresh_okx_prices() -> List[dict]:
     """
-    从 hot_coins 表读取已入库代币，批量调用 OKX price-info 刷新全量市场数据。
-    每 5 秒调用一次，匹配 OKX 各字段实际更新频率：
-      - price/liquidity: 每笔成交即更新 → 5s 轮询近实时
-      - 5M 窗口数据: 5分钟聚合 → 5s 轮询可捕获最新窗口
-      - 1H/4H/24H: 更长窗口 → 搭载获取，无额外开销
-      - holders: 5-15min 延迟 → 搭载获取
+    从 hot_coins 表读取已入库代币，刷新全量市场数据。
+    优先 OKX Market API，若 OKX 不可用则 fallback DexScreener。
     返回更新后的行列表（供 hot_coin_job 重新打分）。
     """
     from database import get_db
@@ -723,8 +719,6 @@ async def refresh_okx_prices() -> List[dict]:
         async with aiohttp.ClientSession() as session:
             for chain, cfg in HOT_CHAINS.items():
                 chain_index = OKX_CHAIN_INDEX.get(chain)
-                if not chain_index:
-                    continue
 
                 # 从 DB 读取该链所有代币
                 res = (
@@ -742,64 +736,220 @@ async def refresh_okx_prices() -> List[dict]:
                     continue
 
                 addresses = [r["address"] for r in res.data]
-                log.info(f"  OKX 刷新 {chain}: {len(addresses)} 个代币")
 
-                # OKX 批量查询
-                okx_data = await okx.batch_price_info(
-                    chain_index, addresses, session=session
-                )
+                # ── 优先 OKX ──
+                okx_data = {}  # type: Dict[str, dict]
+                if chain_index:
+                    okx_data = await okx.batch_price_info(
+                        chain_index, addresses, session=session
+                    )
+
+                okx_hit = sum(1 for a in addresses if a.lower() in okx_data)
+
+                # ── OKX 命中不足 → fallback DexScreener ──
+                if okx_hit < len(addresses) * 0.3:
+                    log.info(f"  OKX {chain} 命中 {okx_hit}/{len(addresses)}, fallback DexScreener")
+                    dex_data = await _batch_dexscreener_prices(session, addresses)
+                else:
+                    dex_data = {}
+                    log.info(f"  OKX 刷新 {chain}: {okx_hit}/{len(addresses)} 个代币")
 
                 for row in res.data:
-                    addr_lower = row["address"].lower()
+                    addr = row["address"]
+                    addr_lower = addr.lower()
+
+                    # 优先 OKX 数据
                     info = okx_data.get(addr_lower)
-                    if not info or info["lastPriceUsd"] <= 0:
+                    if info and info["lastPriceUsd"] > 0:
+                        okx_holders = info["holders"]
+                        updated_rows.append({
+                            "chain": chain,
+                            "address": addr,
+                            "name": row.get("name"),
+                            "symbol": row.get("symbol"),
+                            "pair_address": row.get("pair_address"),
+                            "dex_id": row.get("dex_id"),
+                            "price_usd": info["lastPriceUsd"],
+                            "market_cap_usd": info["marketCap"],
+                            "liquidity_usd": info["liquidity"],
+                            "volume_24h_usd": info["volume24H"],
+                            "volume_1h_usd": info["volume1H"],
+                            "volume_5m_usd": info["volume5M"],
+                            "volume_4h_usd": info["volume4H"],
+                            "price_change_1h": info["change1H"],
+                            "price_change_6h": 0,
+                            "price_change_24h": info["change24H"],
+                            "price_change_5m": info["change5M"],
+                            "price_change_4h": info["change4H"],
+                            "buys_1h": info["txsBuy1H"],
+                            "sells_1h": info["txsSell1H"],
+                            "buys_24h": info["txsBuy24H"],
+                            "sells_24h": info["txsSell24H"],
+                            "pair_created_at": row.get("pair_created_at"),
+                            "age_days": row.get("age_days"),
+                            "holder_count": okx_holders if okx_holders > 0 else 0,
+                            "top10_holder_pct": row.get("top10_holder_pct"),
+                            "top1_holder_pct": row.get("top1_holder_pct"),
+                            "is_honeypot": row.get("is_honeypot", False),
+                            "is_open_source": row.get("is_open_source", True),
+                            "buy_tax": info["buyTaxRate"],
+                            "sell_tax": info["sellTaxRate"],
+                            "goplus_risk": row.get("goplus_risk", False),
+                            "has_twitter": row.get("has_twitter", False),
+                            "has_telegram": row.get("has_telegram", False),
+                            "has_website": row.get("has_website", False),
+                            "circ_supply": info["circulatingSupply"],
+                            "token_logo_url": info["tokenLogoUrl"],
+                        })
                         continue
 
-                    okx_holders = info["holders"]
-                    updated_rows.append({
-                        "chain": chain,
-                        "address": row["address"],
-                        "name": row.get("name"),
-                        "symbol": row.get("symbol"),
-                        "pair_address": row.get("pair_address"),
-                        "dex_id": row.get("dex_id"),
-                        "price_usd": info["lastPriceUsd"],
-                        "market_cap_usd": info["marketCap"],
-                        "liquidity_usd": info["liquidity"],
-                        "volume_24h_usd": info["volume24H"],
-                        "volume_1h_usd": info["volume1H"],
-                        "volume_5m_usd": info["volume5M"],
-                        "volume_4h_usd": info["volume4H"],
-                        "price_change_1h": info["change1H"],
-                        "price_change_6h": 0,
-                        "price_change_24h": info["change24H"],
-                        "price_change_5m": info["change5M"],
-                        "price_change_4h": info["change4H"],
-                        "buys_1h": info["txsBuy1H"],
-                        "sells_1h": info["txsSell1H"],
-                        "buys_24h": info["txsBuy24H"],
-                        "sells_24h": info["txsSell24H"],
-                        "pair_created_at": row.get("pair_created_at"),
-                        "age_days": row.get("age_days"),
-                        "holder_count": okx_holders if okx_holders > 0 else 0,
-                        "top10_holder_pct": row.get("top10_holder_pct"),
-                        "top1_holder_pct": row.get("top1_holder_pct"),
-                        "is_honeypot": row.get("is_honeypot", False),
-                        "is_open_source": row.get("is_open_source", True),
-                        "buy_tax": info["buyTaxRate"],
-                        "sell_tax": info["sellTaxRate"],
-                        "goplus_risk": row.get("goplus_risk", False),
-                        "has_twitter": row.get("has_twitter", False),
-                        "has_telegram": row.get("has_telegram", False),
-                        "has_website": row.get("has_website", False),
-                        "circ_supply": info["circulatingSupply"],
-                        "token_logo_url": info["tokenLogoUrl"],
-                    })
+                    # fallback DexScreener
+                    dex = dex_data.get(addr_lower)
+                    if dex and dex.get("price_usd", 0) > 0:
+                        updated_rows.append({
+                            "chain": chain,
+                            "address": addr,
+                            "name": row.get("name"),
+                            "symbol": row.get("symbol"),
+                            "pair_address": dex.get("pair_address") or row.get("pair_address"),
+                            "dex_id": dex.get("dex_id") or row.get("dex_id"),
+                            "price_usd": dex["price_usd"],
+                            "market_cap_usd": dex.get("market_cap_usd", 0),
+                            "liquidity_usd": dex.get("liquidity_usd", 0),
+                            "volume_24h_usd": dex.get("volume_24h_usd", 0),
+                            "volume_1h_usd": dex.get("volume_1h_usd", 0),
+                            "volume_5m_usd": dex.get("volume_5m_usd", 0),
+                            "volume_4h_usd": 0,
+                            "price_change_1h": dex.get("price_change_1h", 0),
+                            "price_change_6h": dex.get("price_change_6h", 0),
+                            "price_change_24h": dex.get("price_change_24h", 0),
+                            "price_change_5m": dex.get("price_change_5m", 0),
+                            "price_change_4h": 0,
+                            "buys_1h": dex.get("buys_1h", 0),
+                            "sells_1h": dex.get("sells_1h", 0),
+                            "buys_24h": dex.get("buys_24h", 0),
+                            "sells_24h": dex.get("sells_24h", 0),
+                            "pair_created_at": row.get("pair_created_at"),
+                            "age_days": row.get("age_days"),
+                            "holder_count": 0,
+                            "top10_holder_pct": row.get("top10_holder_pct"),
+                            "top1_holder_pct": row.get("top1_holder_pct"),
+                            "is_honeypot": row.get("is_honeypot", False),
+                            "is_open_source": row.get("is_open_source", True),
+                            "buy_tax": 0,
+                            "sell_tax": 0,
+                            "goplus_risk": row.get("goplus_risk", False),
+                            "has_twitter": row.get("has_twitter", False),
+                            "has_telegram": row.get("has_telegram", False),
+                            "has_website": row.get("has_website", False),
+                            "circ_supply": 0,
+                            "token_logo_url": "",
+                        })
 
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)
 
     except Exception as e:
-        log.error(f"OKX 价格刷新失败: {e}", exc_info=True)
+        log.error(f"价格刷新失败: {e}", exc_info=True)
 
-    log.info(f"OKX 刷新完成: {len(updated_rows)} 个代币已更新")
+    log.info(f"价格刷新完成: {len(updated_rows)} 个代币已更新")
     return updated_rows
+
+
+async def _batch_dexscreener_prices(
+    session: aiohttp.ClientSession,
+    addresses: List[str],
+) -> Dict[str, dict]:
+    """
+    DexScreener 批量价格查询 — OKX 不可用时的 fallback。
+    DexScreener /tokens 端点支持逗号分隔（最多30个地址/请求）。
+    """
+    result = {}  # type: Dict[str, dict]
+
+    for i in range(0, len(addresses), 30):
+        batch = addresses[i:i + 30]
+        joined = ",".join(batch)
+        url = f"{DEXSCREENER_API}/tokens/v1/{joined}"
+        try:
+            async with session.get(url, timeout=_TIMEOUT) as resp:
+                if resp.status != 200:
+                    # fallback: 逐个查询
+                    for addr in batch:
+                        single = await _dexscreener_single(session, addr)
+                        if single:
+                            result[addr.lower()] = single
+                    continue
+
+                data = await resp.json()
+                # 返回 pairs 数组
+                pairs = data if isinstance(data, list) else data.get("pairs", [])
+                for pair in pairs:
+                    base = pair.get("baseToken", {})
+                    addr_lower = (base.get("address") or "").lower()
+                    if not addr_lower or addr_lower in result:
+                        continue
+                    result[addr_lower] = _parse_dexscreener_pair(pair)
+
+        except Exception as e:
+            log.debug(f"DexScreener batch {i}: {e}")
+            # fallback: 逐个查
+            for addr in batch:
+                single = await _dexscreener_single(session, addr)
+                if single:
+                    result[addr.lower()] = single
+
+        if i + 30 < len(addresses):
+            await asyncio.sleep(0.5)
+
+    return result
+
+
+async def _dexscreener_single(
+    session: aiohttp.ClientSession,
+    address: str,
+) -> Optional[dict]:
+    """单个代币的 DexScreener 查询"""
+    try:
+        url = f"{DEXSCREENER_API}/latest/dex/tokens/{address}"
+        async with session.get(url, timeout=_TIMEOUT) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+            pairs = data.get("pairs") or []
+            if not pairs:
+                return None
+            return _parse_dexscreener_pair(pairs[0])
+    except Exception:
+        return None
+
+
+def _parse_dexscreener_pair(pair: dict) -> dict:
+    """解析 DexScreener pair 为统一格式"""
+    vol = pair.get("volume", {})
+    chg = pair.get("priceChange", {})
+    txn = pair.get("txns", {})
+    liq = pair.get("liquidity", {})
+
+    def _f(v) -> float:
+        try:
+            return float(v) if v is not None else 0.0
+        except (ValueError, TypeError):
+            return 0.0
+
+    return {
+        "price_usd": _f(pair.get("priceUsd")),
+        "market_cap_usd": _f(pair.get("marketCap") or pair.get("fdv")),
+        "liquidity_usd": _f(liq.get("usd")),
+        "volume_24h_usd": _f(vol.get("h24")),
+        "volume_1h_usd": _f(vol.get("h1")),
+        "volume_5m_usd": _f(vol.get("m5")),
+        "price_change_1h": _f(chg.get("h1")),
+        "price_change_6h": _f(chg.get("h6")),
+        "price_change_24h": _f(chg.get("h24")),
+        "price_change_5m": _f(chg.get("m5")),
+        "buys_1h": int(_f(txn.get("h1", {}).get("buys"))),
+        "sells_1h": int(_f(txn.get("h1", {}).get("sells"))),
+        "buys_24h": int(_f(txn.get("h24", {}).get("buys"))),
+        "sells_24h": int(_f(txn.get("h24", {}).get("sells"))),
+        "pair_address": pair.get("pairAddress"),
+        "dex_id": pair.get("dexId"),
+    }

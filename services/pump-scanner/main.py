@@ -125,17 +125,16 @@ async def main():
         misfire_grace_time=120,
     )
 
-    # ── OKX 市场数据刷新（每5秒）───────────────────────────
-    # OKX lastPriceUsd 毫秒级更新，volume/change 按窗口聚合(5M/1H/4H/24H)
-    # 所有字段来自同一 price-info 接口，5s 全量刷新 + 打分
-    # 单轮耗时：OKX 4链 ≈ 2s + 打分 ≈ 0.1s + DB写 ≈ 0.5s ≈ 3s
+    # ── 市场数据刷新（每30秒）─────────────────────────────
+    # OKX Market API 优先（毫秒级价格），不可用时 DexScreener fallback
+    # 单轮耗时：DexScreener 4链 ≈ 10-20s + 打分 ≈ 0.1s + DB写 ≈ 0.5s
     scheduler.add_job(
         run_hot_price_refresh,
         trigger="interval",
-        seconds=5,
+        seconds=30,
         id="hot_price_refresh",
-        name="OKX 热币市场数据刷新",
-        misfire_grace_time=3,
+        name="热币市场数据刷新",
+        misfire_grace_time=15,
     )
 
     # ── 热币日榜生成（每天 UTC 02:00）───────────────────────
@@ -218,7 +217,7 @@ async def main():
         "  每日 UTC 02:00 → hot_daily_picks\n"
         "  每1小时        → outcome_labeler\n"
         "  每10分钟       → hot_coin_scan (增量发现)\n"
-        "  每5秒          → hot_price_refresh (OKX 全字段+打分)\n"
+        "  每30秒         → hot_price_refresh (OKX+DexScreener 全字段+打分)\n"
         "  每6小时        → smart_wallet_updater\n"
         "  ── KOL 系统 ──\n"
         "  每30分钟       → kol_collect\n"

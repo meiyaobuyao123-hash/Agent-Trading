@@ -152,7 +152,7 @@ async def run_performance_tracker():
 # ══════════════════════════════════════════════════════════════
 
 async def _tick_hot(session: aiohttp.ClientSession) -> int:
-    """直接调用 OKX batch_price_info 获取最新价格"""
+    """OKX 优先获取价格，不可用时 DexScreener fallback"""
     hot_rows = [v for v in _cache.values() if v["source"] == "hot" and v.get("is_active")]
     if not hot_rows:
         return 0
@@ -172,30 +172,110 @@ async def _tick_hot(session: aiohttp.ClientSession) -> int:
 
     updated = 0
     for chain, rows in by_chain.items():
-        chain_index = OKX_CHAIN_INDEX.get(chain)
-        if not chain_index:
-            continue
-
         addresses = [r["address"] for r in rows]
-        try:
-            okx_data = await okx.batch_price_info(chain_index, addresses, session=session)
-        except Exception as e:
-            log.warning(f"OKX 价格查询失败 {chain}: {e}")
-            continue
 
+        # ── 1. 优先 OKX ──
+        okx_data = {}  # type: Dict[str, dict]
+        chain_index = OKX_CHAIN_INDEX.get(chain)
+        if chain_index:
+            try:
+                okx_data = await okx.batch_price_info(chain_index, addresses, session=session)
+            except Exception as e:
+                log.debug(f"OKX 价格查询失败 {chain}: {e}")
+
+        # ── 2. OKX 命中不足 → DexScreener fallback ──
+        okx_hit_addrs = set()
         for row in rows:
             addr_lower = row["address"].lower()
             info = okx_data.get(addr_lower)
-            if not info:
-                continue
-            price = info.get("lastPriceUsd", 0)
-            if price <= 0:
-                continue
+            if info and info.get("lastPriceUsd", 0) > 0:
+                okx_hit_addrs.add(addr_lower)
 
-            if _apply_price_update(row, price):
+        missing = [r["address"] for r in rows if r["address"].lower() not in okx_hit_addrs]
+        dex_prices = {}  # type: Dict[str, float]
+        if missing:
+            dex_prices = await _dexscreener_batch_prices(session, missing)
+
+        # ── 3. 应用更新 ──
+        for row in rows:
+            addr_lower = row["address"].lower()
+            price = 0.0
+
+            info = okx_data.get(addr_lower)
+            if info and info.get("lastPriceUsd", 0) > 0:
+                price = info["lastPriceUsd"]
+            elif addr_lower in dex_prices:
+                price = dex_prices[addr_lower]
+
+            if price > 0 and _apply_price_update(row, price):
                 updated += 1
 
     return updated
+
+
+async def _dexscreener_batch_prices(
+    session: aiohttp.ClientSession,
+    addresses: List[str],
+) -> Dict[str, float]:
+    """DexScreener 批量获取价格（仅 price）"""
+    result = {}  # type: Dict[str, float]
+    from config import DEXSCREENER_API
+
+    for i in range(0, len(addresses), 30):
+        batch = addresses[i:i + 30]
+        joined = ",".join(batch)
+        try:
+            url = f"{DEXSCREENER_API}/tokens/v1/{joined}"
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    # 逐个查
+                    for addr in batch:
+                        p = await _dexscreener_single_price(session, addr)
+                        if p > 0:
+                            result[addr.lower()] = p
+                    continue
+                data = await resp.json()
+                pairs = data if isinstance(data, list) else data.get("pairs", [])
+                for pair in pairs:
+                    base = pair.get("baseToken", {})
+                    addr_lower = (base.get("address") or "").lower()
+                    try:
+                        p = float(pair.get("priceUsd") or 0)
+                    except (ValueError, TypeError):
+                        p = 0.0
+                    if addr_lower and p > 0 and addr_lower not in result:
+                        result[addr_lower] = p
+        except Exception as e:
+            log.debug(f"DexScreener batch price {i}: {e}")
+            for addr in batch:
+                p = await _dexscreener_single_price(session, addr)
+                if p > 0:
+                    result[addr.lower()] = p
+
+        if i + 30 < len(addresses):
+            await asyncio.sleep(0.5)
+
+    return result
+
+
+async def _dexscreener_single_price(
+    session: aiohttp.ClientSession,
+    address: str,
+) -> float:
+    """单个代币 DexScreener 价格"""
+    from config import DEXSCREENER_API
+    try:
+        url = f"{DEXSCREENER_API}/latest/dex/tokens/{address}"
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            if resp.status != 200:
+                return 0.0
+            data = await resp.json()
+            pairs = data.get("pairs") or []
+            if pairs:
+                return float(pairs[0].get("priceUsd") or 0)
+    except Exception:
+        pass
+    return 0.0
 
 
 # ══════════════════════════════════════════════════════════════

@@ -186,12 +186,42 @@ class ActionDispatcher:
         # 从 trigger_context 中提取常用字段
         tc = event.trigger_context or {}
         for key in [
-            "score", "price", "market_cap_usd", "bc_progress",
-            "mention_count", "mention_count_2h", "signal_strength",
-            "price_change_1h", "price_change_24h",
+            # 通用
+            "score", "market_cap_usd", "bc_progress",
+            # 价格（OKX: price_usd / 旧: price）
+            "price_usd", "price",
+            # 涨跌幅
+            "price_change_5m", "price_change_1h",
+            "price_change_4h", "price_change_24h",
+            # 交易量
+            "volume_5m_usd", "volume_1h_usd",
+            "volume_4h_usd", "volume_24h_usd",
+            # 持有者 / 流动性
+            "holder_count", "liquidity_usd",
+            # 子评分
+            "score_m", "score_q", "score_p",
+            # 推荐等级 / 流通量
+            "recommendation", "circ_supply",
+            # 买卖笔数
+            "buys_1h", "sells_1h", "buys_24h", "sells_24h",
+            # 买卖税
+            "buy_tax_rate", "sell_tax_rate",
+            # KOL 相关
+            "mention_count", "mention_count_2h", "mention_count_24h",
+            "signal_strength", "kol_count", "total_reach",
+            "avg_sentiment", "bullish_ratio", "mega_mention",
+            # 内盘
+            "buy_sell_ratio", "buyer_count", "dev_sold_pct",
+            "smart_money_count",
         ]:
             if key in tc:
                 context[key] = str(tc[key])
+
+        # 兼容别名：price 和 price_usd 互为 fallback
+        if "price" not in context and "price_usd" in context:
+            context["price"] = context["price_usd"]
+        elif "price_usd" not in context and "price" in context:
+            context["price_usd"] = context["price"]
 
         # 替换 {{xxx}}
         def replacer(match: re.Match) -> str:

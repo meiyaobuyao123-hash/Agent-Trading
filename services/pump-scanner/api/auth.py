@@ -4,6 +4,9 @@ JWT 认证 — Supabase JWT 验证
 验证 Flutter App 发送的 Supabase JWT Token，
 提取 user_id（sub claim）。
 
+开发模式：如果 SUPABASE_JWT_SECRET 未设置，
+跳过 JWT 验证，使用 dev-user 作为 user_id。
+
 Python 3.9 兼容。
 """
 import os
@@ -14,14 +17,24 @@ import jwt
 from fastapi import HTTPException, Security
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 log = logging.getLogger(__name__)
 
 # Supabase JWT Secret（从环境变量或 config 获取）
 JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 
+# 开发模式：JWT Secret 未配置时跳过验证
+DEV_MODE = not JWT_SECRET
+if DEV_MODE:
+    log.warning("SUPABASE_JWT_SECRET not set — running in DEV mode (auth bypassed)")
+
 # FastAPI 安全方案
 security = HTTPBearer(auto_error=False)
+
+_DEV_USER_ID = "dev-user-00000000-0000-0000-0000-000000000000"
 
 
 async def get_current_user(
@@ -30,17 +43,18 @@ async def get_current_user(
     """
     验证 JWT 并返回 user_id
 
-    用于 FastAPI 路由依赖注入：
-        @router.get("/strategies")
-        async def list_strategies(user_id: str = Depends(get_current_user)):
-            ...
+    开发模式下跳过验证，返回固定 dev user_id。
 
     Returns:
         user_id (UUID string)
 
     Raises:
-        HTTPException 401 if 认证失败
+        HTTPException 401 if 认证失败（仅生产模式）
     """
+    # 开发模式：跳过认证
+    if DEV_MODE:
+        return _DEV_USER_ID
+
     if credentials is None:
         raise HTTPException(
             status_code=401,

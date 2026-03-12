@@ -14,6 +14,9 @@ import json
 import logging
 from typing import Any, Dict, Optional, Tuple
 
+from dotenv import load_dotenv
+load_dotenv(override=True)
+
 try:
     import anthropic
 except ImportError:

@@ -168,6 +168,7 @@ export async function fetchPerformance(opts: {
   chain?: string
   limit?: number
   daysBack?: number
+  pickDate?: string
   orderBy?: string
   ascending?: boolean
 }): Promise<TokenPerformance[]> {
@@ -176,7 +177,9 @@ export async function fetchPerformance(opts: {
 
   if (opts.source) query = query.eq('source', opts.source)
   if (opts.chain) query = query.eq('chain', opts.chain)
-  if (opts.daysBack) {
+  if (opts.pickDate) {
+    query = query.eq('pick_date', opts.pickDate)
+  } else if (opts.daysBack) {
     const since = new Date()
     since.setDate(since.getDate() - opts.daysBack)
     query = query.gte('pick_date', since.toISOString().split('T')[0])
@@ -189,6 +192,22 @@ export async function fetchPerformance(opts: {
   const { data, error } = await query
   if (error) throw error
   return (data ?? []) as TokenPerformance[]
+}
+
+export async function fetchPerformanceDates(source: 'pump' | 'hot'): Promise<string[]> {
+  const supabase = createClient()
+  const { data } = await supabase
+    .from('token_performance')
+    .select('pick_date')
+    .eq('source', source)
+    .order('pick_date', { ascending: false })
+    .limit(500)
+
+  const unique = [...new Set((data ?? []).map((r: Record<string, unknown>) => r.pick_date as string))]
+    .sort((a, b) => b.localeCompare(a))
+    .slice(0, 60)
+
+  return unique
 }
 
 export interface SummaryStats {

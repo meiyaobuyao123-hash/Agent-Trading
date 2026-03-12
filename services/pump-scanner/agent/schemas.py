@@ -141,9 +141,13 @@ class StrategyFilters(BaseModel):
     """策略过滤器"""
     chains: Optional[List[str]] = Field(None, description="限定链")
     min_score: Optional[float] = Field(None, description="最低分数")
+    min_score_m: Optional[float] = Field(None, description="最低动量分 (0-50)")
+    min_score_q: Optional[float] = Field(None, description="最低质量分 (0-30)")
+    min_score_p: Optional[float] = Field(None, description="最低潜力分 (0-20)")
     min_market_cap: Optional[float] = Field(None, description="最低市值")
     max_market_cap: Optional[float] = Field(None, description="最高市值")
     min_liquidity: Optional[float] = Field(None, description="最低流动性")
+    min_volume_24h: Optional[float] = Field(None, description="最低24h交易量 (USD)")
     exclude_tokens: Optional[List[str]] = Field(None, description="排除的代币地址")
 
 

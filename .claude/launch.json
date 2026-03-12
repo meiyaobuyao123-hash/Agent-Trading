@@ -5,21 +5,21 @@
       "name": "web",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/web",
+      "cwd": "apps/web",
       "port": 3000
     },
     {
       "name": "admin",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
-      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/admin",
+      "cwd": "apps/admin",
       "port": 3002
     },
     {
       "name": "portal",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "/Users/wenruiwei/Desktop/Agent-Trading/apps/portal",
+      "cwd": "apps/portal",
       "port": 3003
     }
   ]

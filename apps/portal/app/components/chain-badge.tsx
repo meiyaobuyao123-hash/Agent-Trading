@@ -2,6 +2,7 @@ const CHAIN_CONFIG: Record<string, { label: string; color: string }> = {
   solana: { label: 'SOL', color: 'var(--purple)' },
   bsc: { label: 'BSC', color: 'var(--yellow)' },
   base: { label: 'BASE', color: 'var(--blue)' },
+  eth: { label: 'ETH', color: '#627EEA' },
 }
 
 interface ChainBadgeProps {

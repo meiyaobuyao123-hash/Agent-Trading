@@ -60,6 +60,7 @@ SYSTEM_PROMPT = """你是一个加密货币交易策略解析专家。用户会�
 - buys_24h: 24小时买入笔数
 - sells_24h: 24小时卖出笔数
 - recommendation: 推荐等级（strong/normal/skip）
+- circ_supply: 流通供应量
 - chain: 链名（solana/bsc/base/eth）
 
 ### kol_mentions（KOL提及）
@@ -87,7 +88,7 @@ SYSTEM_PROMPT = """你是一个加密货币交易策略解析专家。用户会�
 ## 规则
 1. cooldown_minutes 最小 5 分钟
 2. 条件必须具体、可量化
-3. 模板变量用 {{变量名}}：token_name, chain, score, price_change_1h 等
+3. 模板变量用 {{变量名}}：token_name, chain, score, score_m, score_q, score_p, price_change_5m, price_change_1h, price_change_4h, price_change_24h, volume_5m_usd, market_cap_usd 等
 4. 如果用户没指定链，不要添加 chains 过滤
 5. 如果用户意图不明确，返回一个合理的默认配置并解释
 """
@@ -168,9 +169,13 @@ STRATEGY_TOOL = {
                         "items": {"type": "string"},
                     },
                     "min_score": {"type": "number"},
+                    "min_score_m": {"type": "number", "description": "最低动量分 (0-50)"},
+                    "min_score_q": {"type": "number", "description": "最低质量分 (0-30)"},
+                    "min_score_p": {"type": "number", "description": "最低潜力分 (0-20)"},
                     "min_market_cap": {"type": "number"},
                     "max_market_cap": {"type": "number"},
                     "min_liquidity": {"type": "number"},
+                    "min_volume_24h": {"type": "number", "description": "最低24h交易量 (USD)"},
                 },
             },
             "cooldown_minutes": {

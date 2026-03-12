@@ -205,7 +205,8 @@ async def _build_hot_coin_events() -> List[DataEvent]:
                     "market_cap_usd, liquidity_usd, "
                     "volume_5m_usd, volume_1h_usd, volume_4h_usd, volume_24h_usd, "
                     "holder_count, buys_1h, sells_1h, buys_24h, sells_24h, "
-                    "score_m, score_q, score_p, recommendation")
+                    "score_m, score_q, score_p, recommendation, "
+                    "circ_supply, token_logo_url")
             .gte("score", 40)
             .order("score", desc=True)
             .limit(200)

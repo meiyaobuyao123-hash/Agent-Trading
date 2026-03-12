@@ -164,6 +164,25 @@ class StrategyEvaluator:
             if liq < min_liq:
                 return False
 
+        # 子分过滤（动量/质量/潜力）
+        for sub_key, data_key in [
+            ("min_score_m", "score_m"),
+            ("min_score_q", "score_q"),
+            ("min_score_p", "score_p"),
+        ]:
+            min_val = filters.get(sub_key)
+            if min_val is not None:
+                val = event.data.get(data_key, 0)
+                if val < min_val:
+                    return False
+
+        # 24h 交易量过滤
+        min_vol = filters.get("min_volume_24h")
+        if min_vol is not None:
+            vol = event.data.get("volume_24h_usd", 0)
+            if vol < min_vol:
+                return False
+
         # 排除代币
         exclude = filters.get("exclude_tokens")
         if exclude and event.token_address in exclude:

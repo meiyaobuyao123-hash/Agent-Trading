@@ -10,6 +10,7 @@ const CHAIN_TABS = [
   { key: null, label: '全部' },
   { key: 'solana', label: 'SOL' },
   { key: 'bsc', label: 'BSC' },
+  { key: 'eth', label: 'ETH' },
   { key: 'base', label: 'BASE' },
 ]
 

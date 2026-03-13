@@ -1,0 +1,562 @@
+"""
+交易执行器 — OKX DEX Aggregator v6 Swap
+
+流程：
+1. 获取报价（quote）
+2. 获取交易数据（swap）
+3. 签名交易（Solana: solders / EVM: eth-account）
+4. 广播交易（RPC）
+5. 记录结果
+
+Python 3.9 兼容。
+"""
+import asyncio
+import base64
+import hashlib
+import hmac
+import json
+import logging
+import os
+import time
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional, Tuple
+
+import aiohttp
+
+log = logging.getLogger(__name__)
+
+# ── OKX DEX Aggregator 配置 ─────────────────────────────────
+OKX_SWAP_BASE = "https://web3.okx.com"
+
+# 链 ID
+CHAIN_INDEX = {
+    "solana": "501",
+    "eth": "1",
+    "bsc": "56",
+    "base": "8453",
+}
+
+# 稳定币/原生币地址（买入时 from）
+NATIVE_TOKEN = {
+    "solana": "So11111111111111111111111111111111111111112",   # wSOL
+    "eth": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "bsc": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+    "base": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+}
+
+USDC_ADDRESS = {
+    "solana": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "eth": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "bsc": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+    "base": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+}
+
+# EVM chain IDs (for tx signing)
+EVM_CHAIN_ID = {"eth": 1, "bsc": 56, "base": 8453}
+
+# RPC 端点
+SOLANA_RPC = os.getenv("SOLANA_RPC", "https://api.mainnet-beta.solana.com")
+EVM_RPC = {
+    "eth": os.getenv("ETH_RPC", "https://eth.llamarpc.com"),
+    "bsc": os.getenv("BSC_RPC", "https://bsc-dataseed.binance.org"),
+    "base": os.getenv("BASE_RPC", "https://mainnet.base.org"),
+}
+
+# 代币精度
+TOKEN_DECIMALS_NATIVE = {
+    "solana": 9,   # SOL = 9 decimals
+    "eth": 18,
+    "bsc": 18,
+    "base": 18,
+}
+
+
+@dataclass
+class TradeResult:
+    """交易执行结果"""
+    success: bool
+    tx_hash: str = ""
+    from_amount: float = 0.0
+    to_amount: float = 0.0
+    price: float = 0.0
+    gas_fee: float = 0.0
+    error: str = ""
+    chain: str = ""
+    token_address: str = ""
+    action: str = ""
+
+
+class TradeExecutor:
+    """OKX DEX 交易执行器"""
+
+    def __init__(self):
+        from config import OKX_API_KEY, OKX_SECRET_KEY, OKX_PASSPHRASE
+        self._api_key = OKX_API_KEY
+        self._secret_key = OKX_SECRET_KEY
+        self._passphrase = OKX_PASSPHRASE
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession()
+        return self._session
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            await self._session.close()
+
+    # ── OKX 签名 ────────────────────────────────────────────
+
+    def _sign(self, timestamp: str, method: str, path: str, body: str = "") -> str:
+        message = timestamp + method.upper() + path + body
+        mac = hmac.new(
+            self._secret_key.encode("utf-8"),
+            message.encode("utf-8"),
+            hashlib.sha256,
+        )
+        return base64.b64encode(mac.digest()).decode("utf-8")
+
+    def _headers(self, method: str, path: str, body: str = "") -> Dict[str, str]:
+        now = datetime.now(timezone.utc)
+        ts = now.strftime("%Y-%m-%dT%H:%M:%S.") + f"{now.microsecond // 1000:03d}Z"
+        return {
+            "OK-ACCESS-KEY": self._api_key,
+            "OK-ACCESS-SIGN": self._sign(ts, method, path, body),
+            "OK-ACCESS-TIMESTAMP": ts,
+            "OK-ACCESS-PASSPHRASE": self._passphrase,
+            "Content-Type": "application/json",
+        }
+
+    # ── API 调用 ─────────────────────────────────────────────
+
+    async def _okx_get(self, path: str) -> Dict[str, Any]:
+        """GET 请求 OKX DEX Aggregator"""
+        session = await self._get_session()
+        headers = self._headers("GET", path)
+        url = OKX_SWAP_BASE + path
+        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            data = await resp.json()
+            if data.get("code") != "0":
+                raise RuntimeError(f"OKX API error: code={data.get('code')}, msg={data.get('msg', data)}")
+            return data
+
+    # ── 获取报价 ─────────────────────────────────────────────
+
+    async def get_quote(
+        self, chain: str, from_token: str, to_token: str,
+        amount: str, slippage: str = "1",
+    ) -> Dict[str, Any]:
+        """获取交易报价"""
+        chain_index = CHAIN_INDEX.get(chain, "501")
+        path = (
+            f"/api/v6/dex/aggregator/quote"
+            f"?chainIndex={chain_index}"
+            f"&fromTokenAddress={from_token}"
+            f"&toTokenAddress={to_token}"
+            f"&amount={amount}"
+            f"&slippagePercent={slippage}"
+        )
+        return await self._okx_get(path)
+
+    # ── 获取 Swap 交易数据 ───────────────────────────────────
+
+    async def get_swap_data(
+        self, chain: str, from_token: str, to_token: str,
+        amount: str, slippage: str, wallet_address: str,
+    ) -> Dict[str, Any]:
+        """获取 swap 交易数据（用于签名和广播）"""
+        chain_index = CHAIN_INDEX.get(chain, "501")
+        path = (
+            f"/api/v6/dex/aggregator/swap"
+            f"?chainIndex={chain_index}"
+            f"&fromTokenAddress={from_token}"
+            f"&toTokenAddress={to_token}"
+            f"&amount={amount}"
+            f"&slippagePercent={slippage}"
+            f"&userWalletAddress={wallet_address}"
+            f"&swapMode=exactIn"
+        )
+        return await self._okx_get(path)
+
+    # ── 执行交易入口 ─────────────────────────────────────────
+
+    async def execute_trade(
+        self,
+        chain: str,
+        token_address: str,
+        action: str,
+        amount_usd: float,
+        slippage_pct: float = 1.0,
+        wallet_address: Optional[str] = None,
+        private_key: Optional[str] = None,
+    ) -> TradeResult:
+        """
+        执行买入或卖出交易
+
+        Args:
+            chain: 链名 (solana/eth/bsc/base)
+            token_address: 目标代币地址
+            action: buy 或 sell
+            amount_usd: 交易金额 (USD)
+            slippage_pct: 滑点百分比
+            wallet_address: 钱包地址（不传则从环境变量读取）
+            private_key: 私钥（不传则从环境变量读取）
+
+        Returns:
+            TradeResult
+        """
+        try:
+            # 获取钱包信息
+            wallet_addr, priv_key = self._resolve_wallet(chain, wallet_address, private_key)
+            if not wallet_addr or not priv_key:
+                return TradeResult(
+                    success=False, error="No wallet configured for trading",
+                    chain=chain, token_address=token_address, action=action,
+                )
+
+            # 确定交易方向
+            if action == "buy":
+                from_token = USDC_ADDRESS.get(chain, NATIVE_TOKEN[chain])
+                to_token = token_address
+                # 将 USD 转换为最小单位（USDC 6 decimals）
+                amount_raw = str(int(amount_usd * 1_000_000))
+            elif action == "sell":
+                from_token = token_address
+                to_token = USDC_ADDRESS.get(chain, NATIVE_TOKEN[chain])
+                # TODO: 查询持仓数量，全部卖出
+                return TradeResult(
+                    success=False, error="Sell execution not yet implemented (need position query)",
+                    chain=chain, token_address=token_address, action=action,
+                )
+            else:
+                return TradeResult(
+                    success=False, error=f"Unknown action: {action}",
+                    chain=chain, token_address=token_address, action=action,
+                )
+
+            log.info(f"Executing {action}: {from_token[:10]}.. → {to_token[:10]}.. amount_raw={amount_raw} on {chain}")
+
+            # Step 1: 获取 swap 数据
+            swap_data = await self.get_swap_data(
+                chain=chain,
+                from_token=from_token,
+                to_token=to_token,
+                amount=amount_raw,
+                slippage=str(slippage_pct),
+                wallet_address=wallet_addr,
+            )
+
+            if not swap_data.get("data"):
+                return TradeResult(
+                    success=False, error=f"No swap data returned: {swap_data}",
+                    chain=chain, token_address=token_address, action=action,
+                )
+
+            swap_info = swap_data["data"][0]
+            router_result = swap_info.get("routerResult", {})
+            tx_data = swap_info.get("tx", {})
+
+            to_amount_raw = router_result.get("toTokenAmount", "0")
+            estimate_gas = router_result.get("estimateGasFee", "0")
+
+            log.info(
+                f"Swap quote: to_amount={to_amount_raw}, "
+                f"gas={estimate_gas}, impact={router_result.get('priceImpactPercent', '?')}%"
+            )
+
+            # Step 2: 签名交易
+            if chain == "solana":
+                signed_tx = self._sign_solana_tx(tx_data, priv_key)
+            else:
+                signed_tx = await self._sign_evm_tx(tx_data, priv_key, chain)
+
+            if not signed_tx:
+                return TradeResult(
+                    success=False, error="Transaction signing failed",
+                    chain=chain, token_address=token_address, action=action,
+                )
+
+            # Step 3: 广播交易
+            tx_hash = await self._broadcast_tx(chain, signed_tx, wallet_addr)
+
+            if not tx_hash:
+                return TradeResult(
+                    success=False, error="Transaction broadcast failed",
+                    chain=chain, token_address=token_address, action=action,
+                )
+
+            # 计算价格 — 使用 OKX 返回的 toTokenDecimalNum 而非硬编码
+            to_decimals = int(router_result.get("toTokenDecimalNum", 6))
+            to_amount_float = float(to_amount_raw) / (10 ** to_decimals)
+            price = amount_usd / to_amount_float if to_amount_float > 0 and action == "buy" else 0
+
+            result = TradeResult(
+                success=True,
+                tx_hash=tx_hash,
+                from_amount=amount_usd,
+                to_amount=to_amount_float,
+                price=price,
+                gas_fee=float(estimate_gas) if estimate_gas else 0,
+                chain=chain,
+                token_address=token_address,
+                action=action,
+            )
+
+            log.info(f"Trade SUCCESS: {action} {token_address[:10]}.. tx={tx_hash}")
+
+            # Step 4: 记录到 DB
+            await self._record_execution(result)
+
+            return result
+
+        except Exception as e:
+            log.error(f"Trade execution error: {e}", exc_info=True)
+            return TradeResult(
+                success=False, error=str(e),
+                chain=chain, token_address=token_address, action=action,
+            )
+
+    # ── 钱包解析 ─────────────────────────────────────────────
+
+    def _resolve_wallet(
+        self, chain: str,
+        wallet_address: Optional[str], private_key: Optional[str],
+    ) -> Tuple[str, str]:
+        """从参数或环境变量解析钱包"""
+        addr = wallet_address or os.getenv("TRADE_WALLET_ADDRESS", "")
+        key = private_key or os.getenv("TRADE_WALLET_PRIVATE_KEY", "")
+
+        # 支持按链指定
+        if not addr:
+            addr = os.getenv(f"TRADE_WALLET_ADDRESS_{chain.upper()}", "")
+        if not key:
+            key = os.getenv(f"TRADE_WALLET_PRIVATE_KEY_{chain.upper()}", "")
+
+        return addr, key
+
+    # ── Solana 签名 ──────────────────────────────────────────
+
+    def _sign_solana_tx(self, tx_data: Dict[str, Any], private_key: str) -> Optional[str]:
+        """签名 Solana 交易"""
+        try:
+            import base58 as b58
+            from solders.keypair import Keypair  # type: ignore
+            from solders.transaction import VersionedTransaction  # type: ignore
+
+            # 解析私钥（支持 base58 和 JSON 数组格式）
+            if private_key.startswith("["):
+                key_bytes = bytes(json.loads(private_key))
+            else:
+                key_bytes = b58.b58decode(private_key)
+            keypair = Keypair.from_bytes(key_bytes)
+
+            # 反序列化 OKX 返回的交易
+            raw_tx = tx_data.get("data", "")
+            if not raw_tx:
+                log.error("No transaction data in OKX response")
+                return None
+
+            tx_bytes = b58.b58decode(raw_tx)
+            tx = VersionedTransaction.from_bytes(tx_bytes)
+
+            # 签名
+            tx.sign([keypair])
+            signed_bytes = bytes(tx)
+
+            return b58.b58encode(signed_bytes).decode("utf-8")
+
+        except ImportError:
+            log.error("solders/base58 not installed: pip install solders base58")
+            return None
+        except Exception as e:
+            log.error(f"Solana tx signing error: {e}")
+            return None
+
+    # ── EVM 签名 ─────────────────────────────────────────────
+
+    async def _sign_evm_tx(self, tx_data: Dict[str, Any], private_key: str, chain: str) -> Optional[str]:
+        """签名 EVM 交易（async: 查询链上 nonce）"""
+        try:
+            from eth_account import Account
+
+            account = Account.from_key(private_key)
+            chain_id = EVM_CHAIN_ID.get(chain, 1)
+
+            def _parse_hex_or_int(val, default=0) -> int:
+                """安全解析 hex 字符串或 int"""
+                if val is None:
+                    return default
+                if isinstance(val, int):
+                    return val
+                s = str(val)
+                if s.startswith("0x") or s.startswith("0X"):
+                    return int(s, 16)
+                return int(s) if s else default
+
+            # 获取链上 nonce
+            nonce = await self._get_evm_nonce(chain, account.address)
+
+            # 构建交易
+            tx = {
+                "to": tx_data.get("to", ""),
+                "data": tx_data.get("data", "0x"),
+                "value": _parse_hex_or_int(tx_data.get("value"), 0),
+                "gas": _parse_hex_or_int(tx_data.get("gas"), 21000),
+                "gasPrice": _parse_hex_or_int(tx_data.get("gasPrice"), 0),
+                "chainId": chain_id,
+                "nonce": nonce,
+            }
+
+            signed = account.sign_transaction(tx)
+            return signed.raw_transaction.hex()
+
+        except ImportError:
+            log.error("eth-account not installed: pip install eth-account")
+            return None
+        except Exception as e:
+            log.error(f"EVM tx signing error: {e}")
+            return None
+
+    async def _get_evm_nonce(self, chain: str, address: str) -> int:
+        """查询 EVM 链上 nonce（eth_getTransactionCount）"""
+        rpc_url = EVM_RPC.get(chain, "")
+        if not rpc_url:
+            log.warning("No RPC URL for chain %s, nonce=0", chain)
+            return 0
+        try:
+            session = await self._get_session()
+            payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "eth_getTransactionCount",
+                "params": [address, "pending"],
+            }
+            async with session.post(
+                rpc_url, json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                data = await resp.json()
+                if "error" in data:
+                    log.warning("Nonce query error: %s", data["error"])
+                    return 0
+                return int(data.get("result", "0x0"), 16)
+        except Exception as e:
+            log.warning("Failed to get nonce for %s on %s: %s", address[:10], chain, e)
+            return 0
+
+    # ── 广播交易 ──────────────────────────────────────────────
+
+    async def _broadcast_tx(self, chain: str, signed_tx: str, wallet_address: str) -> Optional[str]:
+        """广播已签名的交易"""
+        try:
+            if chain == "solana":
+                return await self._broadcast_solana(signed_tx)
+            else:
+                return await self._broadcast_evm(chain, signed_tx)
+        except Exception as e:
+            log.error(f"Broadcast error on {chain}: {e}")
+            return None
+
+    async def _broadcast_solana(self, signed_tx_b58: str) -> Optional[str]:
+        """通过 Solana RPC 广播"""
+        session = await self._get_session()
+        rpc_url = os.getenv("SOLANA_RPC", SOLANA_RPC)
+
+        # 如果 Helius RPC 可用，优先使用
+        from config import HELIUS_RPC
+        if HELIUS_RPC and "helius" in HELIUS_RPC:
+            rpc_url = HELIUS_RPC
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "sendTransaction",
+            "params": [
+                signed_tx_b58,
+                {
+                    "encoding": "base58",
+                    "skipPreflight": False,
+                    "preflightCommitment": "confirmed",
+                    "maxRetries": 3,
+                },
+            ],
+        }
+
+        async with session.post(rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            data = await resp.json()
+            if "error" in data:
+                log.error(f"Solana RPC error: {data['error']}")
+                return None
+            tx_hash = data.get("result", "")
+            log.info(f"Solana tx broadcast: {tx_hash}")
+            return tx_hash
+
+    async def _broadcast_evm(self, chain: str, signed_tx_hex: str) -> Optional[str]:
+        """通过 EVM RPC 广播"""
+        session = await self._get_session()
+        rpc_url = EVM_RPC.get(chain, "")
+        if not rpc_url:
+            log.error(f"No RPC URL for chain: {chain}")
+            return None
+
+        if not signed_tx_hex.startswith("0x"):
+            signed_tx_hex = "0x" + signed_tx_hex
+
+        payload = {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "eth_sendRawTransaction",
+            "params": [signed_tx_hex],
+        }
+
+        async with session.post(rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            data = await resp.json()
+            if "error" in data:
+                log.error(f"EVM RPC error ({chain}): {data['error']}")
+                return None
+            tx_hash = data.get("result", "")
+            log.info(f"EVM tx broadcast ({chain}): {tx_hash}")
+            return tx_hash
+
+    # ── 记录交易结果到 DB ────────────────────────────────────
+
+    async def _record_execution(
+        self,
+        result: TradeResult,
+        user_id: str = "",
+        strategy_id: str = "",
+    ):
+        """记录交易执行到 agent_executions 表"""
+        try:
+            from database import get_db
+            row = {
+                "chain": result.chain,
+                "token_address": result.token_address,
+                "action": result.action,
+                "amount_usd": result.from_amount,
+                "amount_token": result.to_amount,
+                "executed_price": result.price,
+                "gas_fee_usd": result.gas_fee,
+                "tx_hash": result.tx_hash or None,
+                "status": "confirmed" if result.success else "failed",
+                "error_message": result.error or None,
+            }
+            if user_id:
+                row["user_id"] = user_id
+            if strategy_id:
+                row["strategy_id"] = strategy_id
+            get_db().table("agent_executions").insert(row).execute()
+        except Exception as e:
+            log.error(f"Failed to record execution: {e}")
+
+
+# ── 全局单例 ──────────────────────────────────────────────────
+
+_executor: Optional[TradeExecutor] = None
+
+
+def get_trade_executor() -> TradeExecutor:
+    global _executor
+    if _executor is None:
+        _executor = TradeExecutor()
+    return _executor

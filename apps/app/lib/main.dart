@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'app.dart';
+import 'config/app_config.dart';
 import 'services/wallet_service.dart';
-
-// ─── Supabase 配置 ────────────────────────────────────
-const _supabaseUrl = 'https://qmzsruqgwaqusywprxlj.supabase.co';
-const _supabaseKey = 'sb_publishable_2uL576o81fhTTuXxhTv20w_oKzjlLkS';
+import 'services/push_notification_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // 初始化 Supabase
   await Supabase.initialize(
-    url: _supabaseUrl,
-    anonKey: _supabaseKey,
+    url: AppConfig.supabaseUrl,
+    anonKey: AppConfig.supabaseAnonKey,
   );
 
   // 锁定竖屏
@@ -25,6 +24,14 @@ void main() async {
 
   // 初始化钱包服务
   await WalletService.instance.init();
+
+  // 初始化 Firebase + 推送通知（缺配置时 graceful fallback）
+  try {
+    await Firebase.initializeApp();
+    await PushNotificationService.initialize();
+  } catch (e) {
+    debugPrint('Firebase init skipped (config missing?): $e');
+  }
 
   // 捕获详细错误信息
   FlutterError.onError = (details) {

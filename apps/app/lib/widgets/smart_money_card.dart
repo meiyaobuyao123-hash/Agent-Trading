@@ -2,6 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/smart_money_signal.dart';
 import '../theme/app_colors.dart';
+import '../utils/chain_utils.dart';
+import '../utils/format_utils.dart';
+import 'common/token_avatar.dart';
+import 'common/rank_medal.dart';
+import 'common/chain_badge.dart';
 
 /// 聪明钱信号卡片（重设计版）
 /// 4行布局: 代币信息 | 市值·流动性 | 流量条 | 钱包数·净流·涨跌
@@ -44,6 +49,14 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
         curve: Curves.easeOut,
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: c.textTertiary.withValues(alpha: 0.08),
+                width: 0.5,
+              ),
+            ),
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -53,7 +66,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                   SizedBox(
                     width: 24,
                     child: widget.rank <= 3
-                        ? _RankMedal(rank: widget.rank)
+                        ? RankMedal(rank: widget.rank)
                         : Text(
                             '${widget.rank}',
                             textAlign: TextAlign.center,
@@ -66,7 +79,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                           ),
                   ),
                   const SizedBox(width: 8),
-                  _SignalAvatar(signal: sig, size: 36),
+                  TokenAvatar(imageUrl: ChainUtils.tokenImageUrl(sig.imageUrl, sig.chain, sig.tokenAddress), symbol: sig.tokenSymbol, chain: sig.chain, size: 36),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
@@ -78,7 +91,9 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                               child: Text(
                                 sig.tokenSymbol.isNotEmpty
                                     ? sig.tokenSymbol.toUpperCase()
-                                    : sig.tokenAddress.substring(0, 6),
+                                    : (sig.tokenAddress.length >= 6
+                                        ? sig.tokenAddress.substring(0, 6)
+                                        : sig.tokenAddress),
                                 style: TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w700,
@@ -89,7 +104,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                               ),
                             ),
                             const SizedBox(width: 5),
-                            _ChainBadge(chain: sig.chain),
+                            ChainBadge(chain: sig.chain),
                             if (isStrong) ...[
                               const SizedBox(width: 4),
                               _SignalBadge(strength: sig.signalStrength),
@@ -114,7 +129,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                     children: [
                       if (sig.priceUsd > 0)
                         Text(
-                          _fmtPrice(sig.priceUsd),
+                          FormatUtils.fmtPrice(sig.priceUsd),
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -193,14 +208,6 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
         ),
       ),
     );
-  }
-
-  String _fmtPrice(double p) {
-    if (p >= 1000) return '\$${p.toStringAsFixed(0)}';
-    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
-    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
-    if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
-    return '\$${p.toStringAsFixed(8)}';
   }
 }
 
@@ -330,125 +337,6 @@ class _ChangeChip extends StatelessWidget {
           fontFeatures: [FontFeature.tabularFigures()],
         ),
       ),
-    );
-  }
-}
-
-// ─── 排名奖牌 ─────────────────────────────────
-class _RankMedal extends StatelessWidget {
-  final int rank;
-  const _RankMedal({required this.rank});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (rank) {
-      1 => const Color(0xFFFFD700),
-      2 => const Color(0xFFC0C0C0),
-      _ => const Color(0xFFCD7F32),
-    };
-    return Container(
-      width: 22, height: 22,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [color, color.withValues(alpha: 0.7)],
-          begin: Alignment.topLeft, end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(7),
-        boxShadow: [BoxShadow(
-          color: color.withValues(alpha: 0.3), blurRadius: 6,
-          offset: const Offset(0, 2),
-        )],
-      ),
-      alignment: Alignment.center,
-      child: Text('$rank', style: const TextStyle(
-        fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white,
-      )),
-    );
-  }
-}
-
-// ─── 信号头像 ────────────────────────────────────
-class _SignalAvatar extends StatelessWidget {
-  final SmartMoneySignal signal;
-  final double size;
-  const _SignalAvatar({required this.signal, required this.size});
-
-  Color get _chainColor => switch (signal.chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc' => const Color(0xFFF3BA2F),
-    'base' => const Color(0xFF0052FF),
-    'eth' => const Color(0xFF627EEA),
-    _ => const Color(0xFF3B82F6),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: _chainColor.withValues(alpha: 0.2), width: 1.5),
-      ),
-      child: signal.imageUrl != null && signal.imageUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(size / 2),
-              child: Image.network(signal.imageUrl!, width: size, height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _letterAvatar(context),
-              ),
-            )
-          : _letterAvatar(context),
-    );
-  }
-
-  Widget _letterAvatar(BuildContext context) {
-    final letter = signal.tokenSymbol.isNotEmpty
-        ? signal.tokenSymbol[0].toUpperCase()
-        : '?';
-    return Container(
-      width: size, height: size,
-      decoration: BoxDecoration(
-        color: _chainColor.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(letter, style: TextStyle(
-        color: _chainColor, fontSize: size * 0.4, fontWeight: FontWeight.w700,
-      )),
-    );
-  }
-}
-
-// ─── 链标签 ──────────────────────────────────────
-class _ChainBadge extends StatelessWidget {
-  final String chain;
-  const _ChainBadge({required this.chain});
-
-  Color get _color => switch (chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc' => const Color(0xFFF3BA2F),
-    'base' => const Color(0xFF0052FF),
-    'eth' => const Color(0xFF627EEA),
-    _ => const Color(0xFF64748B),
-  };
-
-  String get _label => switch (chain) {
-    'solana' => 'SOL', 'bsc' => 'BSC', 'base' => 'BASE', 'eth' => 'ETH',
-    _ => chain.toUpperCase(),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: _color.withValues(alpha: 0.15), width: 0.5),
-      ),
-      child: Text(_label, style: TextStyle(
-        color: _color, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.3,
-      )),
     );
   }
 }

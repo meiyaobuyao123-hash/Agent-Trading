@@ -59,6 +59,10 @@ from agent.event_bus import get_event_bus
 # 聪明钱多链追踪
 from smart_money_tracker import run_smart_money_scan
 
+# ML 自动重训
+from ml_trainer import auto_retrain_if_needed
+from ml_config import ML_RETRAIN_INTERVAL_HOURS, USE_ML_SCORING
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -219,7 +223,25 @@ async def main():
         id="smart_money_scan",
         name="聪明钱多链扫描",
         misfire_grace_time=120,
+        max_instances=1,
     )
+
+    # ══════════════════════════════════════════════════════════
+    # ML 自动重训
+    # ══════════════════════════════════════════════════════════
+
+    # ── XGBoost 自动重训（默认每周一次）─────────────────────
+    # 检查新增标注样本数，够多则自动重训模型
+    if USE_ML_SCORING:
+        scheduler.add_job(
+            auto_retrain_if_needed,
+            trigger="interval",
+            hours=ML_RETRAIN_INTERVAL_HOURS,
+            id="ml_retrain",
+            name="XGBoost 自动重训",
+            misfire_grace_time=3600,
+            max_instances=1,
+        )
 
     scheduler.start()
     log.info(
@@ -240,6 +262,9 @@ async def main():
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
         "  每15分钟       → smart_money_scan (多链聪明钱)\n"
+        "  ── ML 系统 ──\n"
+        f"  每{ML_RETRAIN_INTERVAL_HOURS}小时      → ml_retrain (XGBoost 自动重训)"
+        f" {'[已启用]' if USE_ML_SCORING else '[未启用，USE_ML_SCORING=0]'}\n"
         "  ── 常驻协程 ──\n"
         "  1秒循环        → performance_loop (OKX+pump.fun 秒级追踪)"
     )

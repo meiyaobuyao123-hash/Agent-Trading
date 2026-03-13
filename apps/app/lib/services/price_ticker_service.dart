@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/app_config.dart';
 
 /// 实时价格刷新服务 — OKX 优先（通过后端代理），DexScreener fallback
 /// 每 1 秒轮询一次（OKX 价格毫秒级更新），仅更新价格和涨跌幅字段
@@ -18,8 +19,7 @@ class PriceTickerService {
   /// 当前正在追踪的代币地址列表（按链分组）
   Map<String, List<String>> _chainAddresses = {};
 
-  // TODO: 生产环境替换为实际部署地址
-  static const _apiBase = 'http://localhost:8000';
+  static const _apiBase = AppConfig.backendBaseUrl;
 
   /// 启动实时刷新（单链，兼容旧接口）
   void start(List<String> addresses, {String chain = 'solana'}) {

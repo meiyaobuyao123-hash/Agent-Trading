@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_colors.dart';
 import '../services/agent_service.dart';
+import '../utils/format_utils.dart';
 
 /// 展示策略交易记录 + P&L 的底部弹窗
 void showStrategyDetailSheet(BuildContext context, AgentStrategy strategy) {
@@ -23,6 +24,7 @@ class _StrategyDetailSheet extends StatefulWidget {
 
 class _StrategyDetailSheetState extends State<_StrategyDetailSheet> {
   bool _loading = true;
+  bool _error = false;
   List<AgentExecution> _executions = [];
   ExecutionSummary _summary = const ExecutionSummary();
   String _filter = 'all'; // all / buy / sell
@@ -34,7 +36,10 @@ class _StrategyDetailSheetState extends State<_StrategyDetailSheet> {
   }
 
   Future<void> _loadExecutions() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
     final resp =
         await AgentService.instance.listExecutions(widget.strategy.id);
     if (!mounted) return;
@@ -42,6 +47,8 @@ class _StrategyDetailSheetState extends State<_StrategyDetailSheet> {
       if (resp != null) {
         _executions = resp.executions;
         _summary = resp.summary;
+      } else {
+        _error = true;
       }
       _loading = false;
     });
@@ -110,16 +117,36 @@ class _StrategyDetailSheetState extends State<_StrategyDetailSheet> {
                   ? Center(
                       child: CircularProgressIndicator(
                           color: c.primary, strokeWidth: 2))
-                  : _filteredExecs.isEmpty
-                      ? _EmptyState(filter: _filter)
-                      : ListView.builder(
-                          controller: scrollCtrl,
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          itemCount: _filteredExecs.length,
-                          itemBuilder: (_, i) => _ExecutionRow(
-                            execution: _filteredExecs[i],
+                  : _error
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.cloud_off_rounded,
+                                  size: 48, color: c.textTertiary),
+                              const SizedBox(height: 12),
+                              Text('加载失败',
+                                  style: TextStyle(
+                                      color: c.textTertiary, fontSize: 14)),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: _loadExecutions,
+                                child: Text('点击重试',
+                                    style: TextStyle(color: c.primary)),
+                              ),
+                            ],
                           ),
-                        ),
+                        )
+                      : _filteredExecs.isEmpty
+                          ? _EmptyState(filter: _filter)
+                          : ListView.builder(
+                              controller: scrollCtrl,
+                              padding: const EdgeInsets.symmetric(horizontal: 16),
+                              itemCount: _filteredExecs.length,
+                              itemBuilder: (_, i) => _ExecutionRow(
+                                execution: _filteredExecs[i],
+                              ),
+                            ),
             ),
           ],
         ),
@@ -293,17 +320,17 @@ class _PnlSummary extends StatelessWidget {
             children: [
               _StatCell(
                 label: '买入',
-                value: '\$${_fmtAmt(summary.totalBuyUsd)}',
+                value: '\$${FormatUtils.fmtAmtRaw(summary.totalBuyUsd)}',
                 color: c.danger,
               ),
               _StatCell(
                 label: '卖出',
-                value: '\$${_fmtAmt(summary.totalSellUsd)}',
+                value: '\$${FormatUtils.fmtAmtRaw(summary.totalSellUsd)}',
                 color: c.success,
               ),
               _StatCell(
                 label: 'Gas',
-                value: '\$${_fmtAmt(summary.totalGasUsd)}',
+                value: '\$${FormatUtils.fmtAmtRaw(summary.totalGasUsd)}',
                 color: c.warning,
               ),
               _StatCell(
@@ -320,11 +347,6 @@ class _PnlSummary extends StatelessWidget {
     );
   }
 
-  String _fmtAmt(double v) {
-    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K';
-    return v.toStringAsFixed(2);
-  }
 }
 
 class _StatCell extends StatelessWidget {
@@ -558,7 +580,7 @@ class _ExecutionRow extends StatelessWidget {
               // 金额
               _InfoTag(
                 icon: Icons.attach_money,
-                label: _fmtAmt(execution.amountUsd),
+                label: FormatUtils.fmtAmt(execution.amountUsd),
                 color: c.textPrimary,
               ),
               const SizedBox(width: 10),
@@ -566,7 +588,7 @@ class _ExecutionRow extends StatelessWidget {
               if (execution.executedPrice > 0)
                 _InfoTag(
                   icon: Icons.show_chart,
-                  label: _fmtPrice(execution.executedPrice),
+                  label: FormatUtils.fmtPrice(execution.executedPrice),
                   color: c.textSecondary,
                 ),
               const Spacer(),
@@ -608,7 +630,7 @@ class _ExecutionRow extends StatelessWidget {
                       size: 11, color: c.textTertiary),
                   const SizedBox(width: 4),
                   Text(
-                    _truncHash(execution.txHash!),
+                    FormatUtils.truncHash(execution.txHash!),
                     style: TextStyle(
                       color: c.textTertiary,
                       fontSize: 10,
@@ -644,23 +666,6 @@ class _ExecutionRow extends StatelessWidget {
     );
   }
 
-  String _fmtAmt(double v) {
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(2)}';
-  }
-
-  String _fmtPrice(double p) {
-    if (p >= 1000) return '\$${p.toStringAsFixed(0)}';
-    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
-    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
-    return '\$${p.toStringAsFixed(6)}';
-  }
-
-  String _truncHash(String hash) {
-    if (hash.length < 16) return hash;
-    return '${hash.substring(0, 8)}...${hash.substring(hash.length - 6)}';
-  }
 }
 
 class _InfoTag extends StatelessWidget {

@@ -9,6 +9,7 @@ LLM 策略解析器 — Claude Sonnet Tool Use → StrategySpec JSON
 
 Python 3.9 兼容。
 """
+import asyncio
 import os
 import json
 import logging
@@ -348,7 +349,9 @@ class LLMParser:
                     "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？",
                 })
 
-            response = client.messages.create(
+            # 在线程池中运行同步 API 调用，避免阻塞 async 事件循环
+            response = await asyncio.to_thread(
+                client.messages.create,
                 model=MODEL,
                 max_tokens=2048,
                 system=SYSTEM_PROMPT,

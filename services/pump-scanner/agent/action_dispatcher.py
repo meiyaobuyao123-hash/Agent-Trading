@@ -105,6 +105,29 @@ class ActionDispatcher:
                     "severity": severity,
                 })
 
+                # 同步推送通知到用户设备
+                try:
+                    from agent.push_service import send_push
+                    push_data = {
+                        "type": "alert",
+                        "alert_id": str(alert_id),
+                        "severity": severity,
+                        "token_address": event.matched_token or "",
+                        "chain": event.matched_chain or "",
+                    }
+                    await send_push(
+                        user_id=event.user_id,
+                        title=title,
+                        body=message,
+                        data=push_data,
+                    )
+                    # 标记已推送
+                    get_db().table("agent_alerts").update(
+                        {"is_pushed": True}
+                    ).eq("id", alert_id).execute()
+                except Exception as push_err:
+                    log.warning("Push after alert failed: %s", push_err)
+
         except Exception as e:
             log.error(f"Failed to create alert: {e}")
 
@@ -116,17 +139,43 @@ class ActionDispatcher:
         """
         处理 push 动作 → FCM/APNs 推送
 
-        Phase 2 实现，当前仅记录日志
+        通过 Firebase Admin SDK 发送推送通知到用户设备。
+        缺少 Firebase 配置时 graceful fallback。
         """
         template = action.get(
             "message_template",
             "{{token_name}} 触发策略 {{strategy_name}}"
         )
         message = self._render_template(template, event)
-        log.info(f"[Push TODO] User {event.user_id}: {message}")
+        title = f"策略触发: {event.strategy_name}"
 
-        # Phase 2: 集成 FCM/APNs
-        # await push_notification(event.user_id, title, message)
+        # 构建推送附加数据（用于 Flutter 端路由跳转）
+        push_data = {
+            "type": "strategy_trigger",
+            "strategy_id": event.strategy_id or "",
+            "token_address": event.matched_token or "",
+            "chain": event.matched_chain or "",
+        }
+
+        from agent.push_service import send_push
+        sent = await send_push(
+            user_id=event.user_id,
+            title=title,
+            body=message,
+            data=push_data,
+        )
+
+        if sent > 0:
+            log.info(
+                "Push sent to %d devices for user %s: %s",
+                sent, event.user_id, title,
+            )
+        else:
+            log.debug(
+                "Push not delivered (no devices or Firebase disabled): "
+                "user=%s title=%s",
+                event.user_id, title,
+            )
 
     async def _handle_webhook(
         self,
@@ -370,12 +419,15 @@ def get_user_alerts(
         return []
 
 
-def mark_alert_read(alert_id: str) -> bool:
-    """标记告警已读"""
+def mark_alert_read(alert_id: str, user_id: str = "") -> bool:
+    """标记告警已读（需验证告警归属当前用户）"""
     try:
-        get_db().table("agent_alerts").update(
+        query = get_db().table("agent_alerts").update(
             {"is_read": True}
-        ).eq("id", alert_id).execute()
+        ).eq("id", alert_id)
+        if user_id:
+            query = query.eq("user_id", user_id)
+        query.execute()
         return True
     except Exception as e:
         log.error(f"mark_alert_read error: {e}")

@@ -6,6 +6,9 @@ import '../models/token_detail.dart';
 import '../screens/detail/token_detail_page.dart';
 import '../services/smart_money_service.dart';
 import '../theme/app_colors.dart';
+import '../utils/chain_utils.dart';
+import '../utils/format_utils.dart';
+import 'common/token_avatar.dart';
 
 /// 显示聪明钱买卖详情底部弹窗
 Future<void> showSmartMoneyDetailSheet(
@@ -30,10 +33,23 @@ class _SmartMoneyDetailSheet extends StatefulWidget {
 
 class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
   List<SmartMoneyTxn> _allTxns = [];
-  SmartMoneyTxnSummary _summary = const SmartMoneyTxnSummary();
   bool _loading = true;
   String? _error;
   int _tabIndex = 0; // 0 = 买入, 1 = 卖出
+
+  /// 直接从 signal 对象取汇总数据（不依赖后端 API）
+  SmartMoneyTxnSummary get _summary {
+    final sig = widget.signal;
+    return SmartMoneyTxnSummary(
+      totalInflow: sig.buyVolume,
+      totalOutflow: sig.sellVolume,
+      netFlow: sig.buyVolume - sig.sellVolume,
+      uniqueBuyers: sig.uniqueBuyers,
+      uniqueSellers: sig.uniqueSellers,
+      buyCount: sig.buyCount,
+      sellCount: sig.sellCount,
+    );
+  }
 
   @override
   void initState() {
@@ -43,14 +59,13 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
 
   Future<void> _loadTxns() async {
     try {
-      final result = await SmartMoneyService.fetchTxns(
+      final txns = await SmartMoneyService.fetchTxns(
         widget.signal.chain,
         widget.signal.tokenAddress,
       );
       if (mounted) {
         setState(() {
-          _allTxns = result.txns;
-          _summary = result.summary;
+          _allTxns = txns;
           _loading = false;
         });
       }
@@ -110,7 +125,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
 
             const SizedBox(height: 8),
 
-            // 交易列表
+            // 交易列表 / 分层统计
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
@@ -118,15 +133,8 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                       ? Center(
                           child: Text(_error!,
                               style: TextStyle(color: c.textTertiary)))
-                      : _filteredTxns.isEmpty
-                          ? Center(
-                              child: Text(
-                                _tabIndex == 0 ? '暂无买入记录' : '暂无卖出记录',
-                                style: TextStyle(
-                                    color: c.textTertiary, fontSize: 14),
-                              ),
-                            )
-                          : ListView.separated(
+                      : _filteredTxns.isNotEmpty
+                          ? ListView.separated(
                               controller: scrollCtrl,
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 16, vertical: 4),
@@ -137,7 +145,8 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                               ),
                               itemBuilder: (_, i) =>
                                   _TxnRow(txn: _filteredTxns[i]),
-                            ),
+                            )
+                          : _buildTierBreakdown(c, scrollCtrl),
             ),
           ],
         ),
@@ -152,7 +161,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
       child: Row(
         children: [
           // 头像
-          _TokenAvatar(signal: sig, size: 40),
+          TokenAvatar(imageUrl: ChainUtils.tokenImageUrl(sig.imageUrl, sig.chain, sig.tokenAddress), symbol: sig.tokenSymbol, chain: sig.chain, size: 40, borderWidth: 2),
           const SizedBox(width: 10),
           // 名称 + 链
           Expanded(
@@ -164,7 +173,9 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                     Text(
                       sig.tokenSymbol.isNotEmpty
                           ? sig.tokenSymbol.toUpperCase()
-                          : sig.tokenAddress.substring(0, 8),
+                          : (sig.tokenAddress.length >= 8
+                              ? sig.tokenAddress.substring(0, 8)
+                              : sig.tokenAddress),
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
@@ -176,7 +187,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 5, vertical: 2),
                       decoration: BoxDecoration(
-                        color: _chainColor(sig.chain).withValues(alpha: 0.12),
+                        color: ChainUtils.getColor(sig.chain).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -184,7 +195,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                         style: TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.w700,
-                          color: _chainColor(sig.chain),
+                          color: ChainUtils.getColor(sig.chain),
                         ),
                       ),
                     ),
@@ -192,7 +203,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'MC ${sig.marketCapShort}  ·  ${_fmtPrice(sig.priceUsd)}',
+                  'MC ${sig.marketCapShort}  ·  ${FormatUtils.fmtPrice(sig.priceUsd)}',
                   style: TextStyle(fontSize: 12, color: c.textSecondary),
                 ),
               ],
@@ -201,7 +212,8 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
           // 查看详情按钮
           GestureDetector(
             onTap: () {
-              Navigator.pop(context);
+              final nav = Navigator.of(context);
+              nav.pop();
               _navigateToDetail(context);
             },
             child: Container(
@@ -244,19 +256,19 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
           children: [
             _StatBox(
               label: '总流入',
-              value: _fmtVolume(_summary.totalInflow),
+              value: FormatUtils.fmtVolume(_summary.totalInflow),
               color: c.success,
             ),
             _divider(c),
             _StatBox(
               label: '总流出',
-              value: _fmtVolume(_summary.totalOutflow),
+              value: FormatUtils.fmtVolume(_summary.totalOutflow),
               color: c.danger,
             ),
             _divider(c),
             _StatBox(
               label: '净流向',
-              value: _fmtVolume(_summary.netFlow.abs()),
+              value: FormatUtils.fmtVolume(_summary.netFlow.abs()),
               prefix: _summary.netFlow >= 0 ? '+' : '-',
               color: _summary.isNetPositive ? c.success : c.danger,
             ),
@@ -348,6 +360,216 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
     );
   }
 
+  /// 当没有单笔交易记录时，展示分层钱包统计
+  Widget _buildTierBreakdown(AppColorScheme c, ScrollController scrollCtrl) {
+    final sig = widget.signal;
+    final isBuyTab = _tabIndex == 0;
+
+    // 分层数据
+    final eliteCount = isBuyTab ? sig.eliteBuyCount : sig.eliteSellCount;
+    final verifiedCount = isBuyTab ? sig.verifiedBuyCount : sig.verifiedSellCount;
+    final totalCount = isBuyTab ? sig.buyCount : sig.sellCount;
+    final watchingCount = (totalCount - eliteCount - verifiedCount).clamp(0, totalCount);
+    final totalVolume = isBuyTab ? sig.buyVolume : sig.sellVolume;
+    final walletCount = isBuyTab ? sig.uniqueBuyers : sig.uniqueSellers;
+
+    final tiers = <_TierData>[
+      if (eliteCount > 0)
+        _TierData('精英', eliteCount, const Color(0xFFFFB81C)),
+      if (verifiedCount > 0)
+        _TierData('认证', verifiedCount, const Color(0xFF3B82F6)),
+      if (watchingCount > 0)
+        _TierData('关注', watchingCount, const Color(0xFF8B95A5)),
+    ];
+
+    return ListView(
+      controller: scrollCtrl,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      children: [
+        // 总览卡片
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: c.textPrimary.withValues(alpha: 0.06),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    isBuyTab ? '买入概览' : '卖出概览',
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: c.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    FormatUtils.fmtVolume(totalVolume),
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: isBuyTab ? c.success : c.danger,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$walletCount 个钱包 · $totalCount 笔交易',
+                      style: TextStyle(fontSize: 12, color: c.textSecondary)),
+                  if (totalCount > 0 && walletCount > 0)
+                    Text(
+                      '均 ${FormatUtils.fmtVolume(totalVolume / totalCount)}/笔',
+                      style: TextStyle(fontSize: 12, color: c.textSecondary),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 分层统计条
+        if (tiers.isNotEmpty) ...[
+          // 比例条
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: SizedBox(
+              height: 8,
+              child: Row(
+                children: tiers.map((t) {
+                  final ratio = totalCount > 0 ? t.count / totalCount : 0.0;
+                  return Expanded(
+                    flex: (ratio * 1000).round().clamp(1, 1000),
+                    child: Container(color: t.color),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 分层行
+          ...tiers.map((t) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 10, height: 10,
+                  decoration: BoxDecoration(
+                    color: t.color,
+                    shape: BoxShape.circle,
+                    boxShadow: [BoxShadow(color: t.color.withValues(alpha: 0.3), blurRadius: 4)],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Text(t.label,
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.textPrimary)),
+                const Spacer(),
+                Text('${t.count} 笔',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.color)),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 48,
+                  child: Text(
+                    '${(totalCount > 0 ? t.count / totalCount * 100 : 0).toStringAsFixed(0)}%',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(fontSize: 12, color: c.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          )),
+
+          const SizedBox(height: 8),
+
+          // 说明入口
+          GestureDetector(
+            onTap: () => _showTierExplanation(context, c),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.info_outline_rounded, size: 14, color: c.textTertiary),
+                const SizedBox(width: 4),
+                Text('了解钱包分层',
+                    style: TextStyle(fontSize: 12, color: c.textTertiary)),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  void _showTierExplanation(BuildContext context, AppColorScheme c) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: BoxDecoration(
+          color: c.bgSecondary,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: c.textTertiary.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('聪明钱分层说明',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
+            const SizedBox(height: 14),
+            _tierRow(c, '精英', const Color(0xFFFFB81C), '胜率≥65%且≥10笔交易，信号权重×5'),
+            _tierRow(c, '认证', const Color(0xFF3B82F6), '胜率≥50%且≥5笔交易，信号权重×3'),
+            _tierRow(c, '关注', const Color(0xFF8B95A5), '胜率≥40%且≥3笔交易，信号权重×1'),
+            const SizedBox(height: 12),
+            Text(
+              '系统追踪链上聪明钱钱包的历史交易表现，自动评级。精英钱包的买入信号可信度最高。',
+              style: TextStyle(fontSize: 12, color: c.textSecondary, height: 1.5),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _tierRow(AppColorScheme c, String label, Color color, String desc) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Container(
+            width: 8, height: 8,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 8),
+          Text(label,
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(desc,
+                style: TextStyle(fontSize: 12, color: c.textSecondary)),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _navigateToDetail(BuildContext context) {
     final sig = widget.signal;
     final detail = TokenDetail(
@@ -379,6 +601,8 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
       imageUri: sig.imageUrl,
       pairAddress: sig.pairAddress,
       dexId: sig.dexId,
+      ageDays: 0,
+      holderCount: 0,
     );
     Navigator.push(
       context,
@@ -386,28 +610,6 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
     );
   }
 
-  String _fmtPrice(double p) {
-    if (p >= 1000) return '\$${p.toStringAsFixed(0)}';
-    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
-    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
-    if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
-    return '\$${p.toStringAsFixed(8)}';
-  }
-
-  String _fmtVolume(double v) {
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e4) return '\$${(v / 1e4).toStringAsFixed(2)}万';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(1)}K';
-    return '\$${v.toStringAsFixed(0)}';
-  }
-
-  Color _chainColor(String chain) => switch (chain) {
-        'solana' => const Color(0xFF9945FF),
-        'bsc' => const Color(0xFFF3BA2F),
-        'base' => const Color(0xFF0052FF),
-        'eth' => const Color(0xFF627EEA),
-        _ => const Color(0xFF3B82F6),
-      };
 }
 
 // ─── 统计框 ─────────────────────────────────────────
@@ -446,69 +648,6 @@ class _StatBox extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-// ─── 代币头像（Sheet用，稍大版本）────────────────────
-class _TokenAvatar extends StatelessWidget {
-  final SmartMoneySignal signal;
-  final double size;
-  const _TokenAvatar({required this.signal, required this.size});
-
-  Color get _chainColor => switch (signal.chain) {
-        'solana' => const Color(0xFF9945FF),
-        'bsc' => const Color(0xFFF3BA2F),
-        'base' => const Color(0xFF0052FF),
-        'eth' => const Color(0xFF627EEA),
-        _ => const Color(0xFF3B82F6),
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-            color: _chainColor.withValues(alpha: 0.25), width: 2),
-      ),
-      child: signal.imageUrl != null && signal.imageUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(size / 2),
-              child: Image.network(
-                signal.imageUrl!,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _letterFallback(),
-              ),
-            )
-          : _letterFallback(),
-    );
-  }
-
-  Widget _letterFallback() {
-    final letter = signal.tokenSymbol.isNotEmpty
-        ? signal.tokenSymbol[0].toUpperCase()
-        : '?';
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: _chainColor.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        letter,
-        style: TextStyle(
-          color: _chainColor,
-          fontSize: size * 0.4,
-          fontWeight: FontWeight.w700,
-        ),
       ),
     );
   }
@@ -607,7 +746,7 @@ class _TxnRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _fmtVolume(txn.volumeUsd),
+                  FormatUtils.fmtVolume(txn.volumeUsd),
                   style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
@@ -617,7 +756,7 @@ class _TxnRow extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  'MC ${_fmtMC(txn.marketCapAtTx)}',
+                  'MC ${FormatUtils.fmtVolume(txn.marketCapAtTx)}',
                   style: TextStyle(fontSize: 10, color: c.textTertiary),
                 ),
               ],
@@ -632,18 +771,12 @@ class _TxnRow extends StatelessWidget {
     );
   }
 
-  String _fmtVolume(double v) {
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e4) return '\$${(v / 1e4).toStringAsFixed(2)}万';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(1)}K';
-    if (v > 0) return '\$${v.toStringAsFixed(2)}';
-    return '\$0';
-  }
+}
 
-  String _fmtMC(double mc) {
-    if (mc >= 1e6) return '\$${(mc / 1e6).toStringAsFixed(2)}M';
-    if (mc >= 1e4) return '\$${(mc / 1e4).toStringAsFixed(2)}万';
-    if (mc >= 1e3) return '\$${(mc / 1e3).toStringAsFixed(1)}K';
-    return '\$${mc.toStringAsFixed(0)}';
-  }
+/// 分层统计数据
+class _TierData {
+  final String label;
+  final int count;
+  final Color color;
+  const _TierData(this.label, this.count, this.color);
 }

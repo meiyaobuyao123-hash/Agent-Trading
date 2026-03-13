@@ -54,25 +54,20 @@ OKX_CHAIN_INDEX = {
 # ── 热币榜（多链外盘）────────────────────────────────────────
 
 # API 基础地址
-GECKO_API        = "https://api.geckoterminal.com/api/v2"
 GOPLUS_API       = "https://api.gopluslabs.io/api/v1"
 DEXSCREENER_API  = "https://api.dexscreener.com"
 HELIUS_RPC       = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
-# 链配置：gecko_net → GeckoTerminal 网络名；goplus_chain → GoPlus 链ID
+# 链配置：goplus_chain → GoPlus 链ID
 # mc_max_usd / liq_max_usd：各链独立上限覆盖（None → 使用全局常量）
 # 4链覆盖：SOL/BSC/Base/ETH
-# ETH trending_pools 偏成熟，故放宽年龄上限(mc_max_usd/liq_max_usd 不变)
+# 发现数据源：OKX toplist（按成交量+涨幅各 Top100，合并去重）
 HOT_CHAINS = {
-    "solana": {"gecko_net": "solana", "goplus_chain": "solana", "mc_max_usd": None, "liq_max_usd": None},
-    "bsc":    {"gecko_net": "bsc",    "goplus_chain": "56",     "mc_max_usd": None, "liq_max_usd": None},
-    "base":   {"gecko_net": "base",   "goplus_chain": "8453",   "mc_max_usd": None, "liq_max_usd": None},
-    "eth":    {"gecko_net": "eth",    "goplus_chain": "1",      "mc_max_usd": None, "liq_max_usd": None},
+    "solana": {"goplus_chain": "solana", "mc_max_usd": None, "liq_max_usd": None},
+    "bsc":    {"goplus_chain": "56",     "mc_max_usd": None, "liq_max_usd": None},
+    "base":   {"goplus_chain": "8453",   "mc_max_usd": None, "liq_max_usd": None},
+    "eth":    {"goplus_chain": "1",      "mc_max_usd": None, "liq_max_usd": None},
 }
-
-# GeckoTerminal 分页（trending + new_pools 各 GECKO_PAGES 页，每页20条）
-# 3链 × 2端点 × 3页 = 18个请求，配合2.5s间隔 + 8s链间冷却，总耗时约4分钟
-GECKO_PAGES = 3
 
 # 硬过滤阈值（不满足直接排除，不进入打分）
 HOT_MIN_AGE_DAYS     = 3           # 至少上线3天（排除纯pump）

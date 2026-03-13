@@ -1,6 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
+import '../../utils/chain_utils.dart';
+import '../../utils/format_utils.dart';
+import '../common/chain_badge.dart';
 
 /// 详情页头部：代币头像 + 名称 + 价格 + 多时段涨跌
 class DetailHeader extends StatelessWidget {
@@ -46,7 +50,7 @@ class DetailHeader extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        _ChainBadge(chain: token.chain),
+                        ChainBadge(chain: token.chain),
                         if (token.recommendation == 'strong') ...[
                           const SizedBox(width: 6),
                           Container(
@@ -91,7 +95,7 @@ class DetailHeader extends StatelessWidget {
 
           // 价格
           if (token.priceUsd > 0) ...[
-            Text(_fmtPrice(token.priceUsd),
+            Text(FormatUtils.fmtPrice(token.priceUsd),
               style: TextStyle(
                 fontSize: 34, fontWeight: FontWeight.w800,
                 color: context.colors.textPrimary, letterSpacing: -1.5, height: 1.1,
@@ -115,12 +119,6 @@ class DetailHeader extends StatelessWidget {
     );
   }
 
-  String _fmtPrice(double p) {
-    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
-    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
-    if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
-    return '\$${p.toStringAsFixed(8)}';
-  }
 }
 
 class _TokenAvatar extends StatelessWidget {
@@ -128,13 +126,7 @@ class _TokenAvatar extends StatelessWidget {
   final String? imageUrl;
   const _TokenAvatar({required this.token, this.imageUrl});
 
-  Color _c(BuildContext context) => switch (token.chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc' => const Color(0xFFF3BA2F),
-    'base' => const Color(0xFF0052FF),
-    'eth' => const Color(0xFF627EEA),
-    _ => context.colors.primary,
-  };
+  Color _c(BuildContext context) => ChainUtils.getColor(token.chain);
 
   @override
   Widget build(BuildContext context) {
@@ -148,11 +140,13 @@ class _TokenAvatar extends StatelessWidget {
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22),
-          child: Image.network(
-            imageUrl!,
+          child: CachedNetworkImage(
+            imageUrl: imageUrl!,
             width: 44, height: 44,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _fallbackAvatar(cc),
+            fadeInDuration: const Duration(milliseconds: 200),
+            placeholder: (_, __) => _fallbackAvatar(cc),
+            errorWidget: (_, __, ___) => _fallbackAvatar(cc),
           ),
         ),
       );
@@ -176,34 +170,6 @@ class _TokenAvatar extends StatelessWidget {
         token.symbol.isNotEmpty ? token.symbol[0].toUpperCase() : '?',
         style: TextStyle(color: cc, fontSize: 20, fontWeight: FontWeight.w800),
       ),
-    );
-  }
-}
-
-class _ChainBadge extends StatelessWidget {
-  final String chain;
-  const _ChainBadge({required this.chain});
-
-  Color _color(BuildContext context) => switch (chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc' => const Color(0xFFF3BA2F),
-    'base' => const Color(0xFF0052FF),
-    'eth' => const Color(0xFF627EEA),
-    _ => context.colors.textSecondary,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final cc = _color(context);
-    final label = switch (chain) { 'solana' => 'SOL', 'bsc' => 'BSC', 'base' => 'BASE', 'eth' => 'ETH', _ => chain.toUpperCase() };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: cc.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: cc.withValues(alpha: 0.2), width: 0.5),
-      ),
-      child: Text(label, style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: cc)),
     );
   }
 }

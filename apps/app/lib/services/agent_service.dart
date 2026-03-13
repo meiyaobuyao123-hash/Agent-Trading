@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../config/app_config.dart';
 
 /// Agent API 服务 — 对接后端 FastAPI
 class AgentService {
@@ -9,8 +10,7 @@ class AgentService {
 
   final _client = http.Client();
 
-  // TODO: 生产环境替换为实际部署地址
-  static const _apiBase = 'http://localhost:8000';
+  static const _apiBase = AppConfig.backendBaseUrl;
   static const _timeout = Duration(seconds: 30);
 
   String? get _token =>

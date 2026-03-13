@@ -1,7 +1,10 @@
 """
-规则打分引擎（冷启动阶段，2周后逐步替换为 ML 模型）
+打分引擎（规则 + ML 双轨）
 
-总分 0~100，各维度权重：
+默认使用规则打分（冷启动阶段）。
+设置环境变量 USE_ML_SCORING=1 后切换为 XGBoost ML 打分。
+
+规则打分总分 0~100，各维度权重：
   买卖比（资金流向）   25%
   聪明钱参与         20%
   流入加速度         15%
@@ -11,9 +14,16 @@
   进度速度           5%
 """
 
+import logging
 from dataclasses import dataclass
+from typing import Optional
 from features import TokenFeatures
 import math
+
+log = logging.getLogger(__name__)
+
+# ML 打分器（延迟初始化，避免未训练时导入报错）
+_ml_scorer = None  # type: Optional[object]
 
 
 @dataclass
@@ -24,6 +34,47 @@ class ScoreResult:
 
 
 def score(f: TokenFeatures) -> ScoreResult:
+    """
+    打分入口：根据 USE_ML_SCORING 决定使用 ML 还是规则打分。
+    ML 打分失败时自动降级到规则打分。
+    """
+    from ml_config import USE_ML_SCORING
+
+    if USE_ML_SCORING:
+        try:
+            return _score_ml(f)
+        except FileNotFoundError as e:
+            log.warning(f"ML 模型未找到，降级为规则打分: {e}")
+        except Exception as e:
+            log.error(f"ML 打分异常，降级为规则打分: {e}")
+
+    return _score_rules(f)
+
+
+def _score_ml(f: TokenFeatures) -> ScoreResult:
+    """ML 打分分支"""
+    global _ml_scorer
+
+    if _ml_scorer is None:
+        from ml_scorer import MLScorer
+        _ml_scorer = MLScorer()
+
+    ml_score = _ml_scorer.score(f)  # type: ignore
+
+    if ml_score >= 75:
+        rec = "strong"
+    elif ml_score >= 55:
+        rec = "normal"
+    else:
+        rec = "skip"
+
+    detail = _ml_scorer.score_with_detail(f)  # type: ignore
+
+    return ScoreResult(total=ml_score, detail=detail, recommendation=rec)
+
+
+def _score_rules(f: TokenFeatures) -> ScoreResult:
+    """原有规则打分逻辑"""
     detail = {}
 
     # ── 1. 买卖比（25分）────────────────────────

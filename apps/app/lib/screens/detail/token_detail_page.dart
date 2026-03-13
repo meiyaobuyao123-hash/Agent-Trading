@@ -1,7 +1,9 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../utils/chain_utils.dart';
 import '../../models/token_detail.dart';
 import '../../models/ohlcv_data.dart';
 import '../../models/goplus_report.dart';
@@ -170,7 +172,9 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   Widget build(BuildContext context) {
     final token = widget.token;
     final shortAddr = '${token.address.substring(0, 6)}...${token.address.substring(token.address.length - 4)}';
-    final imageUrl = _dexInfo?.imageUrl ?? token.imageUri;
+    final imageUrl = ChainUtils.tokenImageUrl(
+      _dexInfo?.imageUrl ?? token.imageUri, token.chain, token.address,
+    );
 
     return Scaffold(
       backgroundColor: context.colors.bg,
@@ -194,8 +198,11 @@ class _TokenDetailPageState extends State<TokenDetailPage>
                 if (imageUrl != null && imageUrl.isNotEmpty)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(14),
-                    child: Image.network(imageUrl, width: 28, height: 28, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => _miniAvatar(token)),
+                    child: CachedNetworkImage(
+                      imageUrl: imageUrl, width: 28, height: 28, fit: BoxFit.cover,
+                      fadeInDuration: const Duration(milliseconds: 200),
+                      placeholder: (_, __) => _miniAvatar(token),
+                      errorWidget: (_, __, ___) => _miniAvatar(token)),
                   )
                 else
                   _miniAvatar(token),

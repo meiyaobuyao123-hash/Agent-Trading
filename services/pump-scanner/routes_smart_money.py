@@ -29,8 +29,12 @@ async def get_signals(
     if chain:
         query = query.eq("chain", chain)
 
-    res = query.execute()
-    return {"data": res.data, "count": len(res.data)}
+    try:
+        res = query.execute()
+        return {"data": res.data, "count": len(res.data)}
+    except Exception as e:
+        logger.error("get_signals error: %s", e)
+        return {"data": [], "count": 0}
 
 
 @router.get("/wallets")
@@ -49,8 +53,12 @@ async def get_wallets(
     if tier:
         query = query.eq("tier", tier)
 
-    res = query.execute()
-    return {"data": res.data, "count": len(res.data)}
+    try:
+        res = query.execute()
+        return {"data": res.data, "count": len(res.data)}
+    except Exception as e:
+        logger.error("get_wallets error: %s", e)
+        return {"data": [], "count": 0}
 
 
 @router.get("/token/{chain}/{address}")

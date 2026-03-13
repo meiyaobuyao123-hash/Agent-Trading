@@ -1,7 +1,13 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../models/hot_coin.dart';
 import '../theme/app_colors.dart';
+import '../utils/chain_utils.dart';
+import '../utils/format_utils.dart';
+import 'common/token_avatar.dart';
+import 'common/rank_medal.dart';
+import 'common/chain_badge.dart';
 
 /// Glassmorphism 风格热币卡片
 /// 排名 | 头像 | Symbol·Name [Chain] | 价格 + 涨跌框
@@ -29,11 +35,18 @@ class _HotCoinCardState extends State<HotCoinCard> {
   bool _pressed = false;
   double? _prevPrice;
   Color _flashColor = Colors.transparent;
+  Timer? _flashTimer;
 
   @override
   void initState() {
     super.initState();
     _prevPrice = widget.livePrice ?? widget.coin.priceUsd;
+  }
+
+  @override
+  void dispose() {
+    _flashTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -47,7 +60,8 @@ class _HotCoinCardState extends State<HotCoinCard> {
             ? c.success.withValues(alpha: 0.08)
             : c.danger.withValues(alpha: 0.08);
       });
-      Future.delayed(const Duration(milliseconds: 600), () {
+      _flashTimer?.cancel();
+      _flashTimer = Timer(const Duration(milliseconds: 600), () {
         if (mounted) setState(() => _flashColor = Colors.transparent);
       });
     }
@@ -86,7 +100,7 @@ class _HotCoinCardState extends State<HotCoinCard> {
               SizedBox(
                 width: 24,
                 child: widget.rank <= 3
-                    ? _RankMedal(rank: widget.rank)
+                    ? RankMedal(rank: widget.rank)
                     : Text(
                         '${widget.rank}',
                         textAlign: TextAlign.center,
@@ -101,7 +115,7 @@ class _HotCoinCardState extends State<HotCoinCard> {
               const SizedBox(width: 8),
 
               // ── 头像 ────────────────────────
-              _TokenAvatar(coin: coin, size: 38),
+              TokenAvatar(imageUrl: ChainUtils.tokenImageUrl(coin.imageUrl, coin.chain, coin.address), symbol: coin.symbol, chain: coin.chain, size: 38),
               const SizedBox(width: 10),
 
               // ── 中间：名称 + 指标行 ──────────
@@ -134,7 +148,7 @@ class _HotCoinCardState extends State<HotCoinCard> {
                           ),
                         ],
                         const SizedBox(width: 5),
-                        _ChainBadge(chain: coin.chain),
+                        ChainBadge(chain: coin.chain),
                         if (isStrong) ...[
                           const SizedBox(width: 4),
                           const _HotBadge(),
@@ -154,7 +168,7 @@ class _HotCoinCardState extends State<HotCoinCard> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _fmtPrice(price),
+                    FormatUtils.fmtPrice(price),
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -169,162 +183,6 @@ class _HotCoinCardState extends State<HotCoinCard> {
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  String _fmtPrice(double p) {
-    if (p >= 1000) return '\$${p.toStringAsFixed(0)}';
-    if (p >= 1) return '\$${p.toStringAsFixed(2)}';
-    if (p >= 0.01) return '\$${p.toStringAsFixed(4)}';
-    if (p >= 0.0001) return '\$${p.toStringAsFixed(6)}';
-    return '\$${p.toStringAsFixed(8)}';
-  }
-}
-
-// ─── 排名奖牌（前3名）─────────────────────────
-class _RankMedal extends StatelessWidget {
-  final int rank;
-  const _RankMedal({required this.rank});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (rank) {
-      1 => const Color(0xFFFFD700),
-      2 => const Color(0xFFC0C0C0),
-      _ => const Color(0xFFCD7F32),
-    };
-    return Container(
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [color, color.withValues(alpha: 0.7)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(7),
-        boxShadow: [
-          BoxShadow(
-            color: color.withValues(alpha: 0.3),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        '$rank',
-        style: const TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-          color: Colors.white,
-        ),
-      ),
-    );
-  }
-}
-
-// ─── 代币头像 ─────────────────────────────────
-class _TokenAvatar extends StatelessWidget {
-  final HotCoin coin;
-  final double size;
-  const _TokenAvatar({required this.coin, required this.size});
-
-  Color get _chainColor => switch (coin.chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc'    => const Color(0xFFF3BA2F),
-    'base'   => const Color(0xFF0052FF),
-    'eth'    => const Color(0xFF627EEA),
-    _        => const Color(0xFF3B82F6),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(
-          color: _chainColor.withValues(alpha: 0.2),
-          width: 1.5,
-        ),
-      ),
-      child: coin.imageUrl != null && coin.imageUrl!.isNotEmpty
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(size / 2),
-              child: Image.network(
-                coin.imageUrl!,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => _letterAvatar(context),
-              ),
-            )
-          : _letterAvatar(context),
-    );
-  }
-
-  Widget _letterAvatar(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: _chainColor.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
-      ),
-      alignment: Alignment.center,
-      child: Text(
-        coin.symbol.isNotEmpty ? coin.symbol[0].toUpperCase() : '?',
-        style: TextStyle(
-          color: _chainColor,
-          fontSize: size * 0.4,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
-    );
-  }
-}
-
-// ─── 链标签（玻璃风格）────────────────────────
-class _ChainBadge extends StatelessWidget {
-  final String chain;
-  const _ChainBadge({required this.chain});
-
-  Color get _color => switch (chain) {
-    'solana' => const Color(0xFF9945FF),
-    'bsc'    => const Color(0xFFF3BA2F),
-    'base'   => const Color(0xFF0052FF),
-    'eth'    => const Color(0xFF627EEA),
-    _        => const Color(0xFF64748B),
-  };
-
-  String get _label => switch (chain) {
-    'solana' => 'SOL',
-    'bsc'    => 'BSC',
-    'base'   => 'BASE',
-    'eth'    => 'ETH',
-    _        => chain.toUpperCase(),
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: _color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: _color.withValues(alpha: 0.15), width: 0.5),
-      ),
-      child: Text(
-        _label,
-        style: TextStyle(
-          color: _color,
-          fontSize: 9,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
         ),
       ),
     );
@@ -373,40 +231,32 @@ class _MetricsRow extends StatelessWidget {
     final c = context.colors;
     return Row(
       children: [
-        Text(
-          _fmtCompact(coin.marketCapUsd),
-          style: TextStyle(fontSize: 11, color: c.textSecondary),
+        Flexible(
+          child: Text(
+            FormatUtils.fmtCompact(coin.marketCapUsd),
+            style: TextStyle(fontSize: 11, color: c.textSecondary),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         _Dot(color: c.textTertiary),
-        Text(
-          'Vol ${_fmtCompact(coin.volume24hUsd)}',
-          style: TextStyle(fontSize: 11, color: c.textSecondary),
+        Flexible(
+          child: Text(
+            'Vol ${FormatUtils.fmtCompact(coin.volume24hUsd)}',
+            style: TextStyle(fontSize: 11, color: c.textSecondary),
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
         if (coin.holderCount > 0) ...[
           _Dot(color: c.textTertiary),
           Icon(Icons.people_outline, size: 10, color: c.textTertiary),
           const SizedBox(width: 2),
           Text(
-            _fmtNum(coin.holderCount),
+            FormatUtils.fmtNum(coin.holderCount),
             style: TextStyle(fontSize: 11, color: c.textSecondary),
           ),
         ],
       ],
     );
-  }
-
-  String _fmtCompact(double v) {
-    if (v >= 1e9) return '\$${(v / 1e9).toStringAsFixed(1)}B';
-    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(1)}M';
-    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(0)}K';
-    if (v > 0) return '\$${v.toStringAsFixed(0)}';
-    return '-';
-  }
-
-  String _fmtNum(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
   }
 }
 

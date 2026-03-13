@@ -10,8 +10,8 @@
   初始化新推荐 + 停用 >30天的追踪行
 
 架构：
-  ┌─ OKX API ──────────────────┐    ┌─ pump.fun API ─────┐
-  │ batch_price_info (2-3s)    │    │ /coins/{mint} 逐个  │
+  ┌─ DexScreener API ──────────┐    ┌─ pump.fun API ─────┐
+  │ batch prices (2-3s)        │    │ /coins/{mint} 逐个  │
   └──────────┬─────────────────┘    └──────────┬──────────┘
              │                                  │
              ▼                                  ▼
@@ -75,44 +75,49 @@ async def run_performance_loop():
     _last_init = asyncio.get_event_loop().time()
     _last_flush = asyncio.get_event_loop().time()
 
-    while True:
-        try:
-            now = asyncio.get_event_loop().time()
+    # 复用 session，避免每秒创建/销毁开销
+    session = aiohttp.ClientSession()
 
-            # ── 慢速路径：初始化 + 停用（每 5 分钟） ──
-            if now - _last_init >= _INIT_INTERVAL:
-                _run_init_and_cleanup()
-                _last_init = now
+    try:
+        while True:
+            try:
+                now = asyncio.get_event_loop().time()
 
-            # ── 快速路径：拉价格 + 更新内存 ──
-            async with aiohttp.ClientSession() as session:
+                # ── 慢速路径：初始化 + 停用（每 5 分钟） ──
+                if now - _last_init >= _INIT_INTERVAL:
+                    _run_init_and_cleanup()
+                    _last_init = now
+
+                # ── 快速路径：拉价格 + 更新内存 ──
                 # Hot 代币：直调 OKX API
                 hot_updated = await _tick_hot(session)
 
                 # Pump 代币：pump.fun API
                 pump_updated = await _tick_pump(session)
 
-            # ── 定期落盘 ──
-            if now - _last_flush >= _FLUSH_INTERVAL and _cache_dirty:
-                _flush_to_db()
-                _last_flush = now
+                # ── 定期落盘 ──
+                if now - _last_flush >= _FLUSH_INTERVAL and _cache_dirty:
+                    _flush_to_db()
+                    _last_flush = now
 
-            total = hot_updated + pump_updated
-            if total > 0:
-                log.debug(f"📊 秒级追踪: hot={hot_updated} pump={pump_updated} dirty={len(_cache_dirty)}")
+                total = hot_updated + pump_updated
+                if total > 0:
+                    log.debug(f"📊 秒级追踪: hot={hot_updated} pump={pump_updated} dirty={len(_cache_dirty)}")
 
-            # 短暂休眠，避免空转
-            await asyncio.sleep(1)
+                # 短暂休眠，避免空转
+                await asyncio.sleep(1)
 
-        except asyncio.CancelledError:
-            # 优雅关闭：最后一次落盘
-            if _cache_dirty:
-                _flush_to_db()
-            log.info("📊 表现追踪器停止")
-            break
-        except Exception as e:
-            log.error(f"表现追踪循环异常: {e}", exc_info=True)
-            await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                # 优雅关闭：最后一次落盘
+                if _cache_dirty:
+                    _flush_to_db()
+                log.info("📊 表现追踪器停止")
+                break
+            except Exception as e:
+                log.error(f"表现追踪循环异常: {e}", exc_info=True)
+                await asyncio.sleep(5)
+    finally:
+        await session.close()
 
 
 # ── 兼容 APScheduler 的入口（如果不用常驻协程模式） ──
@@ -152,7 +157,7 @@ async def run_performance_tracker():
 # ══════════════════════════════════════════════════════════════
 
 async def _tick_hot(session: aiohttp.ClientSession) -> int:
-    """OKX 优先获取价格，不可用时 DexScreener fallback"""
+    """DexScreener 批量获取价格（OKX price-info 需白名单暂不可用）"""
     hot_rows = [v for v in _cache.values() if v["source"] == "hot" and v.get("is_active")]
     if not hot_rows:
         return 0
@@ -163,50 +168,14 @@ async def _tick_hot(session: aiohttp.ClientSession) -> int:
         chain = row["chain"]
         by_chain.setdefault(chain, []).append(row)
 
-    try:
-        from hot_coin_fetcher import OKX_CHAIN_INDEX
-        import okx_market_client as okx
-    except ImportError:
-        log.warning("OKX client 不可用，跳过 hot 追踪")
-        return 0
-
     updated = 0
     for chain, rows in by_chain.items():
         addresses = [r["address"] for r in rows]
+        dex_prices = await _dexscreener_batch_prices(session, addresses)
 
-        # ── 1. 优先 OKX ──
-        okx_data = {}  # type: Dict[str, dict]
-        chain_index = OKX_CHAIN_INDEX.get(chain)
-        if chain_index:
-            try:
-                okx_data = await okx.batch_price_info(chain_index, addresses, session=session)
-            except Exception as e:
-                log.debug(f"OKX 价格查询失败 {chain}: {e}")
-
-        # ── 2. OKX 命中不足 → DexScreener fallback ──
-        okx_hit_addrs = set()
         for row in rows:
             addr_lower = row["address"].lower()
-            info = okx_data.get(addr_lower)
-            if info and info.get("lastPriceUsd", 0) > 0:
-                okx_hit_addrs.add(addr_lower)
-
-        missing = [r["address"] for r in rows if r["address"].lower() not in okx_hit_addrs]
-        dex_prices = {}  # type: Dict[str, float]
-        if missing:
-            dex_prices = await _dexscreener_batch_prices(session, missing)
-
-        # ── 3. 应用更新 ──
-        for row in rows:
-            addr_lower = row["address"].lower()
-            price = 0.0
-
-            info = okx_data.get(addr_lower)
-            if info and info.get("lastPriceUsd", 0) > 0:
-                price = info["lastPriceUsd"]
-            elif addr_lower in dex_prices:
-                price = dex_prices[addr_lower]
-
+            price = dex_prices.get(addr_lower, 0.0)
             if price > 0 and _apply_price_update(row, price):
                 updated += 1
 

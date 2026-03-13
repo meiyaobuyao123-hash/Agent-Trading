@@ -13,6 +13,8 @@ from typing import Dict, List, Optional, Any, Set
 import aiohttp
 
 from database import get_db
+import okx_market_client as okx
+from config import OKX_CHAIN_INDEX
 
 logger = logging.getLogger("smart_money_tracker")
 
@@ -129,13 +131,37 @@ class SmartMoneyTracker:
             sig["net_flow"] = sig.get("buy_count", 0) - sig.get("sell_count", 0)
             sig["signal_strength"] = self._calc_strength(sig)
 
-        # Backfill market data into individual txns
+        # Backfill market data + convert EVM token qty → USD
         for txn in all_txns:
             key = "%s:%s" % (txn["chain"], txn["token_address"])
             sig = all_signals.get(key)
             if sig:
+                price_usd = sig.get("price_usd", 0)
                 txn["market_cap_at_tx"] = sig.get("market_cap_usd", 0)
-                txn["price_at_tx"] = sig.get("price_usd", 0)
+                txn["price_at_tx"] = price_usd
+                # EVM 交易的 volume_usd 实际是代币数量，需乘以价格换算
+                if txn.pop("_is_token_qty", False) and price_usd > 0:
+                    txn["volume_usd"] = txn["volume_usd"] * price_usd
+            else:
+                txn.pop("_is_token_qty", None)
+
+        # 同步修正聚合信号中的 EVM volume（重新累加 USD 值）
+        evm_chains = {"eth", "bsc", "base"}
+        for key, sig in all_signals.items():
+            if sig["chain"] not in evm_chains:
+                continue
+            buy_vol = 0.0
+            sell_vol = 0.0
+            for txn in all_txns:
+                txn_key = "%s:%s" % (txn["chain"], txn["token_address"])
+                if txn_key != key:
+                    continue
+                if txn.get("tx_type") == "buy":
+                    buy_vol += txn.get("volume_usd", 0)
+                else:
+                    sell_vol += txn.get("volume_usd", 0)
+            sig["buy_volume"] = buy_vol
+            sig["sell_volume"] = sell_vol
 
         # Upsert aggregated signals + individual txns
         self._upsert_signals(list(all_signals.values()))
@@ -343,13 +369,15 @@ class SmartMoneyTracker:
                     is_buy = tx.get("to", "").lower() == address.lower()
                     decimals = int(tx.get("tokenDecimal", "18"))
                     raw_val = int(tx.get("value", "0"))
-                    value = raw_val / (10 ** decimals) if decimals > 0 else 0.0
+                    token_qty = raw_val / (10 ** decimals) if decimals > 0 else 0.0
+                    # EVM explorer 返回代币数量(非USD)，标记后在 enrich 阶段换算
                     results.append({
                         "token_address": tx.get("contractAddress", ""),
                         "token_name": tx.get("tokenName", ""),
                         "token_symbol": tx.get("tokenSymbol", ""),
                         "type": "buy" if is_buy else "sell",
-                        "volume_usd": value,
+                        "volume_usd": token_qty,
+                        "_is_token_qty": True,
                         "timestamp": tx_time.isoformat(),
                     })
                 return results
@@ -363,85 +391,129 @@ class SmartMoneyTracker:
     async def _enrich_market_data(
         self, signals: Dict[str, Dict[str, Any]]
     ):
-        """Enrich signals with market data from DexScreener."""
+        """Enrich signals with market data — OKX toplist 优先，DexScreener fallback."""
+
+        for chain in set(sig["chain"] for sig in signals.values()):
+            chain_sigs = [s for s in signals.values() if s["chain"] == chain]
+            chain_index = OKX_CHAIN_INDEX.get(chain)
+
+            # ── 1. OKX toplist 获取该链 top 代币数据 ──
+            okx_by_addr: Dict[str, dict] = {}
+            if chain_index:
+                try:
+                    okx_by_addr = await okx.get_toplist_multi_sort(
+                        chain_index, session=self._session
+                    )
+                    logger.info("OKX toplist %s: %d tokens", chain, len(okx_by_addr))
+                except Exception as e:
+                    logger.warning("OKX toplist %s failed: %s", chain, e)
+
+            # ── 2. 用 OKX 数据填充信号 ──
+            unfilled: List[Dict[str, Any]] = []
+            for sig in chain_sigs:
+                addr_lower = sig["token_address"].lower()
+                okx_item = okx_by_addr.get(addr_lower)
+                if okx_item:
+                    sig["price_usd"] = okx_item["price_usd"]
+                    sig["market_cap_usd"] = okx_item["market_cap_usd"]
+                    sig["liquidity_usd"] = okx_item["liquidity_usd"]
+                    sig["volume_24h_usd"] = okx_item["volume_24h"]
+                    sig["price_change_24h"] = okx_item["change_24h"]
+                    sig["price_change_1h"] = 0
+                    sig["image_url"] = okx_item["token_logo_url"]
+                    if not sig["token_symbol"]:
+                        sig["token_symbol"] = okx_item.get("symbol", "")
+                else:
+                    unfilled.append(sig)
+
+            # ── 3. OKX 未命中的 → DexScreener fallback ──
+            if unfilled:
+                await self._enrich_dexscreener(chain, unfilled)
+
+            # ── 4. pump.fun image fallback ──
+            for sig in chain_sigs:
+                if not sig.get("image_url") and sig["token_address"].endswith("pump"):
+                    sig["image_url"] = self._get_pump_image(sig["token_address"]) or ""
+
+    async def _enrich_dexscreener(
+        self, chain: str, sigs: List[Dict[str, Any]]
+    ):
+        """DexScreener fallback for tokens not in OKX toplist."""
         chain_map = {
             "solana": "solana", "eth": "ethereum",
             "bsc": "bsc", "base": "base",
         }
+        ds_chain = chain_map.get(chain, chain)
 
-        for chain in set(sig["chain"] for sig in signals.values()):
-            chain_sigs = [s for s in signals.values() if s["chain"] == chain]
-            ds_chain = chain_map.get(chain, chain)
+        for i in range(0, len(sigs), 30):
+            batch = sigs[i:i + 30]
+            addresses = ",".join(s["token_address"] for s in batch)
+            url = "%s/tokens/v1/%s/%s" % (
+                self.DEXSCREENER_BASE, ds_chain, addresses
+            )
+            try:
+                async with self._session.get(
+                    url, timeout=aiohttp.ClientTimeout(total=15)
+                ) as resp:
+                    if resp.status != 200:
+                        continue
+                    data = await resp.json()
+                    by_addr: Dict[str, Dict[str, Any]] = {}
+                    pairs = data if isinstance(data, list) else data.get("pairs", [])
+                    for pair in pairs:
+                        addr = pair.get("baseToken", {}).get("address", "").lower()
+                        if addr and addr not in by_addr:
+                            by_addr[addr] = pair
 
-            for i in range(0, len(chain_sigs), 30):
-                batch = chain_sigs[i:i + 30]
-                addresses = ",".join(s["token_address"] for s in batch)
-                url = "%s/tokens/v1/%s/%s" % (
-                    self.DEXSCREENER_BASE, ds_chain, addresses
-                )
-                try:
-                    async with self._session.get(
-                        url, timeout=aiohttp.ClientTimeout(total=15)
-                    ) as resp:
-                        if resp.status != 200:
-                            continue
-                        data = await resp.json()
-                        by_addr: Dict[str, Dict[str, Any]] = {}
-                        pairs = data if isinstance(data, list) else data.get(
-                            "pairs", []
-                        )
-                        for pair in pairs:
-                            addr = pair.get("baseToken", {}).get(
-                                "address", ""
-                            ).lower()
-                            if addr and addr not in by_addr:
-                                by_addr[addr] = pair
-
-                        for sig in batch:
-                            pair = by_addr.get(
-                                sig["token_address"].lower()
+                    for sig in batch:
+                        pair = by_addr.get(sig["token_address"].lower())
+                        if pair:
+                            sig["price_usd"] = float(pair.get("priceUsd") or 0)
+                            sig["market_cap_usd"] = float(
+                                pair.get("marketCap") or pair.get("fdv") or 0
                             )
-                            if pair:
-                                sig["price_usd"] = float(
-                                    pair.get("priceUsd") or 0
-                                )
-                                sig["market_cap_usd"] = float(
-                                    pair.get("marketCap")
-                                    or pair.get("fdv") or 0
-                                )
-                                sig["liquidity_usd"] = float(
-                                    pair.get("liquidity", {}).get("usd") or 0
-                                )
-                                sig["volume_24h_usd"] = float(
-                                    pair.get("volume", {}).get("h24") or 0
-                                )
-                                pc = pair.get("priceChange", {})
-                                sig["price_change_24h"] = float(
-                                    pc.get("h24") or 0
-                                )
-                                sig["price_change_1h"] = float(
-                                    pc.get("h1") or 0
-                                )
-                                sig["image_url"] = pair.get(
-                                    "info", {}
-                                ).get("imageUrl", "")
-                                sig["pair_address"] = pair.get(
-                                    "pairAddress", ""
-                                )
-                                sig["dex_id"] = pair.get("dexId", "")
-                                if not sig["token_name"]:
-                                    sig["token_name"] = pair.get(
-                                        "baseToken", {}
-                                    ).get("name", "")
-                                if not sig["token_symbol"]:
-                                    sig["token_symbol"] = pair.get(
-                                        "baseToken", {}
-                                    ).get("symbol", "")
-                except Exception as e:
-                    logger.warning(
-                        "DexScreener enrichment failed for %s: %s", chain, e
-                    )
-                await asyncio.sleep(1)
+                            sig["liquidity_usd"] = float(
+                                pair.get("liquidity", {}).get("usd") or 0
+                            )
+                            sig["volume_24h_usd"] = float(
+                                pair.get("volume", {}).get("h24") or 0
+                            )
+                            pc = pair.get("priceChange", {})
+                            sig["price_change_24h"] = float(pc.get("h24") or 0)
+                            sig["price_change_1h"] = float(pc.get("h1") or 0)
+                            sig["image_url"] = pair.get("info", {}).get("imageUrl", "")
+                            sig["pair_address"] = pair.get("pairAddress", "")
+                            sig["dex_id"] = pair.get("dexId", "")
+                            if not sig["token_name"]:
+                                sig["token_name"] = pair.get("baseToken", {}).get("name", "")
+                            if not sig["token_symbol"]:
+                                sig["token_symbol"] = pair.get("baseToken", {}).get("symbol", "")
+            except Exception as e:
+                logger.warning("DexScreener enrichment failed for %s: %s", chain, e)
+            await asyncio.sleep(1)
+
+    @staticmethod
+    def _get_pump_image(mint: str) -> Optional[str]:
+        """从 pump_tokens 表查找代币 image_uri，fallback Solana RPC"""
+        try:
+            db = get_db()
+            res = (
+                db.table("pump_tokens")
+                .select("image_uri")
+                .eq("mint", mint)
+                .limit(1)
+                .execute()
+            )
+            if res.data and res.data[0].get("image_uri"):
+                return res.data[0]["image_uri"]
+        except Exception as e:
+            logger.debug("pump_tokens lookup %s: %s", mint[:8], e)
+        # Fallback: Solana RPC on-chain metadata
+        try:
+            from hot_coin_fetcher import _get_solana_metadata_image
+            return _get_solana_metadata_image(mint)
+        except Exception:
+            return None
 
     def _calc_heat_score(self, sig: Dict[str, Any]) -> float:
         """Calculate heat score from tiered wallet activity."""

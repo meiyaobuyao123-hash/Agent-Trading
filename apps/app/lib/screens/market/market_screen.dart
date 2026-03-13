@@ -77,7 +77,13 @@ class _MarketScreenState extends State<MarketScreen> {
           _hotLoading = false;
           _applyChainFilter();
         });
-        PriceTickerService.instance.start(coins.map((c) => c.address).toList());
+        // 按链分组地址，启用多链实时价格
+        final chainAddrs = <String, List<String>>{};
+        for (final coin in coins) {
+          final chain = coin.chain.isNotEmpty ? coin.chain : 'solana';
+          chainAddrs.putIfAbsent(chain, () => []).add(coin.address);
+        }
+        PriceTickerService.instance.startMultiChain(chainAddrs);
       }
     } catch (e) {
       if (mounted) setState(() { _hotError = e.toString(); _hotLoading = false; });

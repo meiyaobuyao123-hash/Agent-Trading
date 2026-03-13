@@ -216,7 +216,7 @@ async def list_executions(
         log.warning("Failed to fetch executions: %s", e)
         rows = []
 
-    # 计算汇总
+    # 计算汇总（按 token 分组计算 PnL）
     total_buy = 0.0
     total_sell = 0.0
     buy_count = 0
@@ -224,6 +224,7 @@ async def list_executions(
     confirmed = 0
     failed = 0
     total_gas = 0.0
+    by_token = {}  # type: Dict[str, Dict[str, float]]
 
     for r in rows:
         amt = float(r.get("amount_usd") or 0)
@@ -235,14 +236,22 @@ async def list_executions(
         elif status == "failed":
             failed += 1
 
+        token_key = r.get("token_address", "unknown")
+        if token_key not in by_token:
+            by_token[token_key] = {"buy": 0.0, "sell": 0.0}
+
         if r.get("action") == "buy":
             buy_count += 1
             total_buy += amt
+            by_token[token_key]["buy"] += amt
         elif r.get("action") == "sell":
             sell_count += 1
             total_sell += amt
+            by_token[token_key]["sell"] += amt
 
-    realized_pnl = total_sell - total_buy - total_gas
+    realized_pnl = sum(
+        v["sell"] - v["buy"] for v in by_token.values()
+    ) - total_gas
 
     summary = {
         "total_buy_usd": round(total_buy, 2),
@@ -284,7 +293,7 @@ async def read_alert(
     user_id: str = Depends(get_current_user),
 ):
     """标记告警已读"""
-    success = mark_alert_read(alert_id)
+    success = mark_alert_read(alert_id, user_id=user_id)
     if not success:
         raise HTTPException(status_code=500, detail="操作失败")
 

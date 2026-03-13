@@ -229,20 +229,28 @@ class StrategyManager:
         """
         记录策略触发
 
-        更新 trigger_count 和 last_triggered
+        使用 Supabase RPC 原子递增 trigger_count，避免 TOCTOU 竞争
         """
         try:
-            # 先获取当前 trigger_count
-            strategy = self.get_strategy(strategy_id)
-            if not strategy:
-                return False
-
-            current_count = strategy.get("trigger_count", 0)
-
+            # 尝试使用 RPC 原子递增（需要在 Supabase 中定义函数）
+            # fallback: 使用单次 update 表达式
             get_db().table("agent_strategies").update({
-                "trigger_count": current_count + 1,
                 "last_triggered": datetime.utcnow().isoformat(),
             }).eq("id", strategy_id).execute()
+
+            # 单独用 rpc 原子递增 trigger_count
+            try:
+                get_db().rpc("increment_trigger_count", {
+                    "sid": strategy_id,
+                }).execute()
+            except Exception:
+                # RPC 不存在时 fallback: 读取-递增（仍有小概率竞争）
+                strategy = self.get_strategy(strategy_id)
+                if strategy:
+                    current_count = strategy.get("trigger_count", 0)
+                    get_db().table("agent_strategies").update({
+                        "trigger_count": current_count + 1,
+                    }).eq("id", strategy_id).execute()
 
             return True
         except Exception as e:

@@ -87,7 +87,8 @@ class _ChatTab extends StatefulWidget {
   State<_ChatTab> createState() => _ChatTabState();
 }
 
-class _ChatTabState extends State<_ChatTab> {
+class _ChatTabState extends State<_ChatTab>
+    with AutomaticKeepAliveClientMixin {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _messages = <_ChatMessage>[];
@@ -97,6 +98,9 @@ class _ChatTabState extends State<_ChatTab> {
   Map<String, dynamic>? _pendingStrategy;
   String? _pendingPrompt;
   String? _strategyError;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -149,7 +153,7 @@ class _ChatTabState extends State<_ChatTab> {
         _sending = false;
       });
     }
-    _scrollToBottom();
+    if (mounted) _scrollToBottom();
   }
 
   /// 确认创建策略 — 由 ConfirmCard 调用，返回 true 表示成功
@@ -217,6 +221,7 @@ class _ChatTabState extends State<_ChatTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 要求
     return Column(
       children: [
         Expanded(
@@ -885,9 +890,13 @@ class _MyStrategiesTab extends StatefulWidget {
   State<_MyStrategiesTab> createState() => _MyStrategiesTabState();
 }
 
-class _MyStrategiesTabState extends State<_MyStrategiesTab> {
+class _MyStrategiesTabState extends State<_MyStrategiesTab>
+    with AutomaticKeepAliveClientMixin {
   List<AgentStrategy>? _strategies;
   bool _loading = true;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -906,6 +915,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin 要求
     final c = context.colors;
 
     if (_loading) {
@@ -961,17 +971,52 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab> {
         itemBuilder: (ctx, i) {
           final s = _strategies![i];
           return _StrategyCard(
+            key: ValueKey(s.id),
             strategy: s,
             onTap: () => showStrategyDetailSheet(ctx, s),
             onToggle: () async {
               final newStatus = s.isActive ? 'paused' : 'active';
-              await AgentService.instance
+              final ok = await AgentService.instance
                   .updateStrategyStatus(s.id, newStatus);
-              _loadStrategies();
+              if (!mounted) return;
+              if (ok) {
+                _loadStrategies();
+              } else {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(content: Text('操作失败，请重试')),
+                );
+              }
             },
             onDelete: () async {
-              await AgentService.instance.deleteStrategy(s.id);
-              _loadStrategies();
+              final confirmed = await showDialog<bool>(
+                context: ctx,
+                builder: (dialogCtx) => AlertDialog(
+                  title: const Text('删除策略'),
+                  content: Text('确定要删除策略「${s.name}」吗？此操作不可撤销。'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogCtx, false),
+                      child: const Text('取消'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogCtx, true),
+                      style: TextButton.styleFrom(foregroundColor: Colors.red),
+                      child: const Text('删除'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true) {
+                final ok = await AgentService.instance.deleteStrategy(s.id);
+                if (!mounted) return;
+                if (ok) {
+                  _loadStrategies();
+                } else {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('删除失败，请重试')),
+                  );
+                }
+              }
             },
           );
         },
@@ -986,6 +1031,7 @@ class _StrategyCard extends StatefulWidget {
   final VoidCallback onToggle;
   final VoidCallback onDelete;
   const _StrategyCard({
+    super.key,
     required this.strategy,
     required this.onTap,
     required this.onToggle,

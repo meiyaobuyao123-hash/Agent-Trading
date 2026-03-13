@@ -124,7 +124,6 @@ class SmartMoneySignal {
   /// 格式化市值
   String get marketCapShort {
     if (marketCapUsd >= 1e6) return '\$${(marketCapUsd / 1e6).toStringAsFixed(2)}M';
-    if (marketCapUsd >= 1e4) return '\$${(marketCapUsd / 1e4).toStringAsFixed(2)}万';
     if (marketCapUsd >= 1e3) return '\$${(marketCapUsd / 1e3).toStringAsFixed(1)}K';
     return '\$${marketCapUsd.toStringAsFixed(0)}';
   }
@@ -132,7 +131,6 @@ class SmartMoneySignal {
   /// 格式化流动性
   String get liquidityShort {
     if (liquidityUsd >= 1e6) return '\$${(liquidityUsd / 1e6).toStringAsFixed(2)}M';
-    if (liquidityUsd >= 1e4) return '\$${(liquidityUsd / 1e4).toStringAsFixed(2)}万';
     if (liquidityUsd >= 1e3) return '\$${(liquidityUsd / 1e3).toStringAsFixed(1)}K';
     return '\$${liquidityUsd.toStringAsFixed(0)}';
   }
@@ -151,21 +149,20 @@ class SmartMoneySignal {
     final v = netFlowUsd.abs();
     final prefix = netFlowUsd >= 0 ? '+' : '-';
     if (v >= 1e6) return '$prefix\$${(v / 1e6).toStringAsFixed(2)}M';
-    if (v >= 1e4) return '$prefix\$${(v / 1e4).toStringAsFixed(2)}万';
     if (v >= 1e3) return '$prefix\$${(v / 1e3).toStringAsFixed(1)}K';
     return '$prefix\$${v.toStringAsFixed(0)}';
   }
 
   /// 格式化买入量
   String get buyVolumeShort {
-    if (buyVolume >= 1e4) return '\$${(buyVolume / 1e4).toStringAsFixed(2)}万';
+    if (buyVolume >= 1e6) return '\$${(buyVolume / 1e6).toStringAsFixed(1)}M';
     if (buyVolume >= 1e3) return '\$${(buyVolume / 1e3).toStringAsFixed(1)}K';
     return '\$${buyVolume.toStringAsFixed(0)}';
   }
 
   /// 格式化卖出量
   String get sellVolumeShort {
-    if (sellVolume >= 1e4) return '\$${(sellVolume / 1e4).toStringAsFixed(2)}万';
+    if (sellVolume >= 1e6) return '\$${(sellVolume / 1e6).toStringAsFixed(1)}M';
     if (sellVolume >= 1e3) return '\$${(sellVolume / 1e3).toStringAsFixed(1)}K';
     return '\$${sellVolume.toStringAsFixed(0)}';
   }

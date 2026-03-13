@@ -22,7 +22,7 @@ GRADUATION_SOL_LAMPS = 85_000_000_000  # lamports
 # 扫描参数
 SNAPSHOT_INTERVAL_S  = 60          # 每分钟打一次快照
 ENRICH_DELAY_S       = 3           # 新币出现后等 3s 再拉详情
-MAX_TRACKED_TOKENS   = 500         # 最多同时追踪的候选币数量
+MAX_TRACKED_TOKENS   = 2000        # 最多同时追踪（配合3h淘汰，日均可处理2万+）
 DATA_RETENTION_DAYS  = 30          # 数据保留天数
 
 # 硬过滤阈值（一票否决）— 放宽以覆盖更多早期代币

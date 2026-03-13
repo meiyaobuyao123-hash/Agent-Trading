@@ -36,6 +36,7 @@ def run_pump_report(report_date: date = None):
 
     if use_counter:
         ws_creates = stats["ws_creates"]
+        ws_dropped = stats.get("ws_dropped", 0)
         rest_success = stats["rest_success"]
         rest_fallback = stats["rest_fallback"]
         ws_reconnects = stats["ws_new_reconnects"] + stats["ws_trade_reconnects"]
@@ -45,6 +46,7 @@ def run_pump_report(report_date: date = None):
     else:
         # 计数器不可用，从 DB 推算
         ws_creates = 0
+        ws_dropped = 0
         rest_success = 0
         rest_fallback = 0
         ws_reconnects = 0
@@ -156,6 +158,7 @@ def run_pump_report(report_date: date = None):
         "report_date": report_date.isoformat(),
         "funnel": {
             "ws_creates": ws_creates,
+            "ws_dropped": ws_dropped,
             "tokens_saved": tokens_saved,
             "rest_success": rest_success,
             "rest_fallback": rest_fallback,

@@ -109,12 +109,15 @@ class PumpScanner:
         if not mint or mint in self._tokens:
             return
 
+        # 计数：WS 收到的全部 create 事件（漏斗第一层）
+        pump_stats.incr("ws_creates")
+
         # 上限保护
         if len(self._tokens) >= MAX_TRACKED_TOKENS:
+            pump_stats.incr("ws_dropped")
             return
 
         log.info(f"新币: {evt.get('name','?')} ({mint[:8]}…)")
-        pump_stats.incr("ws_creates")
 
         # 等几秒让 REST API 数据就绪
         await asyncio.sleep(ENRICH_DELAY_S)
@@ -285,9 +288,33 @@ class PumpScanner:
         if not self._tokens:
             return
 
+        now = datetime.now(timezone.utc)
+        evicted = 0
+
         for mint, token_info in list(self._tokens.items()):
+            created_at = token_info.get("_created_at", now)
+            age_hours = (now - created_at).total_seconds() / 3600
             trades = self._trades.get(mint, [])
-            created_at = token_info.get("_created_at", datetime.now(timezone.utc))
+
+            # ── 淘汰：超过3小时未毕业 → 腾位置给新币 ──
+            if age_hours > 3:
+                self._tokens.pop(mint, None)
+                self._trades.pop(mint, None)
+                evicted += 1
+                continue
+
+            # ── 淘汰：超过1小时且最近30分钟无交易 → 死币 ──
+            if age_hours > 1 and trades:
+                last_trade_time = max(
+                    t.get("traded_at", created_at) if isinstance(t.get("traded_at"), datetime)
+                    else created_at
+                    for t in trades
+                )
+                if (now - last_trade_time).total_seconds() > 1800:
+                    self._tokens.pop(mint, None)
+                    self._trades.pop(mint, None)
+                    evicted += 1
+                    continue
 
             f: TokenFeatures = extract_features(
                 token_info=token_info,
@@ -316,6 +343,9 @@ class PumpScanner:
                 f"{f.symbol}({mint[:6]}…) BC={f.bc_progress:.1f}% "
                 f"分={result.total} [{result.recommendation}]"
             )
+
+        if evicted > 0:
+            log.info(f"淘汰 {evicted} 个过期代币，当前追踪 {len(self._tokens)} 个")
 
     # ──────────────────────────────────────────────────
     # REST 工具方法

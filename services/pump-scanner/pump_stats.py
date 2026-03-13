@@ -21,7 +21,8 @@ def _ensure_today():
     if d != _today:
         _today = d
         _counters = {
-            "ws_creates": 0,        # WS 收到 create 事件数
+            "ws_creates": 0,        # WS 收到的全部 create 事件（市场总量）
+            "ws_dropped": 0,        # 因追踪池满而丢弃的
             "rest_success": 0,       # REST 拉取详情成功数
             "rest_fallback": 0,      # REST 失败，用 WS 兜底数
             "ws_new_reconnects": 0,  # newToken WS 重连次数

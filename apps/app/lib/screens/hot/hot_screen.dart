@@ -120,6 +120,10 @@ class _HotScreenState extends State<HotScreen> {
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text('BASE', style: TextStyle(fontSize: 13)),
                   ),
+                  4: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4),
+                    child: Text('ETH', style: TextStyle(fontSize: 13)),
+                  ),
                 },
               ),
             ),

@@ -213,8 +213,9 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
           GestureDetector(
             onTap: () {
               final nav = Navigator.of(context);
+              final detail = _buildDetail();
               nav.pop();
-              _navigateToDetail(context);
+              nav.push(MaterialPageRoute(builder: (_) => TokenDetailPage(token: detail)));
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -570,9 +571,9 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
     );
   }
 
-  void _navigateToDetail(BuildContext context) {
+  TokenDetail _buildDetail() {
     final sig = widget.signal;
-    final detail = TokenDetail(
+    return TokenDetail(
       source: TokenSource.hotCoin,
       chain: sig.chain,
       address: sig.tokenAddress,
@@ -603,10 +604,6 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
       dexId: sig.dexId,
       ageDays: 0,
       holderCount: 0,
-    );
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => TokenDetailPage(token: detail)),
     );
   }
 

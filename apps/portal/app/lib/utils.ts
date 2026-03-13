@@ -1,5 +1,6 @@
 /** 格式化 USD 价格 */
 export function fmtUsd(v: number): string {
+  if (v == null || isNaN(v)) return '-'
   if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`
   if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`
   if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`
@@ -7,6 +8,7 @@ export function fmtUsd(v: number): string {
   if (v >= 0.01) return `$${v.toFixed(4)}`
   if (v >= 0.0001) return `$${v.toFixed(6)}`
   if (v > 0) return `$${v.toFixed(8)}`
+  if (v === 0) return '$0'
   return '-'
 }
 

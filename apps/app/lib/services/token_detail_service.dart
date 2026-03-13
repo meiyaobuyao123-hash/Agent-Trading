@@ -19,40 +19,43 @@ class TokenDetailService {
     required String address,
     String? pairAddress,
   }) async {
-    // 并行调用 GoPlus + DexScreener + Helius/EvmExplorer + CoinGecko
-    final futures = <Future>[
-      GoPlusService.instance.fetchReport(chain: chain, address: address),       // [0]
-      DexScreenerService.instance.fetchTokenInfo(address),                       // [1]
-      if (chain == 'solana')
-        HeliusService.instance.fetchLargestHolders(address),                     // [2] SOL: Top20 列表
-      if (chain == 'bsc' || chain == 'base' || chain == 'eth')
-        EvmExplorerService.instance.fetchTopHolders(                             // [2] EVM: Top20 列表
-          chain: chain, contractAddress: address, limit: 20,
-        ),
-      CoinGeckoService.instance.fetchTokenInfo(chain: chain, address: address), // [3]
-    ];
+    // 并行调用所有外部 API（具名 Future，避免下标脆弱）
+    final goplusFuture   = GoPlusService.instance.fetchReport(chain: chain, address: address);
+    final dexFuture      = DexScreenerService.instance.fetchTokenInfo(address);
+    final coinGeckoFuture = CoinGeckoService.instance.fetchTokenInfo(chain: chain, address: address);
 
-    final results = await Future.wait(futures);
-
-    final goplus = results[0] as GoPlusReport?;
-    final dexInfo = results[1] as DexScreenerInfo?;
-
-    // 根据链类型解析 holder 数据（链 RPC 精确数据优先于 GoPlus）
-    double? top1Pct;
-    double? top10Pct;
-    CoinGeckoTokenInfo? coinGeckoInfo;
+    Future<List<Map<String, dynamic>>> solHoldersFuture = Future.value([]);
+    Future<List<TokenHolder>> evmHoldersFuture = Future.value([]);
 
     if (chain == 'solana') {
-      final holders = results[2] as List<Map<String, dynamic>>? ?? [];
+      solHoldersFuture = HeliusService.instance.fetchLargestHolders(address);
+    } else if (chain == 'bsc' || chain == 'base' || chain == 'eth') {
+      evmHoldersFuture = EvmExplorerService.instance.fetchTopHolders(
+        chain: chain, contractAddress: address, limit: 20,
+      );
+    }
+
+    final results = await Future.wait([
+      goplusFuture, dexFuture, coinGeckoFuture, solHoldersFuture, evmHoldersFuture,
+    ]);
+
+    final goplus      = results[0] as GoPlusReport?;
+    final dexInfo     = results[1] as DexScreenerInfo?;
+    final coinGeckoInfo = results[2] as CoinGeckoTokenInfo?;
+
+    // 根据链类型解析 holder 数据
+    double? top1Pct;
+    double? top10Pct;
+
+    if (chain == 'solana') {
+      final holders = results[3] as List<Map<String, dynamic>>;
       if (holders.isNotEmpty) {
         top1Pct = holders.first['pct'] as double?;
-        // 计算 Top10 占比
         final top10Sum = holders.take(10).fold<double>(0, (s, h) => s + ((h['pct'] as double?) ?? 0));
         top10Pct = top10Sum;
       }
-      coinGeckoInfo = results[3] as CoinGeckoTokenInfo?;
     } else if (chain == 'bsc' || chain == 'base' || chain == 'eth') {
-      final holders = results[2] as List<TokenHolder>? ?? [];
+      final holders = results[4] as List<TokenHolder>;
       if (holders.isNotEmpty) {
         final totalOfTop = holders.fold<double>(0, (s, h) => s + h.quantity);
         if (totalOfTop > 0) {
@@ -61,9 +64,6 @@ class TokenDetailService {
           top10Pct = (top10Sum / totalOfTop) * 100;
         }
       }
-      coinGeckoInfo = results[3] as CoinGeckoTokenInfo?;
-    } else {
-      coinGeckoInfo = results[2] as CoinGeckoTokenInfo?;
     }
 
     // 解析 pair address — 优先级: 传入 > DexScreener > 代币地址

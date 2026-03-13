@@ -5,9 +5,13 @@ class HeliusService {
   static final HeliusService instance = HeliusService._();
   HeliusService._();
 
-  // Helius 免费 RPC — 项目已有 API key
-  static const _rpcUrl =
-      'https://mainnet.helius-rpc.com/?api-key=22d3b20a-e69a-4532-854e-7e53dff3d1f6';
+  static String get _rpcUrl {
+    const key = String.fromEnvironment(
+      'HELIUS_API_KEY',
+      defaultValue: '22d3b20a-e69a-4532-854e-7e53dff3d1f6',
+    );
+    return 'https://mainnet.helius-rpc.com/?api-key=$key';
+  }
 
   /// 获取 SOL 代币 Top1 持仓占比
   /// 返回 0~100 的百分比，失败返回 null

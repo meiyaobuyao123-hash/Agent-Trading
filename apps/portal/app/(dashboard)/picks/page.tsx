@@ -353,13 +353,13 @@ export default function HotPicksPage() {
 
                         {/* 涨跌幅 */}
                         <td className="px-3 py-3 text-center">
-                          <PctCell value={pick.current_change_5m || null} />
+                          <PctCell value={pick.current_change_5m ?? null} />
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <PctCell value={pick.current_change_1h || null} />
+                          <PctCell value={pick.current_change_1h ?? null} />
                         </td>
                         <td className="px-3 py-3 text-center">
-                          <PctCell value={pick.current_change_24h || null} />
+                          <PctCell value={pick.current_change_24h ?? null} />
                         </td>
 
                         {/* 评分 */}

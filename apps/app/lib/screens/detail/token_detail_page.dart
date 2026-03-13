@@ -171,7 +171,10 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   @override
   Widget build(BuildContext context) {
     final token = widget.token;
-    final shortAddr = '${token.address.substring(0, 6)}...${token.address.substring(token.address.length - 4)}';
+    final addr = token.address;
+    final shortAddr = addr.length >= 10
+        ? '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}'
+        : addr;
     final imageUrl = ChainUtils.tokenImageUrl(
       _dexInfo?.imageUrl ?? token.imageUri, token.chain, token.address,
     );

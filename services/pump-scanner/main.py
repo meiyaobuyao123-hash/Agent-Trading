@@ -63,6 +63,9 @@ from smart_money_tracker import run_smart_money_scan
 from ml_trainer import auto_retrain_if_needed
 from ml_config import ML_RETRAIN_INTERVAL_HOURS, USE_ML_SCORING
 
+# 内盘数据报表
+from pump_report_job import run_pump_report
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -230,6 +233,19 @@ async def main():
     )
 
     # ══════════════════════════════════════════════════════════
+    # 内盘数据报表
+    # ══════════════════════════════════════════════════════════
+
+    # ── 内盘每日报表（UTC 00:30，在 daily_picks 之后）────────
+    scheduler.add_job(
+        run_pump_report,
+        trigger=CronTrigger(hour=0, minute=30, timezone="UTC"),
+        id="pump_report",
+        name="内盘每日报表",
+        misfire_grace_time=600,
+    )
+
+    # ══════════════════════════════════════════════════════════
     # ML 自动重训
     # ══════════════════════════════════════════════════════════
 
@@ -265,6 +281,8 @@ async def main():
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
         "  每15分钟       → smart_money_scan (多链聪明钱)\n"
+        "  ── 数据报表 ──\n"
+        "  每日 UTC 00:30 → pump_report (内盘漏斗报表)\n"
         "  ── ML 系统 ──\n"
         f"  每{ML_RETRAIN_INTERVAL_HOURS}小时      → ml_retrain (XGBoost 自动重训)"
         f" {'[已启用]' if USE_ML_SCORING else '[未启用，USE_ML_SCORING=0]'}\n"

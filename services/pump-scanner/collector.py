@@ -25,6 +25,7 @@ from database import (
     upsert_token, insert_snapshot, insert_trade,
     get_active_tokens, mark_graduated, get_smart_wallet_tiers,
 )
+import pump_stats
 
 log = logging.getLogger(__name__)
 
@@ -96,6 +97,7 @@ class PumpScanner:
                     async for raw in ws:
                         await self._on_new_token(json.loads(raw))
             except Exception as e:
+                pump_stats.incr("ws_new_reconnects")
                 log.warning(f"newToken WS 断开，5s 后重连: {e}")
                 await asyncio.sleep(5)
 
@@ -112,6 +114,7 @@ class PumpScanner:
             return
 
         log.info(f"新币: {evt.get('name','?')} ({mint[:8]}…)")
+        pump_stats.incr("ws_creates")
 
         # 等几秒让 REST API 数据就绪
         await asyncio.sleep(ENRICH_DELAY_S)
@@ -120,6 +123,7 @@ class PumpScanner:
         detail = await self._fetch_token_detail(mint)
 
         if detail:
+            pump_stats.incr("rest_success")
             # REST 成功：合并 WebSocket 字段
             detail["vSolInBondingCurve"] = evt.get("vSolInBondingCurve", 0)
             detail["marketCapSol"]       = evt.get("marketCapSol", 0)
@@ -149,6 +153,7 @@ class PumpScanner:
             })
         else:
             # REST 失败：用 WS 事件数据兜底入库 + 追踪
+            pump_stats.incr("rest_fallback")
             log.info(f"  REST 失败，用 WS 数据兜底: {evt.get('name','?')} ({mint[:8]})")
             created_at = datetime.now(timezone.utc)
 
@@ -200,6 +205,7 @@ class PumpScanner:
                         self._recv_trades(ws),
                     )
             except Exception as e:
+                pump_stats.incr("ws_trade_reconnects")
                 log.warning(f"trade WS 断开，5s 后重连: {e}")
                 self._ws_trade = None
                 self._subscribed.clear()
@@ -292,6 +298,7 @@ class PumpScanner:
 
             passed, reason = hard_filter(f)
             if not passed:
+                pump_stats.incr("hard_filter_fail")
                 log.debug(
                     f"[过滤] {f.symbol}({mint[:6]}…) 被拒: {reason} "
                     f"(buyers={f.unique_buyers} ratio={f.buy_sell_ratio_count:.2f} "
@@ -299,8 +306,10 @@ class PumpScanner:
                 )
                 continue
 
+            pump_stats.incr("hard_filter_pass")
             snap = to_snapshot_dict(f, f.age_minutes)
             insert_snapshot(snap)
+            pump_stats.incr("snapshots_written")
 
             result = score(f)
             log.debug(

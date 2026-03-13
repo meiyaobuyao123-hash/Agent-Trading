@@ -12,6 +12,7 @@ import {
   Star,
   Settings,
   FlaskConical,
+  BarChart3,
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { href: '/signals', label: '信号', icon: Zap },
   { href: '/strategy', label: '策略', icon: Brain },
   { href: '/backtest', label: '回测', icon: FlaskConical },
+  { href: '/pump', label: '内盘报表', icon: BarChart3 },
   { href: '/portfolio', label: '持仓', icon: Briefcase },
   { href: '/official', label: '官方组合', icon: Star },
 ]

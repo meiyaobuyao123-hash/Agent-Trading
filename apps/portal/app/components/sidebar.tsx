@@ -8,6 +8,7 @@ import {
   Zap,
   BarChart3,
   CalendarDays,
+  FileBarChart,
 } from 'lucide-react'
 
 const NAV_ITEMS = [
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { href: '/picks', icon: CalendarDays, label: '热币日榜' },
   { href: '/hot', icon: Flame, label: '热币表现' },
   { href: '/pump', icon: Zap, label: '内盘表现' },
+  { href: '/report', icon: FileBarChart, label: '内盘报表' },
   { href: '/all', icon: BarChart3, label: '综合视图' },
 ]
 

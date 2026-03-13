@@ -210,6 +210,48 @@ export async function fetchPerformanceDates(source: 'pump' | 'hot'): Promise<str
   return unique
 }
 
+// ═══════════════════════════════════════════════════
+// 内盘每日数据报表 (pump_daily_report)
+// ═══════════════════════════════════════════════════
+
+export interface PumpDailyReport {
+  report_date: string
+  ws_creates: number
+  tokens_saved: number
+  rest_success: number
+  rest_fallback: number
+  observed_tokens: number
+  snapshots_written: number
+  picks_count: number
+  graduated_count: number
+  hit_count: number
+  miss_count: number
+  hit_rate: number
+  miss_rate: number
+  avg_grad_hours: number | null
+  ws_reconnects: number
+  rest_success_pct: number
+  report_json: {
+    funnel: Record<string, number>
+    scores: { strong: number; normal: number; skip: number }
+    accuracy: { hit_rate: number; miss_rate: number; false_positive_count: number }
+    quality: { avg_grad_hours: number | null }
+    health: { ws_reconnects: number; rest_success_pct: number; avg_snapshots_per_min: number }
+  } | null
+}
+
+export async function fetchPumpDailyReports(days = 7): Promise<PumpDailyReport[]> {
+  const supabase = createClient()
+  const { data, error } = await supabase
+    .from('pump_daily_report')
+    .select('*')
+    .order('report_date', { ascending: false })
+    .limit(days)
+
+  if (error) throw error
+  return (data ?? []) as PumpDailyReport[]
+}
+
 export interface SummaryStats {
   totalTracked: number
   activeTracking: number

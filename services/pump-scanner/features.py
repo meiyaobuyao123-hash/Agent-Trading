@@ -227,4 +227,12 @@ def to_snapshot_dict(f: TokenFeatures, age_minutes: float) -> dict:
         "dev_sold_pct": f.dev_sold_pct,
         "large_buy_count": f.large_buy_count,
         "reply_count": f.reply_count,
+        # 聪明钱 + 加速度（供 daily_job 重新打分，需先执行 014 migration）
+        # 如果列不存在，insert_snapshot 会自动忽略（见 database.py）
+        "inflow_acceleration": f.inflow_acceleration,
+        "smart_money_count": f.smart_money_count,
+        "smart_money_net_sol": f.smart_money_net_sol,
+        "smart_elite_count": f.smart_elite_count,
+        "smart_verified_count": f.smart_verified_count,
+        "smart_watching_count": f.smart_watching_count,
     }

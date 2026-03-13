@@ -122,7 +122,7 @@ async def main():
 
     # ── 热币增量扫描（每10分钟）─────────────────────────────
     # 增量模式：已入库代币复用安全/社交数据，仅新代币走 GoPlus/Helius/DexScreener
-    # 每轮 ~30s（vs 全量 3-5min），发现新代币延迟从 2h → 10min
+    # 多时间帧 OKX toplist 发现，耗时 ~60-90s
     scheduler.add_job(
         run_hot_coin_scan,
         trigger="interval",
@@ -130,11 +130,13 @@ async def main():
         id="hot_coin_scan",
         name="热币增量扫描",
         misfire_grace_time=120,
+        max_instances=1,
     )
 
     # ── 市场数据刷新（每30秒）─────────────────────────────
-    # OKX Market API 优先（毫秒级价格），不可用时 DexScreener fallback
+    # DexScreener 批量按地址刷新（返回 5m/1h/6h/24h 完整多时间帧数据）
     # 单轮耗时：DexScreener 4链 ≈ 10-20s + 打分 ≈ 0.1s + DB写 ≈ 0.5s
+    # max_instances=2 允许与 scan 并行，避免 scan 阻塞 refresh
     scheduler.add_job(
         run_hot_price_refresh,
         trigger="interval",
@@ -142,6 +144,7 @@ async def main():
         id="hot_price_refresh",
         name="热币市场数据刷新",
         misfire_grace_time=15,
+        max_instances=2,
     )
 
     # ── 热币日榜生成（每天 UTC 02:00）───────────────────────

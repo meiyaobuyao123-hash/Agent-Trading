@@ -118,37 +118,68 @@ class PumpScanner:
 
         # 拉取完整详情
         detail = await self._fetch_token_detail(mint)
-        if not detail:
-            return
 
-        # 合并 WebSocket 字段
-        detail["vSolInBondingCurve"] = evt.get("vSolInBondingCurve", 0)
-        detail["marketCapSol"]       = evt.get("marketCapSol", 0)
-        detail["initialBuy"]         = evt.get("initialBuy", 0)
+        if detail:
+            # REST 成功：合并 WebSocket 字段
+            detail["vSolInBondingCurve"] = evt.get("vSolInBondingCurve", 0)
+            detail["marketCapSol"]       = evt.get("marketCapSol", 0)
+            detail["initialBuy"]         = evt.get("initialBuy", 0)
 
-        created_at = datetime.fromtimestamp(
-            detail.get("created_timestamp", 0) / 1000, tz=timezone.utc
-        )
+            created_at = datetime.fromtimestamp(
+                detail.get("created_timestamp", 0) / 1000, tz=timezone.utc
+            )
 
-        self._tokens[mint] = {**detail, "_created_at": created_at}
-        self._trades[mint] = []
+            self._tokens[mint] = {**detail, "_created_at": created_at}
+            self._trades[mint] = []
 
-        # 持久化基础信息
-        upsert_token({
-            "mint":             mint,
-            "name":             detail.get("name"),
-            "symbol":           detail.get("symbol"),
-            "description":      detail.get("description"),
-            "image_uri":        detail.get("image_uri"),
-            "creator":          detail.get("creator", ""),
-            "created_at":       created_at.isoformat(),
-            "twitter":          detail.get("twitter"),
-            "telegram":         detail.get("telegram"),
-            "website":          detail.get("website"),
-            "complete":         detail.get("complete", False),
-            "initial_buy_sol":  evt.get("solAmount", 0),
-            "initial_mc_sol":   evt.get("marketCapSol", 0),
-        })
+            upsert_token({
+                "mint":             mint,
+                "name":             detail.get("name"),
+                "symbol":           detail.get("symbol"),
+                "description":      detail.get("description"),
+                "image_uri":        detail.get("image_uri"),
+                "creator":          detail.get("creator", ""),
+                "created_at":       created_at.isoformat(),
+                "twitter":          detail.get("twitter"),
+                "telegram":         detail.get("telegram"),
+                "website":          detail.get("website"),
+                "complete":         detail.get("complete", False),
+                "initial_buy_sol":  evt.get("solAmount", 0),
+                "initial_mc_sol":   evt.get("marketCapSol", 0),
+            })
+        else:
+            # REST 失败：用 WS 事件数据兜底入库 + 追踪
+            log.info(f"  REST 失败，用 WS 数据兜底: {evt.get('name','?')} ({mint[:8]})")
+            created_at = datetime.now(timezone.utc)
+
+            ws_detail = {
+                "mint": mint,
+                "name": evt.get("name", ""),
+                "symbol": evt.get("symbol", ""),
+                "creator": evt.get("traderPublicKey", ""),
+                "vSolInBondingCurve": evt.get("vSolInBondingCurve", 0),
+                "marketCapSol": evt.get("marketCapSol", 0),
+                "initialBuy": evt.get("initialBuy", 0),
+            }
+
+            self._tokens[mint] = {**ws_detail, "_created_at": created_at}
+            self._trades[mint] = []
+
+            upsert_token({
+                "mint":             mint,
+                "name":             evt.get("name", ""),
+                "symbol":           evt.get("symbol", ""),
+                "description":      "",
+                "image_uri":        evt.get("uri", ""),
+                "creator":          evt.get("traderPublicKey", ""),
+                "created_at":       created_at.isoformat(),
+                "twitter":          None,
+                "telegram":         None,
+                "website":          None,
+                "complete":         False,
+                "initial_buy_sol":  evt.get("solAmount", 0),
+                "initial_mc_sol":   evt.get("marketCapSol", 0),
+            })
 
         # 通知 trade 监听器订阅该 mint
         await self._subscribe_queue.put(mint)
@@ -281,12 +312,40 @@ class PumpScanner:
     # REST 工具方法
     # ──────────────────────────────────────────────────
     async def _fetch_token_detail(self, mint: str) -> Optional[dict]:
-        url = f"{PUMP_REST}/coins/{mint}"
-        try:
-            async with aiohttp.ClientSession() as s:
-                async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
-                    if r.status == 200:
-                        return await r.json()
-        except Exception as e:
-            log.warning(f"fetch_token_detail {mint[:8]} 失败: {e}")
+        """
+        拉取代币详情，带重试 + DNS 容错。
+        尝试顺序：默认 URL → 备用 URL → 最终用 WS 事件数据兜底。
+        """
+        urls = [
+            f"{PUMP_REST}/coins/{mint}",
+            f"https://frontend-api-v3.pump.fun/coins/{mint}",
+            f"https://frontend-api.pump.fun/coins/{mint}",
+        ]
+        # 去重
+        seen = set()
+        unique_urls = []
+        for u in urls:
+            if u not in seen:
+                seen.add(u)
+                unique_urls.append(u)
+
+        for url in unique_urls:
+            for attempt in range(2):  # 每个 URL 最多重试 1 次
+                try:
+                    async with aiohttp.ClientSession() as s:
+                        async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                            if r.status == 200:
+                                return await r.json()
+                            elif r.status == 429:
+                                await asyncio.sleep(2)  # 限速，等一下再试
+                                continue
+                except Exception as e:
+                    if attempt == 0:
+                        await asyncio.sleep(1)
+                        continue
+                    # 最后一次失败才 log
+                    log.debug(f"fetch_token_detail {mint[:8]} {url[:30]}…: {e}")
+                break  # 非限速错误不重试同一 URL
+
+        log.warning(f"fetch_token_detail {mint[:8]} 全部失败")
         return None

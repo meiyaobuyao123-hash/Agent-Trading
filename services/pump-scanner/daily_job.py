@@ -17,13 +17,14 @@ log = logging.getLogger(__name__)
 
 def run_daily_job(pick_date: Optional[date] = None):
     if pick_date is None:
-        pick_date = date.today()
+        # 任务在 UTC 00:05 运行，应取前一天的数据
+        pick_date = (datetime.now(timezone.utc) - timedelta(hours=1)).date()
 
     log.info(f"开始生成 {pick_date} 日推荐...")
 
     db = get_db()
 
-    # 取今天所有候选快照（BC进度在窗口内）
+    # 取目标日期所有候选快照（BC进度在窗口内）
     since = datetime.combine(pick_date, datetime.min.time()).replace(tzinfo=timezone.utc)
     until = since + timedelta(days=1)
 
@@ -42,6 +43,12 @@ def run_daily_job(pick_date: Optional[date] = None):
             large_buy_count,
             unique_buyers,
             reply_count,
+            inflow_acceleration,
+            smart_money_count,
+            smart_money_net_sol,
+            smart_elite_count,
+            smart_verified_count,
+            smart_watching_count,
             pump_tokens(name, symbol, twitter, telegram, website,
                         creator_prev_tokens, creator_success_rate)
         """)
@@ -126,6 +133,15 @@ def _snap_to_features(mint: str, snap: dict, info: dict) -> TokenFeatures:
         dev_sold_pct=snap.get("dev_sold_pct", 0),
         large_buy_count=snap.get("large_buy_count", 0),
         reply_count=snap.get("reply_count", 0),
+        # 聪明钱 + 加速度（从快照恢复）
+        # 列不存在时(None) → 给中性值而非 0（避免扣35分）
+        inflow_acceleration=float(snap.get("inflow_acceleration") if snap.get("inflow_acceleration") is not None else 0.25),
+        smart_money_count=int(snap.get("smart_money_count") or 0),
+        smart_money_net_sol=float(snap.get("smart_money_net_sol") if snap.get("smart_money_net_sol") is not None else 0.5),
+        smart_elite_count=int(snap.get("smart_elite_count") or 0),
+        smart_verified_count=int(snap.get("smart_verified_count") if snap.get("smart_verified_count") is not None else 1),
+        smart_watching_count=int(snap.get("smart_watching_count") or 0),
+        # Social
         has_twitter=bool(info.get("twitter")),
         has_telegram=bool(info.get("telegram")),
         has_website=bool(info.get("website")),

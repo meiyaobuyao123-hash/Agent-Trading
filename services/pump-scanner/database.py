@@ -22,12 +22,35 @@ def upsert_token(token: dict):
         log.error(f"upsert_token error: {e}")
 
 
+# 新增列（014 migration），首次失败后自动降级
+_snapshot_extra_cols = {
+    "inflow_acceleration", "smart_money_count", "smart_money_net_sol",
+    "smart_elite_count", "smart_verified_count", "smart_watching_count",
+}
+_snapshot_cols_available = True  # 首次错误后置 False
+
+
 def insert_snapshot(snapshot: dict):
-    """插入特征快照"""
+    """插入特征快照（自动兼容新旧表结构）"""
+    global _snapshot_cols_available
+    data = snapshot
+    if not _snapshot_cols_available:
+        data = {k: v for k, v in snapshot.items() if k not in _snapshot_extra_cols}
     try:
-        get_db().table("token_snapshots").insert(snapshot).execute()
+        get_db().table("token_snapshots").insert(data).execute()
     except Exception as e:
-        log.error(f"insert_snapshot error: {e}")
+        err_msg = str(e)
+        if "does not exist" in err_msg and _snapshot_cols_available:
+            # 新列不存在，降级到旧字段并重试
+            _snapshot_cols_available = False
+            log.warning("token_snapshots 缺少新列，降级模式（请执行 014 migration）")
+            fallback = {k: v for k, v in snapshot.items() if k not in _snapshot_extra_cols}
+            try:
+                get_db().table("token_snapshots").insert(fallback).execute()
+            except Exception as e2:
+                log.error(f"insert_snapshot fallback error: {e2}")
+        else:
+            log.error(f"insert_snapshot error: {e}")
 
 
 def insert_trade(trade: dict):

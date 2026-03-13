@@ -28,9 +28,14 @@ class PushNotificationService {
   static final _messaging = FirebaseMessaging.instance;
   static final _localNotifications = FlutterLocalNotificationsPlugin();
 
-  // 后端 API 地址
-  // TODO: 生产环境替换为实际部署地址
-  static const _apiBase = 'http://localhost:8000';
+  // 后端 API 地址（使用 AppConfig 统一配置）
+  static String get _apiBase {
+    try {
+      return const String.fromEnvironment('BACKEND_URL', defaultValue: 'http://localhost:8000');
+    } catch (_) {
+      return 'http://localhost:8000';
+    }
+  }
 
   /// Android 通知渠道
   static const _androidChannel = AndroidNotificationChannel(

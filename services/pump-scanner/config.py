@@ -38,9 +38,9 @@ BC_MAX_PCT           = 35.0        # 超过 35% 空间已小，不推
 LARGE_BUY_SOL        = 0.5         # 单笔 >= 0.5 SOL 算大单
 
 # ── OKX DEX Market API v6 ─────────────────────────────────────
-OKX_API_KEY    = os.getenv("OKX_API_KEY", "264f720b-1324-41b4-9c85-0b5f20d3696e")
-OKX_SECRET_KEY = os.getenv("OKX_SECRET_KEY", "57FDDAF653008E120F35631E9929FA91")
-OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "7745098wei@W")
+OKX_API_KEY    = os.getenv("OKX_API_KEY", "")
+OKX_SECRET_KEY = os.getenv("OKX_SECRET_KEY", "")
+OKX_PASSPHRASE = os.getenv("OKX_PASSPHRASE", "")
 OKX_API_BASE   = "https://www.okx.com"
 
 # OKX chainIndex（与 HOT_CHAINS key 对应）

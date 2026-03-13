@@ -11,7 +11,7 @@ Python 3.9 兼容。
 """
 import logging
 from typing import Any, Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from database import get_db
 from agent.schemas import DataEvent, StrategyTriggeredEvent
@@ -233,7 +233,7 @@ async def _build_kol_events() -> List[DataEvent]:
     """从 kol_signals 表构建数据事件"""
     try:
         # 获取最近 24h 的活跃信号
-        since = (datetime.utcnow() - timedelta(hours=24)).isoformat()
+        since = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
 
         result = (
             get_db()

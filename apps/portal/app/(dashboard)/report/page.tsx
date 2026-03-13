@@ -116,16 +116,16 @@ export default function PumpReportPage() {
             </div>
 
             {/* 准确率 + 健康 */}
-            {rj && (
+            {rj && rj.funnel && rj.accuracy && rj.health && rj.quality && rj.scores && (
               <div className="grid grid-cols-2 gap-4">
                 <div className="rounded-xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
                   <div className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>准确率</div>
                   <div className="space-y-2">
-                    <MetricRow label="推中" value={`${rj.funnel.hit_count} 个`} />
-                    <MetricRow label="漏掉" value={`${rj.funnel.miss_count} 个`} />
+                    <MetricRow label="推中" value={`${rj.funnel.hit_count ?? 0} 个`} />
+                    <MetricRow label="漏掉" value={`${rj.funnel.miss_count ?? 0} 个`} />
                     <MetricRow label="命中率" value={fmtPct(rj.accuracy.hit_rate)} highlight="green" />
                     <MetricRow label="漏选率" value={fmtPct(rj.accuracy.miss_rate)} highlight="red" />
-                    <MetricRow label="误报" value={`${rj.accuracy.false_positive_count} 个`} />
+                    <MetricRow label="误报" value={`${rj.accuracy.false_positive_count ?? 0} 个`} />
                   </div>
                 </div>
                 <div className="rounded-xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}>
@@ -133,11 +133,11 @@ export default function PumpReportPage() {
                   <div className="space-y-2">
                     <MetricRow label="覆盖率" value={latest.ws_creates > 0 ? fmtPct(latest.tokens_saved / latest.ws_creates) : '—'} highlight={latest.ws_creates > 0 && (latest.tokens_saved / latest.ws_creates) >= 0.5 ? 'green' : 'red'} />
                     <MetricRow label="池满丢弃" value={`${fmtNum(rj.funnel.ws_dropped || 0)} 个`} highlight={(rj.funnel.ws_dropped || 0) > 0 ? 'red' : 'green'} />
-                    <MetricRow label="REST 成功率" value={fmtPct(rj.health.rest_success_pct)} highlight={rj.health.rest_success_pct >= 0.9 ? 'green' : 'red'} />
-                    <MetricRow label="WS 断连" value={`${rj.health.ws_reconnects} 次`} highlight={rj.health.ws_reconnects <= 2 ? 'green' : 'red'} />
-                    <MetricRow label="快照/分钟" value={`${rj.health.avg_snapshots_per_min}`} />
+                    <MetricRow label="REST 成功率" value={fmtPct(rj.health.rest_success_pct)} highlight={(rj.health.rest_success_pct ?? 0) >= 0.9 ? 'green' : 'red'} />
+                    <MetricRow label="WS 断连" value={`${rj.health.ws_reconnects ?? 0} 次`} highlight={(rj.health.ws_reconnects ?? 0) <= 2 ? 'green' : 'red'} />
+                    <MetricRow label="快照/分钟" value={`${rj.health.avg_snapshots_per_min ?? '—'}`} />
                     <MetricRow label="平均毕业耗时" value={rj.quality.avg_grad_hours != null ? `${rj.quality.avg_grad_hours} 小时` : '—'} />
-                    <MetricRow label="推荐分布" value={`强${rj.scores.strong} / 普通${rj.scores.normal} / 跳过${rj.scores.skip}`} />
+                    <MetricRow label="推荐分布" value={`强${rj.scores.strong ?? 0} / 普通${rj.scores.normal ?? 0} / 跳过${rj.scores.skip ?? 0}`} />
                   </div>
                 </div>
               </div>

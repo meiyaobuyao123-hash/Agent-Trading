@@ -10,7 +10,7 @@ class ShimmerSkeleton extends StatelessWidget {
   Widget build(BuildContext context) {
     return Shimmer.fromColors(
       baseColor: context.colors.cardGlass,
-      highlightColor: context.colors.cardGlass,
+      highlightColor: context.colors.cardGlass.withValues(alpha: 0.4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

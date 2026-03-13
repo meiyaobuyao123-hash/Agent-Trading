@@ -110,7 +110,12 @@ export default function OverviewPage() {
               </div>
             </div>
           </>
-        ) : null}
+        ) : (
+          <div className="rounded-xl p-8 text-center" style={{ background: 'var(--bg-card)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}>
+            <div className="text-sm">暂无统计数据</div>
+            <div className="text-xs mt-1">等待后端 performance_tracker 开始采集</div>
+          </div>
+        )}
       </div>
     </div>
   )

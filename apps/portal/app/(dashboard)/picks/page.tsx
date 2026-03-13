@@ -73,9 +73,9 @@ export default function HotPicksPage() {
 
   useEffect(() => { load() }, [load])
 
-  // 自动刷新（10秒）
+  // 自动刷新（60秒，避免频繁闪烁）
   useEffect(() => {
-    const timer = setInterval(load, 10_000)
+    const timer = setInterval(load, 60_000)
     return () => clearInterval(timer)
   }, [load])
 

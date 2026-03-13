@@ -17,7 +17,7 @@ Python 3.9 兼容。
 import asyncio
 import logging
 from typing import Any, Callable, Coroutine, Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class EventBus:
         event = {
             "type": event_type,
             "data": data,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         try:
             self._queue.put_nowait(event)

@@ -148,10 +148,17 @@ def extract_features(
 
     # ── Dev 行为 ───────────────────────────────
     dev_sells = [t for t in sells if t["trader"] == dev_wallet]
-    dev_initial_tokens = float(token_info.get("initialBuy") or token_info.get("initial_buy_sol", 0))
+    # initialBuy 是 token 数量，initial_buy_sol 是 SOL 数量，需统一单位
+    dev_initial_tokens = float(token_info.get("initialBuy") or 0)
     if dev_sells and dev_initial_tokens > 0:
         f.dev_sold = True
         f.dev_sold_pct = sum(t["token_amount"] for t in dev_sells) / max(1, dev_initial_tokens)
+    elif dev_sells:
+        # fallback: 如果没有 initialBuy (token数量)，用 SOL 单位估算
+        dev_initial_sol = float(token_info.get("initial_buy_sol", 0))
+        if dev_initial_sol > 0:
+            f.dev_sold = True
+            f.dev_sold_pct = sum(t["sol_amount"] for t in dev_sells) / max(0.001, dev_initial_sol)
 
     # ── 聪明钱（分层统计）─────────────────────────
     sm_buyers_by_tier: dict = {"elite": set(), "verified": set(), "watching": set()}

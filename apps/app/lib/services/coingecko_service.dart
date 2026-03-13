@@ -17,6 +17,7 @@ class CoinGeckoService {
         return 'binance-smart-chain';
       case 'base':
         return 'base';
+      case 'eth':
       case 'ethereum':
         return 'ethereum';
       default:

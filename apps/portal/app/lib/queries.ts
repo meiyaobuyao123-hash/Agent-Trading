@@ -275,6 +275,7 @@ export async function fetchSummaryStats(): Promise<SummaryStats> {
     .from('token_performance')
     .select('best_pct')
     .not('best_pct', 'is', null)
+    .limit(10000)
 
   const returns = (all ?? []).map(r => r.best_pct as number)
   const avgBestReturn = returns.length > 0

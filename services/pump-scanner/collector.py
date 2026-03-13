@@ -10,7 +10,7 @@ import asyncio
 import json
 import logging
 from datetime import datetime, timezone
-from typing import Dict, Optional
+from typing import Dict, Optional, Set
 
 import aiohttp
 import websockets
@@ -41,7 +41,7 @@ class PumpScanner:
         # 聪明钱分层字典（从 DB 定期加载）wallet → 'elite'|'verified'|'watching'
         self._smart_wallet_tiers: dict = {}
         # 当前订阅的 mint 集合
-        self._subscribed: set[str] = set()
+        self._subscribed: Set[str] = set()
 
         self._ws_trade: Optional[websockets.WebSocketClientProtocol] = None
 

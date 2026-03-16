@@ -69,6 +69,9 @@ class SmartMoneyTracker:
         # 去重：避免同一笔 tx 被重复处理
         self._seen_txids: Set[str] = set()
         self._running = False
+        # OKX toplist 冷却：每条链最多每10s调一次，防429
+        self._last_okx_toplist: Dict[str, float] = {}
+        self._okx_toplist_cooldown = 10.0
 
     async def init(self):
         self._session = aiohttp.ClientSession()
@@ -428,10 +431,14 @@ class SmartMoneyTracker:
         chain_index = OKX_CHAIN_INDEX.get(chain)
         okx_by_addr: Dict[str, dict] = {}
         if chain_index:
-            try:
-                okx_by_addr = await okx.get_toplist_multi_sort(chain_index, session=self._session)
-            except Exception as e:
-                logger.debug("OKX toplist %s: %s", chain, e)
+            now_ts = time.time()
+            last = self._last_okx_toplist.get(chain, 0)
+            if now_ts - last >= self._okx_toplist_cooldown:
+                self._last_okx_toplist[chain] = now_ts
+                try:
+                    okx_by_addr = await okx.get_toplist_multi_sort(chain_index, session=self._session)
+                except Exception as e:
+                    logger.debug("OKX toplist %s: %s", chain, e)
 
         unfilled: List[Dict[str, Any]] = []
         for sig in signals.values():

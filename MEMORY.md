@@ -26,11 +26,12 @@
 - KOL 舆情采集（212 KOL + twitterapi.io + 情感分析 + 共振信号）
 - Agent 框架（Claude LLM → 策略DSL → 规则引擎 → 事件总线 → 告警 + **风控系统**）
 - **OKX DEX 真实交易**（quote→swap→sign→broadcast→record，SOL+EVM 签名）
-- **钱包管理**（助记词/私钥导入 + 加密存储 + Agent策略钱包选择）
+- **钱包管理**（助记词/私钥导入 + flutter_secure_storage加密 + Agent策略钱包选择）
 - 回测引擎（Monte-Carlo 模拟）
 - Flutter App（行情3-Tab + Agent聊天+策略 + 历史 + 我的 + 详情页K线 + 策略P&L）
 - Next.js Web + Admin 后台
-- Supabase 11个 Migration
+- Supabase 17个 Migration（含 user_api_quota）
+- **合规加固**（全局免责声明Gate + 中国大陆IP屏蔽中间件 + Agent/钱包合规弹窗 + 实时推送限流）
 
 ## 2026-03-11 修复
 - ✅ outcome_labeler 口径修复、daily_highs ISO时间戳、K线折线图模式
@@ -54,6 +55,13 @@
 - **HIGH 修复**：Claude API async化 + mark_alert_read 鉴权 + 多链价格追踪
 - **MEDIUM 修复**：EVM volume USD转换 + Tab KeepAlive + TOCTOU 竞争 + SELECT 字段
 - **验证**：Python 6文件 py_compile 通过、Dart 0 errors、模拟器运行 0 错误
+
+## 2026-03-16 合规加固（commit ba85605）
+- ✅ Flutter DisclaimerPage：首次启动全屏使用须知（双语，滑到底+勾选才能进入）
+- ✅ app.dart `_DisclaimerGate` 门禁层：未接受前阻止进入 MainShell
+- ✅ Backend GeoBlockMiddleware：中国大陆 IP → HTTP 451，ip-api.com + 24h缓存
+- ✅ 合规分析：迁出国内节点 + 免责声明 + IP封锁 = 最佳个人开发者合规状态
+- ⚠️ 待做：迁移服务器到腾讯云香港节点（用户自行操作）
 
 ## 2026-03-14 第二轮 QA 自动审查 + 修复（commit ca6e9ce + 6df6add）
 **Portal（Next.js）自动审查 21 个 bug，修复内容：**

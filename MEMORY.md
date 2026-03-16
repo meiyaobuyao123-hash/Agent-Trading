@@ -13,7 +13,7 @@
 - **pump-scanner**: `/Users/wenruiwei/Desktop/Agent-Trading/services/pump-scanner/`
 - **Flutter App**: `/Users/wenruiwei/Desktop/Agent-Trading/apps/app/`
 
-## API 凭证（已验证可用，密钥见本地 .env）
+## API 凭证（已验证可用）
 - Supabase URL: `https://qmzsruqgwaqusywprxlj.supabase.co`
 - Supabase Service Key: `sb_secret_***`（见 .env）
 - OKX DEX v6 Key / Secret / Pass：见 .env
@@ -87,10 +87,25 @@
 - ✅ 推送通知接入：后端 push_service + routes_device + Flutter FCM 全链路（待用户创建 Firebase 项目）
 - ✅ XGBoost ML 管线：ml_trainer/ml_scorer/ml_config 已就绪，默认关闭，**3/27 定时提醒训练**
 
+## 2026-03-15 实时推送 + 合规 + 限流（commit 1e0eff0）
+
+**后端：**
+- `push_service.py`（新建）：广播推送封装，用户每小时10条/系统每日30条双层限流
+- `collector.py`：事件驱动推送 — 高分新币(≥70)/BC里程碑(30%&60%)/聪明钱入场(≥1 SOL)/毕业，内存 set 防重复
+- `routes_agent.py`：`user_api_quota` 限流，免费用户每月20次，超额返回429
+- `migrations/017_user_api_quota.sql`（新建）：配额表 + RLS，需 Supabase Dashboard 手动执行
+
+**Flutter App：**
+- `wallet_service.dart`：私钥/助记词改用 `flutter_secure_storage`（iOS Keychain / Android EncryptedSharedPreferences）
+- `wallet_import_sheet.dart`：非托管声明弹窗，首次导入显示，5条声明条目
+- `agent_screen.dart`：Agent首次使用合规弹窗 + 策略启用风险二次确认
+
+## 待执行（需手动）
+- [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`
+
 ## 待开发（按优先级）
 - [ ] KOL 准确率评估补全价格查询（_evaluate_accuracy 中 TODO）
 - [ ] Firebase 项目创建 + 配置文件下载（google-services.json / GoogleService-Info.plist）
-- [x] ~~执行 migration 012_device_tokens_v2.sql~~（已完成）
 - [ ] 代码重复：token_detail_page.dart 的 _fmtNum/_fmtWan 保留了中文本地化版本，可选统一
 
 ## Flutter App 架构

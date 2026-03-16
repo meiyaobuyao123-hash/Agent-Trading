@@ -15,8 +15,8 @@
 
 ## API 凭证（已验证可用）
 - Supabase URL: `https://qmzsruqgwaqusywprxlj.supabase.co`
-- Supabase Service Key: `[存于本地 .env，不提交 GitHub]`
-- OKX DEX v6 Key/Secret/Pass: `[存于本地 .env，不提交 GitHub]`
+- Supabase Service Key: `[见本地 .env 文件]`
+- OKX DEX v6 Key: `[见本地 .env 文件]
 
 ## 已完成功能
 - pump.fun 实时采集（WS双通道）+ 70+维度特征工程 + 规则打分
@@ -56,7 +56,7 @@
 - **MEDIUM 修复**：EVM volume USD转换 + Tab KeepAlive + TOCTOU 竞争 + SELECT 字段
 - **验证**：Python 6文件 py_compile 通过、Dart 0 errors、模拟器运行 0 错误
 
-## 2026-03-16 合规加固 + 云端部署
+## 2026-03-16 合规加固 + 云端部署 + 多链钱包优化
 **合规（commit ba85605）：**
 - ✅ Flutter DisclaimerPage：首次启动全屏使用须知（双语，滑到底+勾选才能进入）
 - ✅ app.dart `_DisclaimerGate` 门禁层：未接受前阻止进入 MainShell
@@ -69,6 +69,8 @@
 - ✅ pump-scanner 部署到云端，systemd 托管（开机自启 + 崩溃自动重启）
 - ✅ Nginx 反向代理 80→8000，用户请求直达服务器，本地 Mac 不再参与
 - ✅ App icon SVG 生成：`apps/app/icon.svg` + `apps/app/icon_preview.html`（1024x1024，暗色系电路板A字）
+- ✅ 多链钱包优化（commit 956dd8d）：助记词一键派生 SOL/ETH/BSC/Base 四链，勾选框UI默认全选，显示BIP44路径；私钥模式保持单链选择
+- ✅ 云服务器多项目管理：`/opt/projects/` 目录结构 + 端口注册表 + 命名规范
 
 ## 2026-03-14 第二轮 QA 自动审查 + 修复（commit ca6e9ce + 6df6add）
 **Portal（Next.js）自动审查 21 个 bug，修复内容：**
@@ -117,10 +119,23 @@
 
 ## 服务器信息
 - **IP**: 43.156.207.26（腾讯云轻量，新加坡节点）
-- **OS**: Ubuntu 22.04，用户 ubuntu，密码见本地记录
+- **OS**: Ubuntu 22.04，用户 ubuntu
 - **服务**: pump-scanner → systemd `pump-scanner.service`，端口8000
 - **Nginx**: 80 → 8000 反向代理，已配置
-- **部署路径**: `/home/ubuntu/Agent-Trading/`
+- **部署路径**: `/opt/agent-trading/`（代码）+ `/opt/venv/`（Python venv）
+- **多项目管理**: `/opt/projects/README.md` 端口注册表，新项目用 8001/8002/8003
+
+## 服务器多项目规范
+```
+/opt/projects/
+├── README.md        ← 端口/项目注册表（必须更新）
+├── agent-trading/
+│   ├── repo/ → /opt/agent-trading
+│   └── venv/ → /opt/venv
+└── _shared/
+```
+端口分配：8000=agent-trading，8001/8002/8003预留给新项目
+systemd 命名：`<project>-<service>.service`
 
 ## 待执行（需手动）
 - [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`（如未执行）
@@ -136,7 +151,7 @@
 - **K线**: WebView + klinecharts v9（7指标 + 5时间框架 + 折线/烛线切换）
 - **实时价格**: PriceTickerService（多链支持，DexScreener 数据源）
 - **详情页**: 3-Tab（行情/数据/详情）+ 安全检测(GoPlus) + RPC精确Holder
-- **钱包管理**: SharedPreferences + 助记词/私钥导入 + Agent策略钱包选择
+- **钱包管理**: flutter_secure_storage + 助记词一键派生多链(SOL/ETH/BSC/Base) + 私钥单链导入 + Agent策略钱包选择
 - **聪明钱**: 卡片4行布局 + FlowBar + 买卖详情弹窗（DraggableScrollableSheet）
 - **Agent**: 聊天+策略列表 + 策略详情P&L弹窗 + 交易参数设置
 

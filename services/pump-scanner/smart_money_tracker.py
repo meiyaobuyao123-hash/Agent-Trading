@@ -577,10 +577,16 @@ class SmartMoneyTracker:
         if not txns:
             return
         now = datetime.now(timezone.utc).isoformat()
+        seen_keys: Set[tuple] = set()
         rows = []
         for t in txns:
             if not t.get("tx_time"):
                 continue
+            # 同批次按冲突键去重，避免 PostgreSQL "cannot affect row a second time"
+            dedup_key = (t["chain"], t["token_address"], t["wallet_address"], t["tx_type"], t["tx_time"])
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
             rows.append({
                 "chain": t["chain"],
                 "token_address": t["token_address"],

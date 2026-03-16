@@ -21,7 +21,7 @@ class AppConfig {
   /// 后端 FastAPI 基础地址（不含尾部斜杠）
   static const String backendBaseUrl = String.fromEnvironment(
     'BACKEND_URL',
-    defaultValue: 'http://localhost:8000',
+    defaultValue: 'http://43.156.207.26',
   );
 
   /// Supabase 项目 URL

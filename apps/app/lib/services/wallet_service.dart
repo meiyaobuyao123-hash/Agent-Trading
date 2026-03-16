@@ -125,11 +125,26 @@ class WalletService extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 通过助记词导入钱包
+  /// 通过助记词导入钱包（单链，保留兼容性）
   Future<UserWallet> importFromMnemonic({
     required String mnemonic,
     required String chain,
     required String name,
+  }) async {
+    final results = await importFromMnemonicAllChains(
+      mnemonic: mnemonic,
+      name: name,
+      chains: [chain],
+    );
+    return results.first;
+  }
+
+  /// 通过助记词一次性导入所有链的钱包
+  /// 一个助记词按 BIP44 派生路径同时生成 SOL + ETH + BSC + Base 地址
+  Future<List<UserWallet>> importFromMnemonicAllChains({
+    required String mnemonic,
+    String name = '',
+    List<String> chains = const ['solana', 'eth', 'bsc', 'base'],
   }) async {
     final trimmed = mnemonic.trim().toLowerCase();
     final words = trimmed.split(RegExp(r'\s+'));
@@ -137,34 +152,45 @@ class WalletService extends ChangeNotifier {
       throw ArgumentError('助记词必须是 12 或 24 个单词');
     }
 
-    // 简化地址派生（生产环境应使用真实密码学库）
-    final address = _deriveAddress(trimmed, chain);
+    final created = <UserWallet>[];
+    final skipped = <String>[];
 
-    // 去重检查
-    if (_wallets.any((w) => w.address == address && w.chain == chain)) {
-      throw StateError('该钱包已存在');
+    for (final chain in chains) {
+      final address = _deriveAddress(trimmed, chain);
+
+      // 跳过已存在的
+      if (_wallets.any((w) => w.address == address && w.chain == chain)) {
+        skipped.add(_chainLabel(chain));
+        continue;
+      }
+
+      final wallet = UserWallet(
+        id: _generateId(),
+        name: name.isNotEmpty ? '$name (${_chainLabel(chain)})' : '${_chainLabel(chain)} 钱包',
+        address: address,
+        chain: chain,
+        type: WalletType.mnemonic,
+        createdAt: DateTime.now(),
+        isDefault: _wallets.isEmpty && created.isEmpty,
+      );
+
+      // 每个链的钱包独立存储助记词到系统加密区
+      await _secureStorage.write(
+        key: '$_kSecretPrefix${wallet.id}',
+        value: trimmed,
+      );
+
+      _wallets.add(wallet);
+      created.add(wallet);
     }
 
-    final wallet = UserWallet(
-      id: _generateId(),
-      name: name.isNotEmpty ? name : '${_chainLabel(chain)} 钱包',
-      address: address,
-      chain: chain,
-      type: WalletType.mnemonic,
-      createdAt: DateTime.now(),
-      isDefault: _wallets.isEmpty,
-    );
+    if (created.isEmpty) {
+      throw StateError('所有链的钱包均已存在${skipped.isNotEmpty ? '（${skipped.join("/")}）' : ""}');
+    }
 
-    // 将助记词写入系统加密存储区（不经过 SharedPreferences）
-    await _secureStorage.write(
-      key: '$_kSecretPrefix${wallet.id}',
-      value: trimmed,
-    );
-
-    _wallets.add(wallet);
     await _persist();
     notifyListeners();
-    return wallet;
+    return created;
   }
 
   /// 通过私钥导入钱包

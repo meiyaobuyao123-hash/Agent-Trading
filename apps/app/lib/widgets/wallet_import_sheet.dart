@@ -165,6 +165,14 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
     {'key': 'base', 'label': 'Base'},
   ];
 
+  // 助记词模式：各链是否选中（默认全选）
+  final Map<String, bool> _mnemonicChainSelected = {
+    'solana': true,
+    'eth': true,
+    'bsc': true,
+    'base': true,
+  };
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -199,11 +207,20 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
       UserWallet wallet;
 
       if (_isMnemonic) {
-        wallet = await svc.importFromMnemonic(
+        final selectedChains = _mnemonicChainSelected.entries
+            .where((e) => e.value)
+            .map((e) => e.key)
+            .toList();
+        if (selectedChains.isEmpty) {
+          setState(() { _error = '请至少选择一条链'; _loading = false; });
+          return;
+        }
+        final wallets = await svc.importFromMnemonicAllChains(
           mnemonic: secret,
-          chain: _selectedChain,
           name: _nameCtrl.text.trim(),
+          chains: selectedChains,
         );
+        wallet = wallets.first;
       } else {
         wallet = await svc.importFromPrivateKey(
           privateKey: secret,
@@ -274,18 +291,23 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
             _buildToggle(c),
             const SizedBox(height: 16),
 
-            // ── 链选择 ──
-            Text(
-              '选择链',
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: c.textSecondary,
+            // ── 链选择（助记词模式自动全链，私钥模式才选链）──
+            if (_isMnemonic) ...[
+              _buildMnemonicAllChainsHint(c),
+              const SizedBox(height: 16),
+            ] else ...[
+              Text(
+                '选择链',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: c.textSecondary,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            _buildChainChips(c),
-            const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              _buildChainChips(c),
+              const SizedBox(height: 16),
+            ],
 
             // ── 钱包名称 ──
             _buildTextField(
@@ -471,6 +493,102 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
             color: selected ? colors.textInverse : colors.textSecondary,
           ),
         ),
+      ),
+    );
+  }
+
+  // ── 助记词模式：全链勾选提示 ────────────────────────────────
+
+  Widget _buildMnemonicAllChainsHint(AppColorScheme c) {
+    const chainIcons = {
+      'solana': '◎',
+      'eth': 'Ξ',
+      'bsc': '⬡',
+      'base': '🔵',
+    };
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: c.primaryLight,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: c.primary.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.account_tree_rounded, size: 14, color: c.primary),
+              const SizedBox(width: 6),
+              Text(
+                '一个助记词自动派生多链地址',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: c.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ..._chains.map((chain) {
+            final key = chain['key']!;
+            final label = chain['label']!;
+            final selected = _mnemonicChainSelected[key] ?? true;
+            return InkWell(
+              onTap: () => setState(
+                  () => _mnemonicChainSelected[key] = !selected),
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: Checkbox(
+                        value: selected,
+                        onChanged: (v) => setState(
+                            () => _mnemonicChainSelected[key] = v ?? true),
+                        activeColor: c.primary,
+                        side: BorderSide(color: c.border, width: 1.5),
+                        materialTapTargetSize:
+                            MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      chainIcons[key] ?? '',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: selected
+                            ? c.textPrimary
+                            : c.textTertiary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      key == 'solana'
+                          ? "m/44'/501'/0'/0'"
+                          : "m/44'/60'/0'/0/0",
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: c.textTertiary,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }),
+        ],
       ),
     );
   }

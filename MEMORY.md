@@ -15,8 +15,8 @@
 
 ## API 凭证（已验证可用）
 - Supabase URL: `https://qmzsruqgwaqusywprxlj.supabase.co`
-- Supabase Service Key: `sb_secret_***`（见 .env）
-- OKX DEX v6 Key / Secret / Pass：见 .env
+- Supabase Service Key: `[存于本地 .env，不提交 GitHub]`
+- OKX DEX v6 Key/Secret/Pass: `[存于本地 .env，不提交 GitHub]`
 
 ## 已完成功能
 - pump.fun 实时采集（WS双通道）+ 70+维度特征工程 + 规则打分
@@ -56,12 +56,19 @@
 - **MEDIUM 修复**：EVM volume USD转换 + Tab KeepAlive + TOCTOU 竞争 + SELECT 字段
 - **验证**：Python 6文件 py_compile 通过、Dart 0 errors、模拟器运行 0 错误
 
-## 2026-03-16 合规加固（commit ba85605）
+## 2026-03-16 合规加固 + 云端部署
+**合规（commit ba85605）：**
 - ✅ Flutter DisclaimerPage：首次启动全屏使用须知（双语，滑到底+勾选才能进入）
 - ✅ app.dart `_DisclaimerGate` 门禁层：未接受前阻止进入 MainShell
 - ✅ Backend GeoBlockMiddleware：中国大陆 IP → HTTP 451，ip-api.com + 24h缓存
-- ✅ 合规分析：迁出国内节点 + 免责声明 + IP封锁 = 最佳个人开发者合规状态
-- ⚠️ 待做：迁移服务器到腾讯云香港节点（用户自行操作）
+- ✅ 合规分析：属人/属地管辖不构成刑事风险；非托管+数据工具+非中国大陆上架=合规
+- ✅ App Store 上架策略：全球上架，仅排除中国大陆；美/英/加/澳/日/韩/EU/新/UAE均安全
+
+**云端部署：**
+- ✅ 腾讯云轻量服务器：IP `43.156.207.26`，Ubuntu 2核4GB 60GB，到期2026-05-16
+- ✅ pump-scanner 部署到云端，systemd 托管（开机自启 + 崩溃自动重启）
+- ✅ Nginx 反向代理 80→8000，用户请求直达服务器，本地 Mac 不再参与
+- ✅ App icon SVG 生成：`apps/app/icon.svg` + `apps/app/icon_preview.html`（1024x1024，暗色系电路板A字）
 
 ## 2026-03-14 第二轮 QA 自动审查 + 修复（commit ca6e9ce + 6df6add）
 **Portal（Next.js）自动审查 21 个 bug，修复内容：**
@@ -108,8 +115,15 @@
 - `wallet_import_sheet.dart`：非托管声明弹窗，首次导入显示，5条声明条目
 - `agent_screen.dart`：Agent首次使用合规弹窗 + 策略启用风险二次确认
 
+## 服务器信息
+- **IP**: 43.156.207.26（腾讯云轻量，新加坡节点）
+- **OS**: Ubuntu 22.04，用户 ubuntu，密码见本地记录
+- **服务**: pump-scanner → systemd `pump-scanner.service`，端口8000
+- **Nginx**: 80 → 8000 反向代理，已配置
+- **部署路径**: `/home/ubuntu/Agent-Trading/`
+
 ## 待执行（需手动）
-- [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`
+- [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`（如未执行）
 
 ## 待开发（按优先级）
 - [ ] KOL 准确率评估补全价格查询（_evaluate_accuracy 中 TODO）

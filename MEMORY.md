@@ -1,371 +1,160 @@
-# AiTrading — 项目记忆文件
-> 此文件存于 GitHub 仓库根目录，任何设备、任何会话加载后即可了解项目全貌。
-> 最后更新：2026-03-08
+# Project Memory — Agent-Trading
 
----
+## 项目方向
+**双轨策略：pump.fun 内盘 + 多链外盘代币发现系统**
+- 内盘：pump.fun 早期代币（BC 3-35%），每日推送 ≤10 个
+- 外盘：多链热币榜（SOL/BSC/Base/ETH），每2小时扫描更新
+- 算法：规则打分冷启动 → XGBoost ML（2周后）
+- 信号通过 **Flutter App** 推送给用户
 
-## 项目概述
-AI驱动的加密交易平台，核心能力：实时行情 + AI信号 + 自动化策略 + DEX执行。
+## 开发仓库
+- **GitHub**: https://github.com/meiyaobuyao123-hash/Agent-Trading
+- **本地路径**: /Users/wenruiwei/Desktop/Agent-Trading
+- **pump-scanner**: `/Users/wenruiwei/Desktop/Agent-Trading/services/pump-scanner/`
+- **Flutter App**: `/Users/wenruiwei/Desktop/Agent-Trading/apps/app/`
 
-**GitHub 仓库：** https://github.com/meiyaobuyao123-hash/Agent-Trading
-**本地路径：** /Users/wenruiwei/Desktop/Agent-Trading
-**参考文档（本地）：** /Users/wenruiwei/Desktop/Aitrading100/
-  - `product-prd.html` — 完整产品需求文档
-  - `tech-architecture.html` — 技术架构文档
-  - `binance-vs-okx-report.html` — API实测对比报告
+## API 凭证（已验证可用，密钥见本地 .env）
+- Supabase URL: `https://qmzsruqgwaqusywprxlj.supabase.co`
+- Supabase Service Key: `sb_secret_***`（见 .env）
+- OKX DEX v6 Key / Secret / Pass：见 .env
 
----
+## 已完成功能
+- pump.fun 实时采集（WS双通道）+ 70+维度特征工程 + 规则打分
+- 多链热币扫描（SOL/BSC/Base/ETH）+ M+Q+P 评分
+- **多链聪明钱追踪**（SOL/ETH/BSC/Base，55个种子钱包，15分钟扫描）+ 交易级记录
+- 聪明钱分层（elite/verified/watching + Bot黑名单）+ 买卖详情弹窗
+- KOL 舆情采集（212 KOL + twitterapi.io + 情感分析 + 共振信号）
+- Agent 框架（Claude LLM → 策略DSL → 规则引擎 → 事件总线 → 告警 + **风控系统**）
+- **OKX DEX 真实交易**（quote→swap→sign→broadcast→record，SOL+EVM 签名）
+- **钱包管理**（助记词/私钥导入 + 加密存储 + Agent策略钱包选择）
+- 回测引擎（Monte-Carlo 模拟）
+- Flutter App（行情3-Tab + Agent聊天+策略 + 历史 + 我的 + 详情页K线 + 策略P&L）
+- Next.js Web + Admin 后台
+- Supabase 11个 Migration
 
-## 三端架构
+## 2026-03-11 修复
+- ✅ outcome_labeler 口径修复、daily_highs ISO时间戳、K线折线图模式
+- ✅ 详情页 Holder RPC 优先、initState bug、ETH 链全链路支持
+- ✅ 聪明钱种子库导入、Agent DB Migration 008、Flutter AgentScreen 重写
+- ✅ OKX 数据源集成（okx_market_client + 分层更新策略 + Flutter 全链路）
 
-| 端 | 框架 | 路径 | 端口 | 状态 |
-|----|------|------|------|------|
-| Web用户端 | Next.js 14 | apps/web | 3000 | 🟢 Phase 2 开发中 |
-| Admin后台 | Next.js 14 + Ant Design | apps/admin | 3002 | 🟢 基础功能完成 |
-| App移动端 | **Flutter** | apps/app | - | 🟢 Phase 1 完成 |
+## 2026-03-12 六次会话
+详见 [sessions-2026-03-12.md](./sessions-2026-03-12.md)
+- 性能优化（刷新30s/发现10min/秒级追踪）+ DexScreener fallback
+- 多链聪明钱 + 钱包管理 + 风控系统
+- 策略全链路修复 + OKX DEX 真实交易
+- 聪明钱升级（交易级追踪 + 买卖详情弹窗 + 卡片重设计）
+- 策略交易记录 + P&L 展示
 
----
+## 2026-03-13 全量测试 + 修复
+详见 [testing-2026-03-13.md](./testing-2026-03-13.md)
+- **测试范围**：全部功能模块（主流程 + 边界 + UX），120+ 问题发现
+- **修复数量**：~27 项（CRITICAL 2 + HIGH 3 + MEDIUM 4 + 其余前端/后端）
+- **CRITICAL 修复**：EVM nonce 动态获取 + to_amount 动态精度
+- **HIGH 修复**：Claude API async化 + mark_alert_read 鉴权 + 多链价格追踪
+- **MEDIUM 修复**：EVM volume USD转换 + Tab KeepAlive + TOCTOU 竞争 + SELECT 字段
+- **验证**：Python 6文件 py_compile 通过、Dart 0 errors、模拟器运行 0 错误
 
-## 技术栈
+## 2026-03-14 第二轮 QA 自动审查 + 修复（commit ca6e9ce + 6df6add）
+**Portal（Next.js）自动审查 21 个 bug，修复内容：**
+- CRITICAL: migration 016 添加 `image_url` 列 + RLS 策略（hot_coins/hot_daily_picks/pump_daily_report）
+- HIGH: Portal 刷新间隔 60s（原10s过频）、report_json null guard
+- MEDIUM: ChainBadge CSS 变量拼接 → rgba 显式颜色、fetchSummaryStats 加 limit
+- Portal picks/page: `|| null` → `?? null` 修复 0% 涨跌幅被误为 null
+- Portal queries.ts: 零值市值/成交量 `|| null` → `!= null` 检测
+- Portal utils.ts: `fmtUsd(0)` 返回 `'$0'` 而非 `'-'`，增加 NaN 防护
 
-### 前端
-- Next.js 14 App Router + TypeScript + Tailwind CSS
-- Zustand（状态）+ React Query（服务端状态）
-- Lucide Icons + shadcn/ui（Web）
-- Ant Design 5（Admin）
-- **Flutter**（App，用户指定）
+**Flutter App 自动审查 23 个 bug，修复内容：**
+- CRITICAL: smart_money_detail_sheet context-after-pop 崩溃 → pop 前预构建 detail，用 nav 推送
+- CRITICAL: token_detail_page substring 越界 → length >= 10 才截取
+- HIGH: token_detail_service Future.wait 下标脆弱 → 具名 Future 并行（5个独立 Future）
+- HIGH: helius_service API key 硬编码 → `--dart-define HELIUS_API_KEY` 注入
+- MEDIUM: hot_screen 补全 ETH 链过滤选项（index 4 原先缺失）
+- 已知未修复: 钱包私钥明文存 SharedPreferences（需 flutter_secure_storage）、地址派生非加密
 
-### App 设计规范（重要！）
-- **交互逻辑：微信风格** — 底部最多5 Tab，功能不堆首页，导航清晰
-- **视觉语言：Apple风格** — 大量留白、SF字体风格、卡片圆角、极简图标、科技感
-- **禁止：支付宝风格** — 不堆功能入口、不用彩色图标矩阵、不过度营销化
+## KOL 舆情系统状态
+- 212 KOL（Mega 18 + Large 60 + Medium 72 + Small 62）
+- 全链路：采集(twitterapi.io) → 情感分析 → 共振信号(24h) → K维度评分
+- **待完善**：`_evaluate_accuracy()` 价格查询 TODO
 
-### 后端（待开发）
-- Node.js 20 + TypeScript（主服务）
-- Python FastAPI（回测引擎，独立服务）
-- BullMQ（队列，基于 Upstash Redis）
+## 调研结论（2026-03-11）
+详见 [audit-findings.md](./audit-findings.md)
 
-### 数据库
-- **Supabase 免费版**（PostgreSQL + Auth + Realtime）— 用户指定
-- **Upstash Redis**（缓存 + 队列）
+## 2026-03-13 第二次会话（5项待开发清理）
+- ✅ Supabase RPC `increment_trigger_count` 已创建并执行
+- ✅ 代码去重：提取 5 个公共模块（chain_utils/format_utils/token_avatar/rank_medal/chain_badge），删除 ~435 行重复
+- ✅ API base URL 配置化：`lib/config/app_config.dart` + `--dart-define` 注入，消除 localhost 硬编码
+- ✅ 推送通知接入：后端 push_service + routes_device + Flutter FCM 全链路（待用户创建 Firebase 项目）
+- ✅ XGBoost ML 管线：ml_trainer/ml_scorer/ml_config 已就绪，默认关闭，**3/27 定时提醒训练**
 
----
+## 待开发（按优先级）
+- [ ] KOL 准确率评估补全价格查询（_evaluate_accuracy 中 TODO）
+- [ ] Firebase 项目创建 + 配置文件下载（google-services.json / GoogleService-Info.plist）
+- [x] ~~执行 migration 012_device_tokens_v2.sql~~（已完成）
+- [ ] 代码重复：token_detail_page.dart 的 _fmtNum/_fmtWan 保留了中文本地化版本，可选统一
 
-## 共享 Packages
+## Flutter App 架构
+- **4-Tab**: 行情(MarketScreen) / Agent / 历史 / 我的
+- **行情3-Tab**: 热币 / 聪明钱 / 新币（各带链过滤器）
+- **K线**: WebView + klinecharts v9（7指标 + 5时间框架 + 折线/烛线切换）
+- **实时价格**: PriceTickerService（多链支持，DexScreener 数据源）
+- **详情页**: 3-Tab（行情/数据/详情）+ 安全检测(GoPlus) + RPC精确Holder
+- **钱包管理**: SharedPreferences + 助记词/私钥导入 + Agent策略钱包选择
+- **聪明钱**: 卡片4行布局 + FlowBar + 买卖详情弹窗（DraggableScrollableSheet）
+- **Agent**: 聊天+策略列表 + 策略详情P&L弹窗 + 交易参数设置
 
-| Package | 路径 | 说明 |
-|---------|------|------|
-| @aitrading/types | packages/types | 所有 TS 类型定义（Token/Signal/Strategy/Trade/Position） |
-| @aitrading/db | packages/db | Supabase 客户端封装 |
-| @aitrading/api | packages/api | 通用 apiFetch 工具 |
+## 2026-03-13 OKX 全链路替换 + 多时间帧打分
+- **发现**：GeckoTerminal → **OKX toplist 多时间帧**
+  - 4个时间帧(5m/1h/4h/24h) × 2排序(成交量+涨幅) = 8次/链
+  - 每代币获得完整 volume/change/txsBuy/txsSell 各时间帧数据
+  - 4链候选 ~260个/链，图标100%覆盖
+- **打分v2**：M+Q+P 全50分动量维度激活
+  - M1(价格1h) + M3(成交量加速) + M4(买压比) + M5(动量新鲜度) 全部有数据
+  - **动量新鲜度**：`1h涨速 vs 24h均速`，奖励刚启动的币，惩罚已涨完的
+  - **多时间帧共振**：出现在4个toplist时间帧=强势信号（P3=6分）
+  - 效果：TRUMP 被降权(已涨完)，KMNO 被发现(正在加速)
+- **刷新30s**：DexScreener批量（返回5m/1h/6h/24h完整多时间帧数据）
+- **发现10min**：OKX多时间帧toplist（8次/链，~16s/链）
+- **OKX 429限速**：调用间隔2s避免429
 
----
+## 热币链覆盖
+- 4链：SOL/BSC/Base/ETH
+- 数据源分层：
+  - **发现**: OKX toplist 多时间帧（`get_toplist_multi_timeframe`）
+  - **30s刷新**: DexScreener批量（`_batch_dexscreener_prices`，返回多时间帧/按地址）
+  - **安全**: GoPlus（蜜罐/税率/Top10集中度）
+  - **SOL持仓**: Helius RPC（Top1精确占比）
+  - **社交**: DexScreener（Twitter/Telegram/Website）
+- 调度：增量发现10min + 市场刷新30s + 表现追踪1s协程
+- OKX price-info/basic-info 需白名单（code:-1），toplist/search/candles 可用
 
-## 外部 API 凭证
+## 聪明钱系统
+- 4链追踪：SOL(Helius) + ETH/BSC/Base(Etherscan)
+- 55个种子钱包，`data/smart_wallets_expanded.json`
+- 分层：Elite(≥65%+≥10笔) / Verified(≥50%+≥5笔) / Watching(≥40%+≥3笔)
+- heat_score 加权公式，信号聚合到 `smart_money_signals` 表
+- 交易级记录：`smart_money_txns` 表（7天自动清理）
+- `smart_wallets` 表列名是 `wallet`（非 `address`），无 `chain` 列
 
-### Binance Skills API（无需认证，公开）
-- Base URL: `https://web3.binance.com/bapi/defi/v1/public/`
-- 客户端: `apps/web/lib/binance/client.ts`
-- 实测延迟: avg 1242ms，抖动 466ms
-- 链覆盖: ETH(1) / BSC(56) / SOL(900)
-- ⚠️ 非官方 API，需监控可用性，Redis 降级兜底
+## 踩坑记录
+- **Python 3.9**: 不支持 `X | None`，用 `Optional[X]` / `List[str]`
+- **Flutter withOpacity 弃用**：改 `withValues(alpha: ...)`
+- **Supabase DDL**：只能 Dashboard SQL Editor 手动执行
+- **load_dotenv(override=True)**：防 shell profile 空变量覆盖 .env
+- **OKX Market API 需单独白名单**：Aggregator 可用但 Market 返回 code:-1
+- **DexScreener 限速**：批量30个/批，30s轮询较安全
+- **Agent DEV_USER_ID 必须合法 UUID**：`00000000-0000-0000-0000-000000000001`
+- **PostgREST FK join**：无直接FK需通过中间表嵌套
+- **EVM nonce 必须动态获取**：hardcode 0 只对首笔交易有效
+- **EVM tokentx 返回代币数量非 USD**：需乘以 price_usd 转换
+- **sync API 阻塞 async 循环**：用 `asyncio.to_thread()` 包装同步调用
+- **TabBarView 状态丢失**：需 `AutomaticKeepAliveClientMixin`
+- **Flutter Navigator pop 后 context 失效**：pop 前用 `Navigator.of(context)` 拿 nav，pop 后只能用 nav，不能再传 context
+- **JS `|| null` 误杀零值**：涨跌幅/价格为 0 时被当 falsy，改用 `?? null`
+- **Portal 热币日榜"加载中"**：今天无数据是正常（UTC 02:00 生成），切历史日期验证
 
-### OKX DEX v6 API（需签名，服务端调用）
-- Base URL: `https://www.okx.com/api/v6/dex/aggregator/`
-- API Key: (见 .env)
-- Secret Key: (见 .env)
-- Passphrase: (见 .env)
-- 客户端: `apps/web/lib/okx/client.ts`
-- 实测延迟: avg 1275ms，抖动 153ms（更稳定）
-- 链覆盖: 30条链，参数用 `chainIndex`（非 v5 的 chainId！）
-- ⚠️ v5 已弃用（error 50050），只用 v6
-- ⚠️ 签名顺序: timestamp + method + path + body
-
----
-
-## 环境变量
-模板文件: `.env.example`（根目录）
-各 app 需创建 `.env.local`（不提交 git）
-
-```
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=
-UPSTASH_REDIS_REST_URL=
-UPSTASH_REDIS_REST_TOKEN=
-OKX_API_KEY=
-OKX_SECRET_KEY=
-OKX_PASSPHRASE=
-ANTHROPIC_API_KEY=
-```
-
----
-
-## 开发进度
-
-### ✅ 已完成
-- [x] 产品 PRD 文档（Aitrading100/product-prd.html）
-- [x] 技术架构文档（Aitrading100/tech-architecture.html）
-- [x] API 实测对比报告（Aitrading100/binance-vs-okx-report.html）
-- [x] Monorepo 结构搭建（apps/web + apps/admin + apps/app + packages/）
-- [x] Next.js 14 Web App 初始化（暗色主题 + 路由组 + Sidebar + Topbar）
-- [x] Next.js 14 Admin App 初始化
-- [x] Flutter App 项目初始化（iOS + Android）
-- [x] 共享 packages（types / db / api）
-- [x] Binance API 客户端封装（lib/binance/client.ts）
-- [x] OKX DEX v6 客户端封装（lib/okx/client.ts）
-- [x] 环境变量模板（.env.example）
-- [x] Binance 服务端代理 API Routes（4个：market-rank/signals/meme-rush/token-dynamic）
-- [x] useMarketRank / useMemeRush / useSignals hooks（客户端请求 + 自动刷新）
-- [x] TokenTable 组件（行情列表，带价格/涨跌/成交量/市值/链）
-- [x] SignalCard 组件（信号卡片，带方向/信心分/触发价/标签）
-- [x] 行情中心页面（/market）— 市场排名 + Meme Rush 双 Tab
-- [x] 信号中心页面（/signals）— 全部/做多/做空/观察 过滤
-- [x] Flutter App 完整实现（iOS 编译通过 ✅）
-  - 文件结构: lib/{theme,models,services,screens,widgets}/
-  - AppTheme 暗色主题（Binance 色系 + Apple 风格）
-  - ApiService 调用 Web 端 Next.js 代理（localhost:3000）
-  - TokenRank / SmartMoneySignal 数据模型
-  - 行情页: NestedScrollView + TabBar + 链过滤 + Skeleton
-  - 信号页: 统计筛选条 + 信号卡片（方向/触发价/信心分/标签）
-
-### ✅ Phase 1 MVP 全部完成！
-- [x] API Route 代理层（/api/binance/market-rank, signals, meme-rush, token-dynamic）← 解决403
-- [x] Web 行情中心页面（Token 列表 + 链过滤 + Meme Rush + 自动刷新30s）
-- [x] Web 信号中心页面（信号卡片 + 方向过滤 + 信心分 + 自动刷新20s）
-- [x] Flutter App 完整框架（4 Tab 底部导航 + 暗色主题 + Apple风格）
-- [x] Flutter 行情页（Token 列表 + 链过滤 + 下拉刷新 + Skeleton 加载）
-- [x] Flutter 信号页（SmartMoney 信号卡片 + 方向/链过滤 + 信心分进度条）
-- [x] Flutter 策略页（占位，Phase 2）
-- [x] Flutter 我的页（钱包连接入口 + 设置项）
-- [x] **Web 官方策略组合追踪页面（/portfolio）** ← 新完成
-  - useOfficialPortfolio hook（Supabase + 实时价格富化）
-  - GET /api/portfolio（Supabase 或演示数据回退）
-  - 表格视图：入选价/当前价/P&L/状态/标签
-  - 演示模式 banner（Supabase 未配置时）
-  - 历史退出平均收益展示
-- [x] **Supabase 数据库 migrations** ← 新完成
-  - supabase/migrations/001_init.sql
-  - 4张表：official_portfolio / signals / strategies / trades
-  - RLS 策略 + 索引 + auto-update trigger
-- [x] **Admin 基础页面** ← 新完成
-  - 完整暗色主题 Admin UI（Sidebar + Topbar）
-  - Dashboard：系统健康 + 服务状态 + 环境变量清单
-  - 官方组合管理（/portfolio）：添加/退出/删除 CRUD + Modal
-  - 信号管理（/signals）：Supabase 数据只读查看
-  - API Routes: GET/POST /api/admin/portfolio + PATCH/DELETE /[id]
-  - next.config.ts → next.config.js（同 web app 修复）
-
-### ✅ Phase 2 进行中
-- [x] **Flutter 生产 API URL 配置** ← 新完成
-  - lib/config/app_config.dart（--dart-define=API_BASE_URL=... 注入）
-  - Debug 默认 localhost:3000，Release 必须显式传入
-  - AppConfig.printConfig() 在 main() 打印当前配置
-  - api_service.dart 使用 AppConfig.apiBaseUrl + AppConfig.requestTimeout
-  - 新增 getMemeRush / getOfficialPortfolio 接口
-- [x] **Web 总览页升级**（/）← 新完成
-  - 接入真实 Binance 信号 + 官方组合数据（useSignals + useOfficialPortfolio）
-  - MarketSummaryBar：BSC Top6 实时行情 Ticker
-  - 4 统计卡：活跃信号/做多信号/官方组合/平均P&L（全部接入真实数据）
-  - 最新信号迷你列表（6条，链接到 /signals）
-  - 官方组合迷你列表（6条，P&L，链接到 /portfolio）
-  - 底部状态栏
-- [x] **信号引擎简化版** ← 新完成
-  - GET/POST /api/engine/sync-signals
-  - 拉取 BSC/ETH/SOL 三链信号，按 (address, chain) upsert 到 Supabase
-  - Vercel Cron: */5 * * * *（vercel.json）
-  - CRON_SECRET 环境变量保护防未授权调用
-  - Admin Engine 面板（/engine）：手动触发 + 同步结果展示
-
-- [x] **策略创建 + AI 生成脚本** ← 新完成
-  - GET/POST /api/strategies（列表 + 创建）
-  - PATCH/DELETE /api/strategies/[id]（状态更新/删除）
-  - POST /api/strategies/[id]/generate（Claude AI 生成 TypeScript 脚本）
-  - 策略列表页（/strategy）：卡片展示 + 启用/暂停/删除 + 脚本查看 Modal
-  - 策略创建页（/strategy/create）：条件构建器 + 执行配置 + AI 脚本生成
-  - 支持：信号方向 / 信心分 / 链 / 风险等级 四类触发条件
-  - AND/OR 逻辑 + 止损/止盈/滑点/Gas 执行配置
-  - 无 API Key 时模板回退，有 Key 时调用 claude-haiku-4-5
-  - 安装 @anthropic-ai/sdk
-
-- [x] **OKX DEX 执行引擎** ← 新完成
-  - `apps/web/lib/okx/client.ts` 新增 getSwapData() + STABLECOINS + usdToTokenAmount()
-  - `POST /api/okx/quote` — OKX 报价代理（USDT→目标代币，自动换算精度）
-  - `POST /api/okx/execute` — 执行引擎（干跑/真实双模式）
-    - 干跑：获取 OKX 报价，记录 simulated 状态到 trades 表
-    - 真实：getSwapData() → ethers 签名 → 广播 → 异步等待确认
-    - 支持链：BSC/ETH/Polygon/Arbitrum/Base
-  - `GET /api/trades` — 交易历史（Supabase + 演示回退）
-  - `apps/admin/app/(dashboard)/execute/page.tsx` — DEX 执行测试面板
-    - 链选择 + 代币地址 + 金额 + 获取报价 + 模拟/真实执行切换
-    - 实时交易历史表格（链/代币/金额/获得量/时间/状态）
-  - `.env.example` 新增 SERVER_WALLET_PRIVATE_KEY/ADDRESS + CHAIN_RPC
-  - 依赖：ethers v6 (`npm install ethers`)
-
-- [x] **回测引擎** ← 新完成
-  - `services/backtester/main.py` — Python FastAPI + Monte-Carlo GBM 模拟
-  - `services/backtester/requirements.txt` — fastapi/uvicorn/numpy/pandas
-  - `POST /api/backtest` — 代理（Python优先，TS引擎兜底）
-  - `apps/web/app/(dashboard)/backtest/page.tsx` — 回测UI
-    - 预设快速加载 + 条件展示 + 参数滑块
-    - 胜率/P&L/盈亏比/回撤 指标卡 + SVG资金曲线
-    - 逐笔交易列表（止盈/止损/到期）
-  - Web侧边栏新增「回测」（FlaskConical图标）
-  - 启动: `uvicorn main:app --host 0.0.0.0 --port 8000`
-
-### ✅ Phase 2 全部完成！
-- [x] **App 推送通知** ← 新完成
-  - `flutter_local_notifications: ^18.0.1`（pubspec.yaml）
-  - `lib/models/notification_model.dart` — 通知数据模型（id/title/body/type/payload/isRead）
-  - `lib/services/notification_service.dart` — 通知服务单例
-    - 初始化插件、申请 iOS/Android 权限
-    - 发送信号通知 / 策略执行通知 / 系统公告
-    - 通知历史持久化（SharedPreferences，最多100条）
-    - ValueNotifier<int> unreadCount（驱动 Badge 实时更新）
-  - `lib/screens/notifications/notifications_screen.dart` — 通知中心页面
-    - 全部/信号/策略/系统 四类筛选 Tab
-    - Swipe-to-dismiss 单条删除
-    - 未读红点 + 弹窗确认清空
-  - `lib/app.dart` — 新增「通知」第5个 Tab，Badge 实时显示未读数
-  - `lib/main.dart` — NotificationService.instance.init() 在 main() 中初始化
-  - `lib/screens/profile/profile_screen.dart` — 通知开关真正可用
-    - 开启时申请系统权限
-    - 信号阈值设置（≥ 75 默认）
-    - 发送测试通知按钮
-  - `lib/screens/signals/signals_screen.dart` — 自动检测新高信心分信号
-    - exitRate ≥ 75 的做多信号自动发推送
-    - tokenAddress+chainId 去重，防止重复通知（SharedPreferences 持久化）
-  - `apps/web/app/api/notifications/register/route.ts` — 设备 Token 注册 API
-    - POST: 存储 FCM/APNs token 到 Supabase device_tokens 表
-    - GET: 查询已注册设备数量
-  - `supabase/migrations/002_device_tokens.sql` — device_tokens 表迁移
-  - 验证：flutter analyze → No issues found ✅，tsc --noEmit → 0 errors ✅
-
-## 已完成功能详细清单（Phase 2）
-
-### 策略系统
-- `apps/web/app/api/strategies/route.ts` — GET列表（Supabase/演示回退）+ POST创建
-- `apps/web/app/api/strategies/[id]/route.ts` — PATCH状态 + DELETE
-- `apps/web/app/api/strategies/[id]/generate/route.ts` — Claude AI脚本生成（无Key→模板回退）
-- `apps/web/app/(dashboard)/strategy/page.tsx` — 列表页（卡片/条件预览/启停/脚本Modal）
-- `apps/web/app/(dashboard)/strategy/create/page.tsx` — 创建向导（条件构建器+执行配置+AI生成）
-- 依赖：`@anthropic-ai/sdk`，模型 claude-haiku-4-5
-
----
-
-## 数据库设计（核心表，Supabase）
-
-```sql
--- 官方策略代币组合
-CREATE TABLE official_portfolio (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  token_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL,
-  symbol TEXT NOT NULL,
-  name TEXT,
-  entry_price NUMERIC NOT NULL,
-  current_price NUMERIC,
-  entry_at TIMESTAMPTZ DEFAULT NOW(),
-  reason_tags TEXT[] DEFAULT '{}',
-  risk_level TEXT DEFAULT 'medium',
-  status TEXT DEFAULT 'active',
-  exit_price NUMERIC,
-  exit_at TIMESTAMPTZ
-);
-
--- 信号表
-CREATE TABLE signals (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  token_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL,
-  symbol TEXT,
-  direction TEXT NOT NULL,
-  confidence_score INTEGER DEFAULT 0,
-  trigger_price NUMERIC,
-  raw_data JSONB,
-  status TEXT DEFAULT 'active',
-  risk_level TEXT DEFAULT 'medium',
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  expires_at TIMESTAMPTZ
-);
-
--- 策略表
-CREATE TABLE strategies (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id),
-  name TEXT NOT NULL,
-  condition_tree JSONB NOT NULL,
-  exec_config JSONB NOT NULL,
-  generated_script TEXT,
-  status TEXT DEFAULT 'draft',
-  is_official BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
--- 交易记录
-CREATE TABLE trades (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id),
-  strategy_id UUID REFERENCES strategies(id),
-  token_address TEXT NOT NULL,
-  chain_id INTEGER NOT NULL,
-  tx_hash TEXT,
-  direction TEXT NOT NULL,
-  amount_in NUMERIC,
-  amount_out NUMERIC,
-  exec_price NUMERIC,
-  status TEXT DEFAULT 'pending',
-  created_at TIMESTAMPTZ DEFAULT NOW()
-);
-```
-
----
-
-## 关键设计决策
-
-1. **Binance/OKX 数据不入 PostgreSQL** — 实时数据存 Redis（TTL 60s），历史快照存 TimescaleDB（Phase 2），业务数据才入 PostgreSQL
-2. **Supabase 免费版**够用于 Phase 1（500MB，需每天 ping 防暂停）
-3. **Upstash Redis** 替代自建 Redis（免费 10k req/day，支持 BullMQ）
-4. **OKX API 只能服务端调用**（签名含 Secret，不能暴露给浏览器）
-5. **Binance API 可浏览器直接调用**（公开，无认证）
-6. **策略执行队列串行**（并发数=1，防超额买入）
-7. **App 用 Flutter**（用户指定），非 React Native
-
----
-
-## 启动命令
-
-```bash
-# Web 开发服务
-cd /Users/wenruiwei/Desktop/Agent-Trading/apps/web && npm run dev
-
-# Admin 开发服务
-cd /Users/wenruiwei/Desktop/Agent-Trading/apps/admin && npm run dev -- --port 3002
-
-# Flutter App
-cd /Users/wenruiwei/Desktop/Agent-Trading/apps/app && flutter run
-
-# 安装全部依赖（从根目录）
-npm install
-```
-
----
-
-## 注意事项 / 踩坑记录
-
-- Next.js 16.x 已发布（比 14 新），但 API 兼容
-- Supabase 免费版项目超 1 周不活跃会暂停 → 需设置定时 ping
-- OKX v6 Quote 用 `chainIndex` 参数，v5 用 `chainId`，不要混淆
-- Binance API 偶发 Cloudflare 拦截（curl 可绕过，fetch 有时不行）
-- Admin 部署须独立子域名 + IP 白名单
-- **Binance API 403 根因**：Cloudflare 拦截浏览器直接请求 → Next.js API Route 做服务端代理，加 `Origin: https://web3.binance.com` + `Referer` 头
-- **Binance 正确 API 路径**（实测验证，与旧文档不同）：
-  - 市场排名 GET: `https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/exclusive/rank/list?chainId=56`
-  - Meme Rush POST: `https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/rank/list` + body `{chainId, rankType:30, limit}`
-  - 聪明钱信号 POST: `https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/web/signal/smart-money` + body `{chainId, page, pageSize, smartSignalType:''}`
-  - chainId: `56`=BSC, `1`=ETH, `CT_501`=Solana（Solana 是字符串，不是数字！）
-- **caniuse-lite 版本锁**：根 package.json `overrides: {caniuse-lite: 1.0.30001580}`，不要升级（新版删掉了 agents.js 导致 Next.js 崩溃）
-- **next.config.ts → next.config.js**：TS config 触发 SWC 依赖链崩溃，已改成 JS
-- API Routes `next: { revalidate: N }` 缓存（market-rank 30s, signals 20s）
-- 最后更新：2026-03-08（Phase 2 全部完成 🎉 策略+OKX执行+回测+App推送通知）
+## 用户偏好
+- **始终使用中文输出**
+- 报告要有真实数据，不要粗糙概述
+- 时间估计不要虚长
+- **每完成一个子任务立即更新记忆文件**

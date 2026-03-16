@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_colors.dart';
 import '../services/wallet_service.dart';
 
@@ -7,13 +8,136 @@ import '../services/wallet_service.dart';
 //  钱包导入底部弹窗
 // ══════════════════════════════════════════════════════════════
 
+/// 首次导入时需显示的安全声明 SharedPreferences key
+const _kDisclaimerShown = 'wallet_disclaimer_shown';
+
 /// 打开钱包导入弹窗
-Future<UserWallet?> showWalletImportSheet(BuildContext context) {
+/// 首次调用时先弹出非托管安全声明，用户确认后才进入导入界面
+Future<UserWallet?> showWalletImportSheet(BuildContext context) async {
+  // 检查是否首次导入（仅首次弹出声明）
+  final prefs = await SharedPreferences.getInstance();
+  final alreadyShown = prefs.getBool(_kDisclaimerShown) ?? false;
+
+  if (!alreadyShown && context.mounted) {
+    // 弹出非托管安全声明弹窗
+    final confirmed = await _showDisclaimerDialog(context);
+    if (confirmed != true) return null; // 用户点击"取消"，终止流程
+
+    // 记录已显示，下次不再弹出
+    await prefs.setBool(_kDisclaimerShown, true);
+  }
+
+  if (!context.mounted) return null;
+
   return showModalBottomSheet<UserWallet>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
     builder: (_) => const _WalletImportSheet(),
+  );
+}
+
+/// 非托管安全声明弹窗 — 返回 true 表示用户点击了"我已了解，继续"
+Future<bool?> _showDisclaimerDialog(BuildContext context) {
+  final c = context.colors;
+  return showDialog<bool>(
+    context: context,
+    barrierDismissible: false, // 必须点击按钮才能关闭
+    builder: (ctx) => AlertDialog(
+      backgroundColor: c.bgSecondary,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(
+        children: [
+          Icon(Icons.security_rounded, color: c.primary, size: 22),
+          const SizedBox(width: 8),
+          Text(
+            '安全声明',
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _disclaimerItem(
+            c,
+            '您的助记词/私钥仅存储在本设备系统加密区（iOS Keychain / Android Keystore）',
+          ),
+          _disclaimerItem(
+            c,
+            '我们的服务器从不接收、存储或传输您的私钥',
+          ),
+          _disclaimerItem(
+            c,
+            '所有交易均在设备本地签名后广播',
+          ),
+          _disclaimerItem(
+            c,
+            '本平台为非托管工具，不持有您的资金',
+          ),
+          _disclaimerItem(
+            c,
+            '请务必妥善备份助记词，丢失将无法找回',
+            isWarning: true,
+          ),
+        ],
+      ),
+      actions: [
+        // 取消按钮
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(false),
+          child: Text(
+            '取消',
+            style: TextStyle(color: c.textTertiary),
+          ),
+        ),
+        // 确认按钮
+        FilledButton(
+          onPressed: () => Navigator.of(ctx).pop(true),
+          style: FilledButton.styleFrom(
+            backgroundColor: c.primary,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: const Text('我已了解，继续'),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 声明弹窗中的每一条条目
+Widget _disclaimerItem(AppColorScheme c, String text,
+    {bool isWarning = false}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          isWarning ? Icons.warning_amber_rounded : Icons.check_circle_outline,
+          color: isWarning ? c.warning : c.success,
+          size: 16,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    ),
   );
 }
 

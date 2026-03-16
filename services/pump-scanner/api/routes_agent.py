@@ -14,10 +14,13 @@ Agent API 路由
 
 Python 3.9 兼容。
 """
+import asyncio
 import logging
+from datetime import date
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from api.auth import get_current_user
@@ -73,7 +76,15 @@ async def chat(
 
     用户发送自然语言，Claude 解析为 StrategySpec。
     返回策略规范和 AI 回复，用户确认后调 POST /strategies 创建。
+
+    每次调用前检查用户月度 API 配额（默认 20 次/月）。
     """
+    # ── 用户 API 配额检查 ──────────────────────────────────────────
+    quota_ok, quota_resp = await _check_and_consume_quota(user_id)
+    if not quota_resp is None:
+        return quota_resp  # type: ignore[return-value]
+    # ─────────────────────────────────────────────────────────────
+
     strategy_spec, ai_message = await _llm_parser.parse_strategy(
         req.message, req.context
     )
@@ -83,6 +94,112 @@ async def chat(
         message=ai_message,
         requires_confirmation=strategy_spec is not None,
     )
+
+
+async def _check_and_consume_quota(
+    user_id: str,
+) -> tuple:
+    """
+    检查并消耗用户的月度 API 配额。
+
+    逻辑：
+      1. 查询 user_api_quota 表
+      2. 如果 period_start != 当月1日，重置计数
+      3. 如果 used_count >= quota_limit，返回 429
+      4. 否则 used_count += 1，upsert 更新
+
+    Returns:
+        (True, None)           — 配额充足，可继续处理
+        (False, JSONResponse)  — 配额耗尽，返回 429 响应
+    """
+    from database import get_db
+
+    # 当月第一天（用于判断是否需要重置）
+    today = date.today()
+    period_start_this_month = date(today.year, today.month, 1)
+
+    db = get_db()
+
+    try:
+        # 查询现有配额记录
+        res = await asyncio.to_thread(
+            lambda: db.table("user_api_quota")
+            .select("used_count, quota_limit, period_start")
+            .eq("user_id", user_id)
+            .maybe_single()
+            .execute()
+        )
+        row = res.data if res and res.data else None
+    except Exception as e:
+        log.warning("查询 user_api_quota 失败，放行请求: %s", e)
+        # 查询失败时不阻断用户，宽松处理
+        return (True, None)
+
+    if row is None:
+        # 首次使用：创建初始记录（used_count=1）
+        new_row = {
+            "user_id": user_id,
+            "period_start": period_start_this_month.isoformat(),
+            "used_count": 1,
+            "quota_limit": 20,
+        }
+        try:
+            await asyncio.to_thread(
+                lambda: db.table("user_api_quota").upsert(new_row).execute()
+            )
+        except Exception as e:
+            log.warning("创建 user_api_quota 失败: %s", e)
+        return (True, None)
+
+    # 解析现有记录
+    used_count = int(row.get("used_count", 0))
+    quota_limit = int(row.get("quota_limit", 20))
+    period_start_str = row.get("period_start", "")
+
+    # 判断是否需要重置（新的月份）
+    try:
+        row_period = date.fromisoformat(str(period_start_str))
+    except (ValueError, TypeError):
+        row_period = period_start_this_month
+
+    if row_period != period_start_this_month:
+        # 新月份：重置计数
+        used_count = 0
+        log.info("用户 %s 配额已重置（新月份）", user_id)
+
+    # 检查配额是否耗尽
+    if used_count >= quota_limit:
+        log.info(
+            "用户 %s 月度配额已用完: used=%d limit=%d",
+            user_id, used_count, quota_limit,
+        )
+        return (False, JSONResponse(
+            status_code=429,
+            content={
+                "error": "quota_exceeded",
+                "used": used_count,
+                "limit": quota_limit,
+                "message": "本月免费次数已用完",
+            },
+        ))
+
+    # 消耗一次配额
+    new_used = used_count + 1
+    upsert_data = {
+        "user_id": user_id,
+        "period_start": period_start_this_month.isoformat(),
+        "used_count": new_used,
+        "quota_limit": quota_limit,
+    }
+    try:
+        await asyncio.to_thread(
+            lambda: db.table("user_api_quota").upsert(upsert_data).execute()
+        )
+        log.debug("用户 %s 配额消耗: %d/%d", user_id, new_used, quota_limit)
+    except Exception as e:
+        log.warning("更新 user_api_quota 失败（放行请求）: %s", e)
+
+    return (True, None)
 
 
 # ── 策略 CRUD ─────────────────────────────────────────────────

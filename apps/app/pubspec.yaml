@@ -27,6 +27,9 @@ dependencies:
   # 本地存储
   shared_preferences: ^2.3.5
 
+  # 安全存储（私钥/助记词使用 iOS Keychain / Android Keystore）
+  flutter_secure_storage: ^9.0.0
+
   # HTTP 客户端
   http: ^1.2.0
 

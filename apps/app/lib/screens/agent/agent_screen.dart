@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
@@ -21,6 +22,96 @@ class _AgentScreenState extends State<AgentScreen>
   void initState() {
     super.initState();
     _tab = TabController(length: 3, vsync: this);
+    // 首次进入 Agent 页面时弹出合规声明
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkAgentDisclaimer();
+    });
+  }
+
+  /// 检查是否首次使用 Agent，首次使用弹出合规声明
+  Future<void> _checkAgentDisclaimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final shown = prefs.getBool('agent_disclaimer_shown') ?? false;
+    if (!shown && mounted) {
+      await _showAgentDisclaimerDialog();
+      // 无论用户是否真正阅读，点击后即标记（按钮只有一个，必须点击才能关闭）
+      await prefs.setBool('agent_disclaimer_shown', true);
+    }
+  }
+
+  /// Agent 合规声明弹窗 — 只有一个"我已阅读并同意"按钮，必须点击才能继续
+  Future<void> _showAgentDisclaimerDialog() async {
+    if (!mounted) return;
+    final c = context.colors;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false, // 强制点击按钮，不允许点击外部关闭
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.bgSecondary,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.info_outline_rounded, color: c.primary, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              '使用须知',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 主说明
+            Text(
+              '本工具仅提供数据分析和自动化执行能力，不构成任何投资建议。',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 条目列表
+            _agentDisclaimerItem(c, '所有交易策略由您自行设定，风险自担'),
+            _agentDisclaimerItem(c, '平台不持有任何金融牌照'),
+            _agentDisclaimerItem(
+                c, '自动交易存在亏损风险，请谨慎设置参数',
+                isWarning: true),
+            _agentDisclaimerItem(
+                c, '平台仅负责执行，不对收益或亏损承担责任',
+                isWarning: true),
+          ],
+        ),
+        actions: [
+          // 只有一个按钮，必须点击才能关闭
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: FilledButton.styleFrom(
+              backgroundColor: c.primary,
+              minimumSize: const Size(double.infinity, 44),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text(
+              '我已阅读并同意',
+              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+        actionsAlignment: MainAxisAlignment.center,
+        actionsPadding:
+            const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      ),
+    );
   }
 
   @override
@@ -74,6 +165,37 @@ class _AgentScreenState extends State<AgentScreen>
       ),
     );
   }
+}
+
+// ── Agent 合规声明弹窗辅助函数 ──────────────────────────────
+
+/// Agent 合规声明条目 Widget
+Widget _agentDisclaimerItem(AppColorScheme c, String text,
+    {bool isWarning = false}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          isWarning ? Icons.warning_amber_rounded : Icons.circle,
+          color: isWarning ? c.warning : c.textTertiary,
+          size: isWarning ? 16 : 6,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 13,
+              height: 1.4,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 // ══════════════════════════════════════════════════════
@@ -504,6 +626,10 @@ class _ConfirmCardState extends State<_ConfirmCard> {
   }
 
   Future<void> _handleConfirm() async {
+    // 点击"创建策略"前先弹出风险二次确认弹窗
+    final confirmed = await _showStrategyRiskDialog(context);
+    if (confirmed != true) return; // 用户点击"取消"，不继续
+
     setState(() => _loading = true);
     final params = <String, dynamic>{
       'stop_loss_pct': _stopLoss / 100,
@@ -518,6 +644,127 @@ class _ConfirmCardState extends State<_ConfirmCard> {
     if (mounted && !success) {
       setState(() => _loading = false);
     }
+  }
+
+  /// 启用策略前的风险二次确认弹窗 — 返回 true 表示用户点击"确认启用"
+  Future<bool?> _showStrategyRiskDialog(BuildContext context) {
+    final c = context.colors;
+    final name = widget.strategy['name'] as String? ?? '未命名策略';
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.bgSecondary,
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.play_circle_outline_rounded,
+                color: c.primary, size: 22),
+            const SizedBox(width: 8),
+            Text(
+              '确认启用策略',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // 策略名称提示
+            Container(
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: c.primaryLight,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                '「$name」',
+                style: TextStyle(
+                  color: c.primary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // 说明文字
+            Text(
+              '您即将启用自动化交易策略，请确认：',
+              style: TextStyle(
+                color: c.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 10),
+            // 风险条目
+            _riskItem(c, '策略参数由您本人设定'),
+            _riskItem(c, '您了解自动交易的相关风险', isWarning: true),
+            _riskItem(c, '平台仅负责执行，不提供投资建议',
+                isWarning: true),
+          ],
+        ),
+        actions: [
+          // 取消
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text(
+              '取消',
+              style: TextStyle(color: c.textTertiary),
+            ),
+          ),
+          // 确认启用
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: c.primary,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            child: const Text('确认启用'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 风险确认弹窗条目 Widget
+  Widget _riskItem(AppColorScheme c, String text,
+      {bool isWarning = false}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isWarning
+                ? Icons.warning_amber_rounded
+                : Icons.check_circle_outline,
+            color: isWarning ? c.warning : c.success,
+            size: 16,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(
+                color: c.textSecondary,
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -976,6 +1223,95 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
             onTap: () => showStrategyDetailSheet(ctx, s),
             onToggle: () async {
               final newStatus = s.isActive ? 'paused' : 'active';
+
+              // 暂停 → 激活时弹出风险确认弹窗
+              if (newStatus == 'active') {
+                final c = ctx.colors;
+                final confirmed = await showDialog<bool>(
+                  context: ctx,
+                  builder: (dialogCtx) => AlertDialog(
+                    backgroundColor: c.bgSecondary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
+                    title: Row(
+                      children: [
+                        Icon(Icons.play_circle_outline_rounded,
+                            color: c.primary, size: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          '确认启用策略',
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                    content: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 策略名称提示
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: c.primaryLight,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            '「${s.name}」',
+                            style: TextStyle(
+                              color: c.primary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          '您即将启用自动化交易策略，请确认：',
+                          style: TextStyle(
+                            color: c.textPrimary,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        // 风险条目
+                        _agentDisclaimerItem(c, '策略参数由您本人设定'),
+                        _agentDisclaimerItem(c, '您了解自动交易的相关风险',
+                            isWarning: true),
+                        _agentDisclaimerItem(
+                            c, '平台仅负责执行，不提供投资建议',
+                            isWarning: true),
+                      ],
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () =>
+                            Navigator.pop(dialogCtx, false),
+                        child: Text('取消',
+                            style: TextStyle(color: c.textTertiary)),
+                      ),
+                      FilledButton(
+                        onPressed: () =>
+                            Navigator.pop(dialogCtx, true),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: c.primary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('确认启用'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirmed != true) return; // 用户取消，不执行
+              }
+
               final ok = await AgentService.instance
                   .updateStrategyStatus(s.id, newStatus);
               if (!mounted) return;

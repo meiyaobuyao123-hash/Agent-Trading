@@ -1,9 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// 使用系统级加密存储保管私钥/助记词（iOS Keychain / Android Keystore）
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  钱包管理服务 — 本地存储 + 多链支持
+//  敏感数据（私钥/助记词）存储于系统加密区，非敏感数据用 SharedPreferences
 // ══════════════════════════════════════════════════════════════
 
 /// 钱包类型
@@ -70,9 +73,15 @@ class WalletService extends ChangeNotifier {
   static final WalletService _instance = WalletService._();
   static WalletService get instance => _instance;
 
-  // 存储 key
+  // SharedPreferences 存储 key（非敏感数据：钱包列表元信息）
   static const _kWalletList = 'wallet_list_v1';
+  // 敏感数据 key 前缀（存储在 FlutterSecureStorage）
   static const _kSecretPrefix = 'wallet_secret_';
+
+  // FlutterSecureStorage 实例 — 底层使用 iOS Keychain / Android Keystore
+  static const _secureStorage = FlutterSecureStorage(
+    aOptions: AndroidOptions(encryptedSharedPreferences: true),
+  );
 
   List<UserWallet> _wallets = [];
   SharedPreferences? _prefs;
@@ -146,8 +155,11 @@ class WalletService extends ChangeNotifier {
       isDefault: _wallets.isEmpty,
     );
 
-    // 存储密钥
-    await _prefs?.setString('$_kSecretPrefix${wallet.id}', trimmed);
+    // 将助记词写入系统加密存储区（不经过 SharedPreferences）
+    await _secureStorage.write(
+      key: '$_kSecretPrefix${wallet.id}',
+      value: trimmed,
+    );
 
     _wallets.add(wallet);
     await _persist();
@@ -184,8 +196,11 @@ class WalletService extends ChangeNotifier {
       isDefault: _wallets.isEmpty,
     );
 
-    // 存储密钥
-    await _prefs?.setString('$_kSecretPrefix${wallet.id}', trimmed);
+    // 将私钥写入系统加密存储区（不经过 SharedPreferences）
+    await _secureStorage.write(
+      key: '$_kSecretPrefix${wallet.id}',
+      value: trimmed,
+    );
 
     _wallets.add(wallet);
     await _persist();
@@ -193,9 +208,9 @@ class WalletService extends ChangeNotifier {
     return wallet;
   }
 
-  /// 获取钱包私密信息（助记词/私钥）
+  /// 获取钱包私密信息（助记词/私钥）— 从系统加密存储区读取
   Future<String?> getSecret(String walletId) async {
-    return _prefs?.getString('$_kSecretPrefix$walletId');
+    return _secureStorage.read(key: '$_kSecretPrefix$walletId');
   }
 
   /// 设置默认钱包
@@ -210,7 +225,8 @@ class WalletService extends ChangeNotifier {
   /// 删除钱包
   Future<void> deleteWallet(String walletId) async {
     _wallets.removeWhere((w) => w.id == walletId);
-    await _prefs?.remove('$_kSecretPrefix$walletId');
+    // 从系统加密存储区删除私钥/助记词
+    await _secureStorage.delete(key: '$_kSecretPrefix$walletId');
 
     // 如果删除了默认钱包，自动将第一个设为默认
     if (_wallets.isNotEmpty && !_wallets.any((w) => w.isDefault)) {

@@ -26,6 +26,7 @@ from database import (
     get_active_tokens, mark_graduated, get_smart_wallet_tiers,
 )
 import pump_stats
+import push_service
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +45,11 @@ class PumpScanner:
         self._subscribed: Set[str] = set()
 
         self._ws_trade: Optional[websockets.WebSocketClientProtocol] = None
+
+        # ── 实时推送去重集合（防止同一代币同一事件类型重复推送）──
+        # 元素格式：(mint, trigger_type)
+        # trigger_type ∈ {"high_score", "bc_30", "bc_60", "smart_money", "graduated"}
+        self._pushed: Set[tuple] = set()
 
     # ──────────────────────────────────────────────────
     # 主入口
@@ -261,6 +267,31 @@ class PumpScanner:
         self._trades[mint].append(trade)
         insert_trade({**trade, "traded_at": now.isoformat()})
 
+        # ── 聪明钱入场检测：买入 + 聪明钱地址 + net_sol >= 1.0 ──
+        if tx_type == "buy":
+            trader = evt.get("traderPublicKey", "")
+            wallet_tier = self._smart_wallet_tiers.get(trader)
+            if wallet_tier and (mint, "smart_money") not in self._pushed:
+                sol_amount = float(evt.get("solAmount", 0))
+                if sol_amount >= 1.0:
+                    symbol = self._tokens[mint].get("symbol", mint[:8])
+                    bc_now = bc_at_buy or 0.0
+                    # 异步推送，不阻塞交易处理主流
+                    asyncio.ensure_future(
+                        push_service.push_smart_money(
+                            mint=mint,
+                            symbol=symbol,
+                            wallet_tier=wallet_tier,
+                            net_sol=sol_amount,
+                            bc_progress=bc_now,
+                        )
+                    )
+                    self._pushed.add((mint, "smart_money"))
+                    log.info(
+                        f"[推送] 聪明钱入场: {symbol} tier={wallet_tier} "
+                        f"sol={sol_amount:.2f}"
+                    )
+
         # 更新 vSol（用于进度计算）
         v_sol = evt.get("vSolInBondingCurve")
         if v_sol is not None:
@@ -271,7 +302,16 @@ class PumpScanner:
             progress = calc_bc_progress(float(v_sol))
             if progress >= 100:
                 mark_graduated(mint, now.isoformat())
-                log.info(f"🎓 毕业: {self._tokens[mint].get('symbol')} ({mint[:8]}…)")
+                symbol = self._tokens[mint].get("symbol", mint[:8])
+                log.info(f"🎓 毕业: {symbol} ({mint[:8]}…)")
+
+                # ── 毕业推送（每个 mint 只推一次）──
+                if (mint, "graduated") not in self._pushed:
+                    asyncio.ensure_future(
+                        push_service.push_graduated(mint=mint, symbol=symbol)
+                    )
+                    self._pushed.add((mint, "graduated"))
+
                 # 从追踪池移除
                 self._tokens.pop(mint, None)
                 self._trades.pop(mint, None)
@@ -343,6 +383,42 @@ class PumpScanner:
                 f"{f.symbol}({mint[:6]}…) BC={f.bc_progress:.1f}% "
                 f"分={result.total} [{result.recommendation}]"
             )
+
+            # ── 实时推送检测 ──────────────────────────────────────────
+
+            # 1. 高分新币推送：首次打分 >= 70 → 立即推送
+            if result.total >= 70 and (mint, "high_score") not in self._pushed:
+                asyncio.ensure_future(
+                    push_service.push_high_score(
+                        mint=mint,
+                        symbol=f.symbol,
+                        score=result.total,
+                        bc_progress=f.bc_progress,
+                    )
+                )
+                self._pushed.add((mint, "high_score"))
+                log.info(
+                    f"[推送] 高分新币: {f.symbol} score={result.total:.0f} "
+                    f"bc={f.bc_progress:.0f}%"
+                )
+
+            # 2. BC 里程碑推送：首次跨过 30% / 60%
+            for milestone in (30, 60):
+                key = (mint, f"bc_{milestone}")
+                if f.bc_progress >= milestone and key not in self._pushed:
+                    asyncio.ensure_future(
+                        push_service.push_bc_milestone(
+                            mint=mint,
+                            symbol=f.symbol,
+                            milestone=milestone,
+                            bc_progress=f.bc_progress,
+                        )
+                    )
+                    self._pushed.add(key)
+                    log.info(
+                        f"[推送] BC 里程碑: {f.symbol} milestone={milestone}% "
+                        f"bc={f.bc_progress:.0f}%"
+                    )
 
         if evicted > 0:
             log.info(f"淘汰 {evicted} 个过期代币，当前追踪 {len(self._tokens)} 个")

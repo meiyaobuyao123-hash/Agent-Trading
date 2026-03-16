@@ -25,6 +25,12 @@ log = logging.getLogger(__name__)
 _ip_cache: dict = {}
 _CACHE_TTL = 86400  # 24 小时
 
+# ── ip-api.com 限速保护（免费版 45次/分钟）──────────────────
+_rate_window_start: float = 0.0
+_rate_window_count: int = 0
+_RATE_LIMIT = 40          # 保守设为 40（留 5 的余量）
+_RATE_WINDOW = 60.0       # 60 秒窗口
+
 # ── 豁免路径（不做地理检查）───────────────────────────────
 _EXEMPT_PATHS = {"/health", "/", "/docs", "/redoc", "/openapi.json"}
 
@@ -58,8 +64,26 @@ def _get_client_ip(request: Request) -> str:
     return "0.0.0.0"
 
 
+def _rate_limit_ok() -> bool:
+    """限速检查：每60秒最多发出 40 次 ip-api.com 请求"""
+    global _rate_window_start, _rate_window_count
+    now = time.time()
+    if now - _rate_window_start >= _RATE_WINDOW:
+        _rate_window_start = now
+        _rate_window_count = 0
+    if _rate_window_count >= _RATE_LIMIT:
+        return False
+    _rate_window_count += 1
+    return True
+
+
 async def _lookup_country(ip: str) -> Optional[str]:
-    """查询 IP 所在国家，带本地缓存"""
+    """查询 IP 所在国家，带本地缓存 + 限速保护
+
+    缓存命中：直接返回，不消耗配额。
+    缓存未命中 + 超限速：返回 None（放行，宁可漏放也不误杀）。
+    查询失败/超时：返回 None（fail open，不影响正常用户）。
+    """
     now = time.time()
 
     # 命中缓存
@@ -68,7 +92,12 @@ async def _lookup_country(ip: str) -> Optional[str]:
         if now - ts < _CACHE_TTL:
             return code
 
-    # 调用 ip-api.com
+    # 限速检查
+    if not _rate_limit_ok():
+        log.warning("GeoBlock: ip-api.com rate limit reached, skipping lookup for %s", ip)
+        return None
+
+    # 调用 ip-api.com（免费版仅支持 HTTP）
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(
@@ -81,7 +110,7 @@ async def _lookup_country(ip: str) -> Optional[str]:
                 _ip_cache[ip] = (code, now)
                 return code
     except Exception as e:
-        log.debug(f"IP lookup failed for {ip}: {e}")
+        log.debug("GeoBlock: IP lookup failed for %s: %s", ip, e)
 
     return None
 

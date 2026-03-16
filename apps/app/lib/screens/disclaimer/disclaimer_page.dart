@@ -20,6 +20,15 @@ class _DisclaimerPageState extends State<DisclaimerPage> {
   void initState() {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
+    // 首帧渲染后检查：若内容不需要滚动（大屏幕/内容较短），直接标记已到底
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollCtrl.hasClients) {
+        final maxScroll = _scrollCtrl.position.maxScrollExtent;
+        if (maxScroll <= 0) {
+          setState(() => _scrolledToBottom = true);
+        }
+      }
+    });
   }
 
   void _onScroll() {

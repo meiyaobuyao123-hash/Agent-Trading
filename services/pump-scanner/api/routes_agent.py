@@ -81,7 +81,7 @@ async def chat(
     """
     # ── 用户 API 配额检查 ──────────────────────────────────────────
     quota_ok, quota_resp = await _check_and_consume_quota(user_id)
-    if not quota_resp is None:
+    if quota_resp is not None:
         return quota_resp  # type: ignore[return-value]
     # ─────────────────────────────────────────────────────────────
 

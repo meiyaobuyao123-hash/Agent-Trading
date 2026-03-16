@@ -56,8 +56,8 @@ from kol_job import (
 from agent.monitor_job import run_agent_monitor
 from agent.event_bus import get_event_bus
 
-# 聪明钱多链追踪
-from smart_money_tracker import run_smart_money_scan
+# 聪明钱多链追踪（实时：SOL WS ~400ms + EVM OKX 5s）
+from smart_money_tracker import get_tracker
 
 # ML 自动重训
 from ml_trainer import auto_retrain_if_needed
@@ -224,16 +224,6 @@ async def main():
         misfire_grace_time=10,
     )
 
-    # ── 聪明钱多链扫描（每15分钟）────────────────────────────
-    scheduler.add_job(
-        run_smart_money_scan,
-        trigger="interval",
-        minutes=15,
-        id="smart_money_scan",
-        name="聪明钱多链扫描",
-        misfire_grace_time=120,
-        max_instances=1,
-    )
 
     # ══════════════════════════════════════════════════════════
     # 内盘数据报表
@@ -283,7 +273,7 @@ async def main():
         "  每日 UTC 03:00 → kol_accuracy_eval\n"
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
-        "  每15分钟       → smart_money_scan (多链聪明钱)\n"
+        "  常驻 WS        → smart_money_tracker (SOL ~400ms / EVM OKX 5s)\n"
         "  ── 数据报表 ──\n"
         "  每日 UTC 00:30 → pump_report (内盘漏斗报表)\n"
         "  ── ML 系统 ──\n"
@@ -305,6 +295,11 @@ async def main():
     # 启动实时价格订阅（Binance WS: SOL/ETH/BNB/BTC + DexScreener WS: 热币 pair）
     asyncio.create_task(price_feed.start())
     log.info("price_feed 已启动 (Binance WS + DexScreener WS)")
+
+    # 启动聪明钱实时追踪（SOL Helius WS ~400ms + EVM OKX API 5s轮询）
+    _sm_tracker = await get_tracker()
+    asyncio.create_task(_sm_tracker.start())
+    log.info("smart_money_tracker 已启动 (SOL WS ~400ms / EVM OKX 5s)")
 
     # 启动事件总线
     event_bus = get_event_bus()

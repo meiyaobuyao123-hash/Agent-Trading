@@ -54,10 +54,22 @@ _BINANCE_SYMBOL_MAP = {
 # Helius WebSocket 端点
 _HELIUS_WS = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
-# DexScreener 批量查询（EVM 5s 轮询）
+# DexScreener 批量查询（EVM REST fallback）
 _DEX_TOKENS_API = "https://api.dexscreener.com/tokens/v1/{addresses}"
-_EVM_POLL_INTERVAL = 5     # EVM 代币轮询间隔（秒）
+_EVM_POLL_INTERVAL = 2     # EVM 代币轮询间隔（秒，WS 失联时 fallback）
 _EVM_BATCH_SIZE = 30       # DexScreener 单批最多 30 个地址
+
+# EVM Swap 事件 topic（Uniswap V2/V3 + PancakeSwap）
+_SWAP_V2_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"
+_SWAP_V3_TOPIC = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
+
+# 免费公共 WebSocket RPC — Swap 事件触发即时刷价
+# 物理天花板：BSC=3s / Base=2s / ETH=12s（出块时间）
+_EVM_WS_RPC: Dict[str, str] = {
+    "bsc":  "wss://bsc-ws-node.nariox.org:443",
+    "base": "wss://base.publicnode.com",
+    "eth":  "wss://ethereum.publicnode.com",
+}
 
 _HTTP_TIMEOUT = aiohttp.ClientTimeout(total=6)
 

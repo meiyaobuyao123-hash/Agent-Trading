@@ -29,6 +29,8 @@ from config import (
     HOT_MAX_TAX, HOT_MAX_TOP10_PCT,
 )
 import okx_market_client as okx
+import bitget_market_client as bitget
+from price_feed import price_feed
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +59,17 @@ async def _fetch_okx_candidates(
         return []
 
     merged = await okx.get_toplist_multi_timeframe(chain_index, session=session)
+
+    # ── OKX 失败时立即切换 Bitget Wallet fallback ────────────
+    if not merged:
+        log.warning(f"  {chain}: OKX toplist 无数据，切换 Bitget Wallet fallback")
+        merged = await bitget.get_toplist_multi_timeframe(chain_index, session=session)
+        if merged:
+            log.info(f"  {chain}: Bitget fallback 发现 {len(merged)} 个候选")
+        else:
+            log.warning(f"  {chain}: Bitget fallback 也无数据，跳过本链")
+            return []
+
     log.info(f"  {chain}: OKX 多时间帧发现 {len(merged)} 个候选")
 
     results = []  # type: List[dict]

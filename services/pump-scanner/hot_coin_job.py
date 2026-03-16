@@ -30,6 +30,7 @@ from typing import Dict, List
 from hot_coin_fetcher import fetch_hot_coin_candidates, refresh_okx_prices
 from hot_scorer import score_hot_coin
 from database import upsert_hot_coins, save_hot_daily_picks, get_db
+from price_feed import price_feed
 
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,14 @@ async def run_hot_coin_scan():
         rows = _score_and_format(candidates)
         upsert_hot_coins(rows)
         _log_summary("热币榜更新完成", rows)
+
+        # 将新发现的代币注册到实时价格订阅
+        for c in candidates:
+            price_feed.register_token(
+                address=c["address"],
+                chain=c.get("chain", ""),
+                pair_address=c.get("pair_address") or "",
+            )
 
     except Exception as e:
         log.error(f"热币榜扫描失败: {e}", exc_info=True)

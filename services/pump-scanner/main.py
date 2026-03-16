@@ -66,6 +66,9 @@ from ml_config import ML_RETRAIN_INTERVAL_HOURS, USE_ML_SCORING
 # 内盘数据报表
 from pump_report_job import run_pump_report
 
+# 实时价格订阅（Binance WS + DexScreener WS）
+from price_feed import price_feed
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -287,7 +290,8 @@ async def main():
         f"  每{ML_RETRAIN_INTERVAL_HOURS}小时      → ml_retrain (XGBoost 自动重训)"
         f" {'[已启用]' if USE_ML_SCORING else '[未启用，USE_ML_SCORING=0]'}\n"
         "  ── 常驻协程 ──\n"
-        "  1秒循环        → performance_loop (OKX+pump.fun 秒级追踪)"
+        "  1秒循环        → performance_loop (OKX+pump.fun 秒级追踪)\n"
+        "  常驻           → price_feed (Binance WS SOL/ETH/BNB/BTC + DexScreener WS 热币pair)"
     )
 
     # 初始化种子数据
@@ -296,7 +300,11 @@ async def main():
 
     # 启动表现追踪常驻协程（1秒循环）
     asyncio.create_task(run_performance_loop())
-    log.info("📊 表现追踪协程已启动 (1s loop)")
+    log.info("表现追踪协程已启动 (1s loop)")
+
+    # 启动实时价格订阅（Binance WS: SOL/ETH/BNB/BTC + DexScreener WS: 热币 pair）
+    asyncio.create_task(price_feed.start())
+    log.info("price_feed 已启动 (Binance WS + DexScreener WS)")
 
     # 启动事件总线
     event_bus = get_event_bus()

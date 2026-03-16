@@ -183,11 +183,17 @@ class _DisclaimerPageState extends State<DisclaimerPage> {
       children: [
         _section(c, '⚠️ 服务地区限制 · Geographic Restriction',
             '本应用及其后端服务不向以下地区的用户提供任何服务：\n'
-            '• 中华人民共和国大陆地区（不含香港、澳门、台湾）\n\n'
+            '• 中华人民共和国大陆地区（中国大陆 IP 将被自动封禁）\n'
+            '• 中国香港特别行政区\n'
+            '• 中国澳门特别行政区\n'
+            '• 中国台湾地区\n\n'
             'This service is NOT available to users in:\n'
-            '• Mainland China (PRC), excluding HK, Macau, and Taiwan\n\n'
-            '如您位于上述地区，请立即停止使用并卸载本应用。\n'
-            'If you are located in the above regions, please stop using and uninstall this app immediately.'),
+            '• Mainland China (PRC) — mainland CN IPs are automatically blocked\n'
+            '• Hong Kong SAR\n'
+            '• Macau SAR\n'
+            '• Taiwan\n\n'
+            '如您位于上述任一地区，请立即停止使用并卸载本应用。\n'
+            'If you are located in any of the above regions, please stop using and uninstall this app immediately.'),
         _divider(c),
         _section(c, '📊 非投资建议 · Not Investment Advice',
             '本应用提供的所有内容，包括但不限于：代币评分、信号推送、聪明钱追踪、Agent策略，'

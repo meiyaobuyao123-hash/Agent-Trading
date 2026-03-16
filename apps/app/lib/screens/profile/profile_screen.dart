@@ -48,36 +48,6 @@ class ProfileScreen extends StatelessWidget {
                   const _WalletCard(),
                   const SizedBox(height: 16),
 
-                  // ── 交易设置 ───────────────────
-                  _SectionLabel(label: '交易设置'),
-                  const SizedBox(height: 8),
-                  _SettingItem(
-                    icon: Icons.speed_rounded,
-                    title: '默认滑点',
-                    value: '1.0%',
-                    onTap: () => _showComingSoon(context),
-                  ),
-                  _SettingItem(
-                    icon: Icons.toll_rounded,
-                    title: '优先费用',
-                    value: '自动',
-                    onTap: () => _showComingSoon(context),
-                  ),
-                  _SettingItem(
-                    icon: Icons.account_balance_wallet_outlined,
-                    title: '单次最大买入',
-                    value: '0.5 SOL',
-                    onTap: () => _showComingSoon(context),
-                  ),
-                  _SettingItem(
-                    icon: Icons.shield_outlined,
-                    title: '止损设置',
-                    value: '-50%',
-                    onTap: () => _showComingSoon(context),
-                  ),
-
-                  const SizedBox(height: 16),
-
                   // ── 通知设置 ───────────────────
                   _SectionLabel(label: '通知设置'),
                   const SizedBox(height: 8),

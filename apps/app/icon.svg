@@ -1,0 +1,303 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#080E1C;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#04080F;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Brain gradient — deep blue center → purple edges -->
+    <radialGradient id="brainFill" cx="50%" cy="38%" r="58%">
+      <stop offset="0%"   style="stop-color:#1A4FC8;stop-opacity:1" />
+      <stop offset="55%"  style="stop-color:#4A1FA0;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#07101F;stop-opacity:1" />
+    </radialGradient>
+
+    <!-- "AI" text gradient cyan → blue → purple -->
+    <linearGradient id="aiGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   style="stop-color:#00F0FF;stop-opacity:1" />
+      <stop offset="45%"  style="stop-color:#3D8EFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#9B5CF6;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Candlestick bar gradient (green) -->
+    <linearGradient id="barGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%"   style="stop-color:#00B890;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00EDB8;stop-opacity:1" />
+    </linearGradient>
+
+    <!-- Node blue -->
+    <radialGradient id="nodeBlue" cx="35%" cy="30%" r="65%">
+      <stop offset="0%"   style="stop-color:#AADDFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1B6FF8;stop-opacity:1" />
+    </radialGradient>
+    <!-- Node purple -->
+    <radialGradient id="nodePurple" cx="35%" cy="30%" r="65%">
+      <stop offset="0%"   style="stop-color:#D4B5FD;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#7C3AED;stop-opacity:1" />
+    </radialGradient>
+    <!-- Node cyan -->
+    <radialGradient id="nodeCyan" cx="35%" cy="30%" r="65%">
+      <stop offset="0%"   style="stop-color:#AAEEFF;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#06B6D4;stop-opacity:1" />
+    </radialGradient>
+
+    <!-- Vignette -->
+    <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+      <stop offset="55%"  style="stop-color:#000000;stop-opacity:0"/>
+      <stop offset="100%" style="stop-color:#000000;stop-opacity:0.65"/>
+    </radialGradient>
+
+    <!-- Subtle circuit-dot grid -->
+    <pattern id="circuitGrid" x="0" y="0" width="56" height="56" patternUnits="userSpaceOnUse">
+      <circle cx="28" cy="28" r="1.5" fill="#4F9EFF" opacity="0.14"/>
+      <path d="M 28 0 L 28 14 M 28 42 L 28 56 M 0 28 L 14 28 M 42 28 L 56 28"
+            stroke="#4F9EFF" stroke-width="0.5" opacity="0.10"/>
+    </pattern>
+
+    <!-- Clip to rounded square (iOS-style) -->
+    <clipPath id="roundedSquare">
+      <rect x="0" y="0" width="1024" height="1024" rx="230" ry="230"/>
+    </clipPath>
+
+    <!-- FILTERS -->
+    <!-- Brain glow -->
+    <filter id="glowBrain" x="-15%" y="-15%" width="130%" height="130%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="35" result="b2"/>
+      <feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Bright "AI" text glow -->
+    <filter id="glowAI" x="-25%" y="-25%" width="150%" height="150%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="28" result="b2"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="60" result="b3"/>
+      <feMerge><feMergeNode in="b3"/><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Node glow -->
+    <filter id="glowNode" x="-100%" y="-100%" width="400%" height="400%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="7" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="b2"/>
+      <feMerge><feMergeNode in="b2"/><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Bar glow -->
+    <filter id="glowBar" x="-50%" y="-50%" width="300%" height="300%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b1"/>
+      <feMerge><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <!-- Convolution stroke glow -->
+    <filter id="glowConv" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="b1"/>
+      <feMerge><feMergeNode in="b1"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <g clip-path="url(#roundedSquare)">
+
+    <!-- ══════════════════════════════════ -->
+    <!--  BACKGROUND                        -->
+    <!-- ══════════════════════════════════ -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#bgGrad)"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#circuitGrid)"/>
+
+    <!-- Ambient center glow -->
+    <ellipse cx="512" cy="340" rx="380" ry="320"
+             fill="none" opacity="0"/>
+    <radialGradient id="ambientGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%"  style="stop-color:#1A5ECC;stop-opacity:0.18"/>
+      <stop offset="100%" style="stop-color:#0A0E1A;stop-opacity:0"/>
+    </radialGradient>
+    <ellipse cx="512" cy="340" rx="430" ry="370" fill="url(#ambientGlow)"/>
+
+
+    <!-- ══════════════════════════════════ -->
+    <!--  BRAIN — main AI symbol            -->
+    <!--  Front-view two-lobe silhouette    -->
+    <!--  y: 100 → 490, centered at 512     -->
+    <!-- ══════════════════════════════════ -->
+
+    <!-- Brain body fill -->
+    <g filter="url(#glowBrain)">
+      <path d="
+        M 512 108
+        C 465 96, 352 116, 276 174
+        C 208 226, 196 302, 216 366
+        C 234 424, 280 466, 330 482
+        C 360 492, 394 496, 428 494
+        C 458 492, 486 491, 512 493
+        C 538 491, 566 492, 596 494
+        C 630 496, 664 492, 694 482
+        C 744 466, 790 424, 808 366
+        C 828 302, 816 226, 748 174
+        C 672 116, 559 96, 512 108 Z"
+        fill="url(#brainFill)" opacity="0.52"/>
+
+      <!-- Bright outer outline -->
+      <path d="
+        M 512 108
+        C 465 96, 352 116, 276 174
+        C 208 226, 196 302, 216 366
+        C 234 424, 280 466, 330 482
+        C 360 492, 394 496, 428 494
+        C 458 492, 486 491, 512 493
+        C 538 491, 566 492, 596 494
+        C 630 496, 664 492, 694 482
+        C 744 466, 790 424, 808 366
+        C 828 302, 816 226, 748 174
+        C 672 116, 559 96, 512 108 Z"
+        fill="none" stroke="#4F9EFF" stroke-width="3.5" opacity="0.80"/>
+    </g>
+
+    <!-- Brain convolutions — LEFT hemisphere -->
+    <g filter="url(#glowConv)">
+      <!-- Upper left outer lobe -->
+      <path d="M 296 220 C 262 205, 244 228, 252 256 C 260 282, 294 292, 324 274"
+            fill="none" stroke="#4F9EFF" stroke-width="2.2" opacity="0.65"/>
+      <!-- Upper left inner lobe -->
+      <path d="M 365 168 C 344 188, 340 218, 360 236 C 376 250, 400 248, 410 230"
+            fill="none" stroke="#5BAAFF" stroke-width="2.0" opacity="0.60"/>
+      <!-- Mid left lobe -->
+      <path d="M 228 300 C 212 324, 218 358, 238 374 C 252 386, 274 382, 284 366"
+            fill="none" stroke="#4F9EFF" stroke-width="2.0" opacity="0.58"/>
+      <!-- Lower left fold -->
+      <path d="M 244 390 C 234 415, 248 443, 276 452"
+            fill="none" stroke="#8B5CF6" stroke-width="1.8" opacity="0.52"/>
+      <!-- Left inner diagonal fold -->
+      <path d="M 380 238 C 360 258, 355 292, 374 310 C 388 322, 412 320, 420 302"
+            fill="none" stroke="#7B9EFF" stroke-width="1.8" opacity="0.52"/>
+    </g>
+
+    <!-- Brain convolutions — RIGHT hemisphere (mirror) -->
+    <g filter="url(#glowConv)">
+      <!-- Upper right outer lobe -->
+      <path d="M 728 220 C 762 205, 780 228, 772 256 C 764 282, 730 292, 700 274"
+            fill="none" stroke="#4F9EFF" stroke-width="2.2" opacity="0.65"/>
+      <!-- Upper right inner lobe -->
+      <path d="M 659 168 C 680 188, 684 218, 664 236 C 648 250, 624 248, 614 230"
+            fill="none" stroke="#5BAAFF" stroke-width="2.0" opacity="0.60"/>
+      <!-- Mid right lobe -->
+      <path d="M 796 300 C 812 324, 806 358, 786 374 C 772 386, 750 382, 740 366"
+            fill="none" stroke="#4F9EFF" stroke-width="2.0" opacity="0.58"/>
+      <!-- Lower right fold -->
+      <path d="M 780 390 C 790 415, 776 443, 748 452"
+            fill="none" stroke="#8B5CF6" stroke-width="1.8" opacity="0.52"/>
+      <!-- Right inner diagonal fold -->
+      <path d="M 644 238 C 664 258, 669 292, 650 310 C 636 322, 612 320, 604 302"
+            fill="none" stroke="#7B9EFF" stroke-width="1.8" opacity="0.52"/>
+    </g>
+
+    <!-- Center fissure (interhemispheric) -->
+    <line x1="512" y1="116" x2="512" y2="490"
+          stroke="#9B7DFF" stroke-width="2.2" stroke-dasharray="9,7" opacity="0.55"/>
+
+    <!-- Brain stem -->
+    <path d="M 462 492 C 456 514, 459 530, 472 540 C 484 549, 540 549, 552 540 C 565 530, 568 514, 562 492"
+          fill="none" stroke="#8B5CF6" stroke-width="2.2" opacity="0.55"/>
+
+
+    <!-- ══════════════════════════════════ -->
+    <!--  NEURAL NODES & CONNECTIONS        -->
+    <!--  Sparse overlay on brain           -->
+    <!-- ══════════════════════════════════ -->
+
+    <!-- Connections -->
+    <g opacity="0.70">
+      <line x1="344" y1="222" x2="512" y2="292" stroke="#4F9EFF" stroke-width="1.5" opacity="0.42"/>
+      <line x1="680" y1="222" x2="512" y2="292" stroke="#4F9EFF" stroke-width="1.5" opacity="0.42"/>
+      <line x1="266" y1="344" x2="512" y2="380" stroke="#8B5CF6" stroke-width="1.5" opacity="0.38"/>
+      <line x1="758" y1="344" x2="512" y2="380" stroke="#8B5CF6" stroke-width="1.5" opacity="0.38"/>
+      <line x1="512" y1="292" x2="512" y2="380" stroke="#4F9EFF" stroke-width="2.0" opacity="0.46"/>
+      <line x1="344" y1="222" x2="266" y2="344" stroke="#6B7EF8" stroke-width="1.4" opacity="0.34"/>
+      <line x1="680" y1="222" x2="758" y2="344" stroke="#6B7EF8" stroke-width="1.4" opacity="0.34"/>
+      <line x1="414" y1="456" x2="512" y2="380" stroke="#9B5CF6" stroke-width="1.4" opacity="0.36"/>
+      <line x1="610" y1="456" x2="512" y2="380" stroke="#9B5CF6" stroke-width="1.4" opacity="0.36"/>
+    </g>
+
+    <!-- Nodes -->
+    <g filter="url(#glowNode)">
+      <circle cx="512" cy="292" r="13" fill="url(#nodeBlue)"   opacity="0.95"/>
+      <circle cx="344" cy="222" r="10" fill="url(#nodePurple)" opacity="0.90"/>
+      <circle cx="680" cy="222" r="10" fill="url(#nodePurple)" opacity="0.90"/>
+      <circle cx="266" cy="344" r="9"  fill="url(#nodeCyan)"   opacity="0.85"/>
+      <circle cx="758" cy="344" r="9"  fill="url(#nodeCyan)"   opacity="0.85"/>
+      <circle cx="512" cy="380" r="12" fill="url(#nodeCyan)"   opacity="0.92"/>
+      <circle cx="414" cy="456" r="8"  fill="url(#nodeBlue)"   opacity="0.80"/>
+      <circle cx="610" cy="456" r="8"  fill="url(#nodeBlue)"   opacity="0.80"/>
+    </g>
+
+
+    <!-- ══════════════════════════════════ -->
+    <!--  "AI"  — large, bright, primary    -->
+    <!--  Baseline y ≈ 664                  -->
+    <!-- ══════════════════════════════════ -->
+    <g filter="url(#glowAI)">
+      <text x="512" y="664"
+            font-family="Arial Black, Impact, 'Helvetica Neue', sans-serif"
+            font-weight="900"
+            font-size="218"
+            text-anchor="middle"
+            letter-spacing="8"
+            fill="url(#aiGrad)"
+            opacity="1.0">AI</text>
+    </g>
+
+    <!-- Thin separator line below "AI" and above chart -->
+    <line x1="320" y1="688" x2="704" y2="688"
+          stroke="#4F9EFF" stroke-width="1.5" opacity="0.22"/>
+
+
+    <!-- ══════════════════════════════════ -->
+    <!--  CANDLESTICK CHART (trading)       -->
+    <!--  5 rising bars: y 730–848          -->
+    <!-- ══════════════════════════════════ -->
+    <g filter="url(#glowBar)">
+      <!-- Bar 1 -->
+      <rect x="306" y="800" width="34" height="48" rx="4" fill="url(#barGrad)" opacity="0.90"/>
+      <!-- Bar 2 -->
+      <rect x="364" y="780" width="34" height="68" rx="4" fill="url(#barGrad)" opacity="0.93"/>
+      <!-- Bar 3 -->
+      <rect x="422" y="756" width="34" height="92" rx="4" fill="url(#barGrad)" opacity="0.96"/>
+      <!-- Bar 4 -->
+      <rect x="480" y="770" width="34" height="78" rx="4" fill="url(#barGrad)" opacity="0.94"/>
+      <!-- Bar 5 (tallest, rightmost) -->
+      <rect x="538" y="742" width="34" height="106" rx="4" fill="url(#barGrad)" opacity="1.0"/>
+      <!-- Bar 6 -->
+      <rect x="596" y="758" width="34" height="90" rx="4" fill="url(#barGrad)" opacity="0.96"/>
+      <!-- Bar 7 -->
+      <rect x="654" y="734" width="34" height="114" rx="4" fill="url(#barGrad)" opacity="1.0"/>
+
+      <!-- Wicks (upper shadows) -->
+      <line x1="323" y1="800" x2="323" y2="782" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="381" y1="780" x2="381" y2="760" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="439" y1="756" x2="439" y2="734" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="497" y1="770" x2="497" y2="750" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="555" y1="742" x2="555" y2="720" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="613" y1="758" x2="613" y2="738" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+      <line x1="671" y1="734" x2="671" y2="712" stroke="#00EDB8" stroke-width="2.5" stroke-linecap="round" opacity="0.80"/>
+    </g>
+
+    <!-- Baseline under chart -->
+    <line x1="288" y1="850" x2="706" y2="850"
+          stroke="#4F9EFF" stroke-width="2" stroke-linecap="round" opacity="0.28"/>
+
+    <!-- Rising trend arrow overlay -->
+    <g filter="url(#glowNode)" opacity="0.80">
+      <polyline points="306,844 440,790 554,756 672,716"
+                fill="none" stroke="#00EDB8" stroke-width="2.8"
+                stroke-linecap="round" stroke-linejoin="round" opacity="0.55"/>
+      <polyline points="656,710 676,714 672,734"
+                fill="none" stroke="#00EDB8" stroke-width="3.2"
+                stroke-linecap="round" stroke-linejoin="round" opacity="0.80"/>
+    </g>
+
+
+    <!-- ══════════════════════════════════ -->
+    <!--  EDGE VIGNETTE + BORDER            -->
+    <!-- ══════════════════════════════════ -->
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#vignette)" clip-path="url(#roundedSquare)"/>
+    <rect x="6" y="6" width="1012" height="1012" rx="226" ry="226"
+          fill="none" stroke="#4F9EFF" stroke-width="1.5" opacity="0.16"
+          clip-path="url(#roundedSquare)"/>
+
+  </g>
+</svg>

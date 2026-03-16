@@ -24,8 +24,9 @@ from config import OKX_CHAIN_INDEX
 logger = logging.getLogger("smart_money_tracker")
 
 # OKX Wallet API — 不需要白名单，20 req/s
-_OKX_WALLET_BASE = "https://www.okx.com"
-_OKX_TX_PATH = "/api/v5/wallet/post-transaction/transactions"
+_OKX_WALLET_BASE = "https://web3.okx.com"
+_OKX_TX_PATH = "/api/v5/wallet/post-transaction/transactions-by-address"
+_OKX_UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 
 # EVM chainIndex → chain name
 _EVM_CHAINS = {
@@ -287,12 +288,16 @@ class SmartMoneyTracker:
                 await self._enrich_and_save(signals, txns, chain)
 
     async def _get_evm_txs_okx(self, chain: str, address: str) -> List[Dict[str, Any]]:
-        """OKX Wallet API 查询钱包最近交易 — 20 req/s，无需白名单"""
+        """OKX Wallet API 查询钱包最近交易 — 20 req/s，无需白名单
+        端点: POST /api/v5/wallet/post-transaction/transactions-by-address
+        参数: address, chains (不是 chainIndex)
+        需要: User-Agent 绕过 Cloudflare + web3.okx.com base URL
+        """
         chain_index = _EVM_CHAINS.get(chain, "1")
         begin_time = int((time.time() - _SCAN_HOURS * 3600) * 1000)  # ms
 
         timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S.000Z")
-        params_str = f"address={address}&chainIndex={chain_index}&limit=50"
+        params_str = f"address={address}&chains={chain_index}&limit=50"
         path_with_params = f"{_OKX_TX_PATH}?{params_str}"
         sign = _okx_sign(self._okx_secret, timestamp, "GET", path_with_params)
 
@@ -302,12 +307,14 @@ class SmartMoneyTracker:
             "OK-ACCESS-TIMESTAMP": timestamp,
             "OK-ACCESS-PASSPHRASE": self._okx_pass,
             "Content-Type": "application/json",
+            "User-Agent": _OKX_UA,
         }
         url = _OKX_WALLET_BASE + path_with_params
 
         try:
             async with self._session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=8)) as resp:
                 if resp.status != 200:
+                    logger.debug("OKX Wallet API HTTP %s for %s %s", resp.status, chain, address[:8])
                     return []
                 data = await resp.json()
                 if data.get("code") != "0":
@@ -316,30 +323,34 @@ class SmartMoneyTracker:
 
                 results: List[Dict[str, Any]] = []
                 cutoff_ms = begin_time
-                for tx in data.get("data", []):
-                    tx_time_ms = int(tx.get("txTime", 0))
-                    if tx_time_ms < cutoff_ms:
-                        continue
-                    tx_id = tx.get("txId", "")
-                    if tx_id in self._seen_txids:
-                        continue
-                    self._seen_txids.add(tx_id)
+                # 新结构: data[0].transactionList[]
+                for page in data.get("data", []):
+                    for tx in page.get("transactionList", []):
+                        tx_time_ms = int(tx.get("txTime", 0))
+                        if tx_time_ms < cutoff_ms:
+                            continue
+                        tx_hash = tx.get("txHash", "")
+                        if not tx_hash or tx_hash in self._seen_txids:
+                            continue
+                        if tx.get("txStatus") != "success":
+                            continue
+                        self._seen_txids.add(tx_hash)
 
-                    tx_time = datetime.fromtimestamp(tx_time_ms / 1000, tz=timezone.utc).isoformat()
-                    # OKX返回 tokenTransferDetails 列表
-                    for detail in tx.get("tokenTransferDetails", []):
-                        token_addr = detail.get("tokenContractAddress", "")
+                        token_addr = tx.get("tokenAddress", "")
                         if not token_addr or token_addr == "0x0000000000000000000000000000000000000000":
                             continue
-                        to_addr = detail.get("to", "").lower()
-                        is_buy = to_addr == address.lower()
-                        amount = float(detail.get("amount", 0) or 0)
+
+                        tx_time = datetime.fromtimestamp(tx_time_ms / 1000, tz=timezone.utc).isoformat()
+                        # 判断买卖：to 里有 address = buy，from 里有 address = sell
+                        addr_lower = address.lower()
+                        to_addrs = [t.get("address", "").lower() for t in tx.get("to", [])]
+                        is_buy = addr_lower in to_addrs
                         results.append({
                             "token_address": token_addr.lower(),
-                            "token_name": detail.get("tokenName", ""),
-                            "token_symbol": detail.get("tokenSymbol", ""),
+                            "token_name": tx.get("symbol", ""),
+                            "token_symbol": tx.get("symbol", ""),
                             "type": "buy" if is_buy else "sell",
-                            "volume_usd": amount,   # 代币数量，enrich后换算USD
+                            "volume_usd": 0.0,     # 原始数量未知价格，enrich后换算USD
                             "_is_token_qty": True,
                             "timestamp": tx_time,
                         })

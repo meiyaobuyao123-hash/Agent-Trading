@@ -23,6 +23,7 @@ from api.routes_agent import router as agent_router
 from api.routes_price import router as price_router
 from api.routes_risk import router as risk_router
 from api.routes_device import router as device_router
+from api.geo_middleware import GeoBlockMiddleware
 from routes_smart_money import router as smart_money_router
 
 log = logging.getLogger(__name__)
@@ -35,6 +36,11 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# ── 地理位置屏蔽中间件（中国大陆 IP → HTTP 451）─────────────
+# 注意：中间件按 add_middleware 的反序执行，GeoBlock 需在 CORS 之前注册
+# 故此处先 add GeoBlock，再 add CORS
+app.add_middleware(GeoBlockMiddleware)
 
 # CORS 配置
 app.add_middleware(

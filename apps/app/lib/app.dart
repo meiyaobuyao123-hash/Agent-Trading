@@ -1,6 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
 import 'theme/gradients.dart';
@@ -8,6 +9,7 @@ import 'screens/market/market_screen.dart';
 import 'screens/agent/agent_screen.dart';
 import 'screens/history/history_screen.dart';
 import 'screens/profile/profile_screen.dart';
+import 'screens/disclaimer/disclaimer_page.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  主题状态管理
@@ -66,7 +68,53 @@ class _PumpSignalAppState extends State<PumpSignalApp> {
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeNotifier.mode,
-      home: const MainShell(),
+      home: const _DisclaimerGate(),
+    );
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  免责声明门禁 — 首次启动必须接受
+// ══════════════════════════════════════════════════════════════
+class _DisclaimerGate extends StatefulWidget {
+  const _DisclaimerGate();
+
+  @override
+  State<_DisclaimerGate> createState() => _DisclaimerGateState();
+}
+
+class _DisclaimerGateState extends State<_DisclaimerGate> {
+  bool _accepted = false;
+  bool _checked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkDisclaimer();
+  }
+
+  Future<void> _checkDisclaimer() async {
+    final prefs = await SharedPreferences.getInstance();
+    final accepted = prefs.getBool('app_global_disclaimer_v1') ?? false;
+    if (mounted) {
+      setState(() {
+        _accepted = accepted;
+        _checked = true;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 未检查完毕前显示空白过渡
+    if (!_checked) {
+      return const Scaffold(backgroundColor: Colors.black);
+    }
+    if (_accepted) {
+      return const MainShell();
+    }
+    return DisclaimerPage(
+      onAccepted: () => setState(() => _accepted = true),
     );
   }
 }

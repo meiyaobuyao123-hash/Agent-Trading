@@ -36,9 +36,10 @@ def run_pump_report(report_date: date = None):
 
     if use_counter:
         ws_creates = stats["ws_creates"]
-        ws_dropped = stats.get("ws_dropped", 0)
-        rest_success = stats["rest_success"]
-        rest_fallback = stats["rest_fallback"]
+        ws_dropped = stats.get("trade_track_full", 0)  # 交易追踪池满（但已写DB）
+        rest_success = stats.get("enrich_success", 0)   # enrich 成功数
+        rest_fallback = stats.get("enrich_fail", 0)     # enrich 失败数
+        enrich_triggered = stats.get("enrich_triggered", 0)
         ws_reconnects = stats["ws_new_reconnects"] + stats["ws_trade_reconnects"]
         snapshots_written = stats["snapshots_written"]
         filter_pass = stats["hard_filter_pass"]
@@ -49,6 +50,7 @@ def run_pump_report(report_date: date = None):
         ws_dropped = 0
         rest_success = 0
         rest_fallback = 0
+        enrich_triggered = 0
         ws_reconnects = 0
         snapshots_written = 0
         filter_pass = 0
@@ -160,8 +162,9 @@ def run_pump_report(report_date: date = None):
             "ws_creates": ws_creates,
             "ws_dropped": ws_dropped,
             "tokens_saved": tokens_saved,
-            "rest_success": rest_success,
-            "rest_fallback": rest_fallback,
+            "enrich_triggered": enrich_triggered if use_counter else 0,
+            "enrich_success": rest_success,
+            "enrich_fail": rest_fallback,
             "observed_tokens": observed_tokens,
             "snapshots_written": snapshots_written,
             "picks_count": picks_count,

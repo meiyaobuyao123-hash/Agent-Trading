@@ -1,9 +1,9 @@
 """
-数据采集层
+数据采集层 — 三阶段架构
 
-两路并行：
-  1. PumpPortal WebSocket → 实时新币 + 交易事件
-  2. pump.fun REST API   → 补全代币详情（social links 等）
+阶段1: WS 全量捕获 → 零延迟直接写 DB（pump_tokens），不丢弃任何币
+阶段2: WS trade 订阅 → 内存追踪活跃交易，累积买家/进度数据
+阶段3: 按需 enrich → 初筛通过（buyers>=3 且 bc>=2%）后才拉 REST 详情
 """
 
 import asyncio
@@ -16,8 +16,11 @@ import aiohttp
 import websockets
 
 from config import (
-    PUMPPORTAL_WS, PUMP_REST, HELIUS_API_KEY,
-    ENRICH_DELAY_S, MAX_TRACKED_TOKENS, SNAPSHOT_INTERVAL_S,
+    PUMPPORTAL_WS, PUMP_REST,
+    ENRICH_DELAY_S, SNAPSHOT_INTERVAL_S,
+    MAX_TRADE_TRACKED, TRADE_EVICT_AGE_H, TRADE_DEAD_AGE_H,
+    ENRICH_MIN_BUYERS, ENRICH_MIN_BC_PCT,
+    ENRICH_CONCURRENCY, ENRICH_COOLDOWN_S,
 )
 from features import TokenFeatures, extract_features, hard_filter, to_snapshot_dict, calc_bc_progress
 from scorer import score
@@ -33,43 +36,53 @@ log = logging.getLogger(__name__)
 
 class PumpScanner:
     def __init__(self):
-        # mint → 原始 token_info dict
+        # ── 阶段1：全量捕获 ──
+        # 只记录已见过的 mint（去重用），不存详情
+        self._seen_mints: Set[str] = set()
+
+        # ── 阶段2：交易追踪（内存）──
+        # mint → 轻量 token_info（WS 字段 + _created_at）
         self._tokens: Dict[str, dict] = {}
         # mint → 交易列表
         self._trades: Dict[str, list] = {}
-        # 待订阅交易的 mint 队列
-        self._subscribe_queue: asyncio.Queue = asyncio.Queue()
-        # 聪明钱分层字典（从 DB 定期加载）wallet → 'elite'|'verified'|'watching'
-        self._smart_wallet_tiers: dict = {}
-        # 当前订阅的 mint 集合
-        self._subscribed: Set[str] = set()
 
+        # ── 阶段3：按需 enrich ──
+        # 已完成 enrich 的 mint 集合（避免重复拉取）
+        self._enriched: Set[str] = set()
+        # enrich 并发信号量
+        self._enrich_sem: asyncio.Semaphore = asyncio.Semaphore(ENRICH_CONCURRENCY)
+        # enrich 队列
+        self._enrich_queue: asyncio.Queue = asyncio.Queue()
+
+        # ── WS 订阅管理 ──
+        self._subscribe_queue: asyncio.Queue = asyncio.Queue()
+        self._subscribed: Set[str] = set()
         self._ws_trade: Optional[websockets.WebSocketClientProtocol] = None
 
-        # ── 实时推送去重集合（防止同一代币同一事件类型重复推送）──
-        # 元素格式：(mint, trigger_type)
-        # trigger_type ∈ {"high_score", "bc_30", "bc_60", "smart_money", "graduated"}
+        # ── 聪明钱分层 ──
+        self._smart_wallet_tiers: dict = {}
+
+        # ── 实时推送去重 ──
         self._pushed: Set[tuple] = set()
 
     # ──────────────────────────────────────────────────
     # 主入口
     # ──────────────────────────────────────────────────
     async def run(self):
-        log.info("PumpScanner 启动")
-        # 启动时立即加载一次聪明钱数据
+        log.info("PumpScanner 启动（三阶段架构）")
         await self._reload_smart_wallets()
         await asyncio.gather(
-            self._listen_new_tokens(),
-            self._listen_trades(),
-            self._snapshot_loop(),
+            self._listen_new_tokens(),       # 阶段1：全量捕获
+            self._listen_trades(),           # 阶段2：交易追踪
+            self._enrich_worker(),           # 阶段3：按需 enrich
+            self._snapshot_loop(),           # 定时评估
             self._smart_wallet_reload_loop(),
         )
 
     # ──────────────────────────────────────────────────
-    # 聪明钱分层加载（每30分钟刷新一次）
+    # 聪明钱分层加载
     # ──────────────────────────────────────────────────
     async def _reload_smart_wallets(self):
-        """从 DB 加载最新聪明钱分级数据"""
         try:
             tiers = get_smart_wallet_tiers()
             self._smart_wallet_tiers = tiers
@@ -85,14 +98,13 @@ class PumpScanner:
             log.warning(f"加载聪明钱数据失败: {e}")
 
     async def _smart_wallet_reload_loop(self):
-        """每30分钟刷新一次聪明钱分级"""
         RELOAD_INTERVAL_S = 30 * 60
         while True:
             await asyncio.sleep(RELOAD_INTERVAL_S)
             await self._reload_smart_wallets()
 
     # ──────────────────────────────────────────────────
-    # WebSocket 1：监听新币创建
+    # 阶段1：WS 全量捕获（零延迟，不丢弃）
     # ──────────────────────────────────────────────────
     async def _listen_new_tokens(self):
         while True:
@@ -112,61 +124,35 @@ class PumpScanner:
             return
 
         mint = evt.get("mint", "")
-        if not mint or mint in self._tokens:
+        if not mint or mint in self._seen_mints:
             return
 
-        # 计数：WS 收到的全部 create 事件（漏斗第一层）
+        # 全量计数（漏斗第一层）
         pump_stats.incr("ws_creates")
+        self._seen_mints.add(mint)
 
-        # 上限保护
-        if len(self._tokens) >= MAX_TRACKED_TOKENS:
-            pump_stats.incr("ws_dropped")
-            return
+        created_at = datetime.now(timezone.utc)
 
-        log.info(f"新币: {evt.get('name','?')} ({mint[:8]}…)")
+        # ── 阶段1核心：立即写 DB，不等 REST，不 sleep ──
+        upsert_token({
+            "mint":             mint,
+            "name":             evt.get("name", ""),
+            "symbol":           evt.get("symbol", ""),
+            "description":      "",
+            "image_uri":        evt.get("uri", ""),
+            "creator":          evt.get("traderPublicKey", ""),
+            "created_at":       created_at.isoformat(),
+            "twitter":          None,
+            "telegram":         None,
+            "website":          None,
+            "complete":         False,
+            "initial_buy_sol":  evt.get("solAmount", 0),
+            "initial_mc_sol":   evt.get("marketCapSol", 0),
+        })
 
-        # 等几秒让 REST API 数据就绪
-        await asyncio.sleep(ENRICH_DELAY_S)
-
-        # 拉取完整详情
-        detail = await self._fetch_token_detail(mint)
-
-        if detail:
-            pump_stats.incr("rest_success")
-            # REST 成功：合并 WebSocket 字段
-            detail["vSolInBondingCurve"] = evt.get("vSolInBondingCurve", 0)
-            detail["marketCapSol"]       = evt.get("marketCapSol", 0)
-            detail["initialBuy"]         = evt.get("initialBuy", 0)
-
-            created_at = datetime.fromtimestamp(
-                detail.get("created_timestamp", 0) / 1000, tz=timezone.utc
-            )
-
-            self._tokens[mint] = {**detail, "_created_at": created_at}
-            self._trades[mint] = []
-
-            upsert_token({
-                "mint":             mint,
-                "name":             detail.get("name"),
-                "symbol":           detail.get("symbol"),
-                "description":      detail.get("description"),
-                "image_uri":        detail.get("image_uri"),
-                "creator":          detail.get("creator", ""),
-                "created_at":       created_at.isoformat(),
-                "twitter":          detail.get("twitter"),
-                "telegram":         detail.get("telegram"),
-                "website":          detail.get("website"),
-                "complete":         detail.get("complete", False),
-                "initial_buy_sol":  evt.get("solAmount", 0),
-                "initial_mc_sol":   evt.get("marketCapSol", 0),
-            })
-        else:
-            # REST 失败：用 WS 事件数据兜底入库 + 追踪
-            pump_stats.incr("rest_fallback")
-            log.info(f"  REST 失败，用 WS 数据兜底: {evt.get('name','?')} ({mint[:8]})")
-            created_at = datetime.now(timezone.utc)
-
-            ws_detail = {
+        # ── 阶段2：加入内存交易追踪（有容量保护但远大于旧上限）──
+        if len(self._tokens) < MAX_TRADE_TRACKED:
+            self._tokens[mint] = {
                 "mint": mint,
                 "name": evt.get("name", ""),
                 "symbol": evt.get("symbol", ""),
@@ -174,32 +160,18 @@ class PumpScanner:
                 "vSolInBondingCurve": evt.get("vSolInBondingCurve", 0),
                 "marketCapSol": evt.get("marketCapSol", 0),
                 "initialBuy": evt.get("initialBuy", 0),
+                "_created_at": created_at,
             }
-
-            self._tokens[mint] = {**ws_detail, "_created_at": created_at}
             self._trades[mint] = []
+            # 订阅交易
+            await self._subscribe_queue.put(mint)
+        else:
+            pump_stats.incr("trade_track_full")
 
-            upsert_token({
-                "mint":             mint,
-                "name":             evt.get("name", ""),
-                "symbol":           evt.get("symbol", ""),
-                "description":      "",
-                "image_uri":        evt.get("uri", ""),
-                "creator":          evt.get("traderPublicKey", ""),
-                "created_at":       created_at.isoformat(),
-                "twitter":          None,
-                "telegram":         None,
-                "website":          None,
-                "complete":         False,
-                "initial_buy_sol":  evt.get("solAmount", 0),
-                "initial_mc_sol":   evt.get("marketCapSol", 0),
-            })
-
-        # 通知 trade 监听器订阅该 mint
-        await self._subscribe_queue.put(mint)
+        log.debug(f"新币: {evt.get('name','?')} ({mint[:8]}…) 追踪={len(self._tokens)}")
 
     # ──────────────────────────────────────────────────
-    # WebSocket 2：监听交易事件
+    # 阶段2：WS 交易监听
     # ──────────────────────────────────────────────────
     async def _listen_trades(self):
         while True:
@@ -207,8 +179,6 @@ class PumpScanner:
                 async with websockets.connect(PUMPPORTAL_WS) as ws:
                     self._ws_trade = ws
                     log.info("交易 WS 已连接")
-
-                    # 处理待订阅队列 + 接收消息 并发
                     await asyncio.gather(
                         self._process_subscribe_queue(ws),
                         self._recv_trades(ws),
@@ -244,7 +214,6 @@ class PumpScanner:
 
         now = datetime.now(timezone.utc)
 
-        # 买入时记录当前BC进度（用于聪明钱入场时机分析）
         bc_at_buy = None
         if tx_type == "buy":
             cur_v_sol = float(
@@ -261,13 +230,13 @@ class PumpScanner:
             "sol_amount":  float(evt.get("solAmount", 0)),
             "token_amount": float(evt.get("tokenAmount", 0)),
             "traded_at":   now,
-            "bc_progress": bc_at_buy,   # 买单时的BC进度（列名与003 migration一致）
+            "bc_progress": bc_at_buy,
         }
 
         self._trades[mint].append(trade)
         insert_trade({**trade, "traded_at": now.isoformat()})
 
-        # ── 聪明钱入场检测：买入 + 聪明钱地址 + net_sol >= 1.0 ──
+        # ── 聪明钱入场检测 ──
         if tx_type == "buy":
             trader = evt.get("traderPublicKey", "")
             wallet_tier = self._smart_wallet_tiers.get(trader)
@@ -276,7 +245,6 @@ class PumpScanner:
                 if sol_amount >= 1.0:
                     symbol = self._tokens[mint].get("symbol", mint[:8])
                     bc_now = bc_at_buy or 0.0
-                    # 异步推送，不阻塞交易处理主流
                     asyncio.ensure_future(
                         push_service.push_smart_money(
                             mint=mint,
@@ -292,29 +260,91 @@ class PumpScanner:
                         f"sol={sol_amount:.2f}"
                     )
 
-        # 更新 vSol（用于进度计算）
+        # 更新 vSol
         v_sol = evt.get("vSolInBondingCurve")
         if v_sol is not None:
             self._tokens[mint]["vSolInBondingCurve"] = float(v_sol)
             self._tokens[mint]["marketCapSol"] = float(evt.get("marketCapSol", 0))
 
-            # 检测毕业（进度 = 100%）
             progress = calc_bc_progress(float(v_sol))
             if progress >= 100:
                 mark_graduated(mint, now.isoformat())
                 symbol = self._tokens[mint].get("symbol", mint[:8])
                 log.info(f"🎓 毕业: {symbol} ({mint[:8]}…)")
 
-                # ── 毕业推送（每个 mint 只推一次）──
                 if (mint, "graduated") not in self._pushed:
                     asyncio.ensure_future(
                         push_service.push_graduated(mint=mint, symbol=symbol)
                     )
                     self._pushed.add((mint, "graduated"))
 
-                # 从追踪池移除
                 self._tokens.pop(mint, None)
                 self._trades.pop(mint, None)
+
+    # ──────────────────────────────────────────────────
+    # 阶段3：按需 enrich 工作池
+    # ──────────────────────────────────────────────────
+    async def _enrich_worker(self):
+        """持续消费 enrich 队列，并发拉取 REST 详情"""
+        while True:
+            mint = await self._enrich_queue.get()
+            if mint in self._enriched:
+                continue
+            asyncio.ensure_future(self._do_enrich(mint))
+
+    async def _do_enrich(self, mint: str):
+        """单个代币的 REST enrich"""
+        async with self._enrich_sem:
+            await asyncio.sleep(ENRICH_DELAY_S)
+            detail = await self._fetch_token_detail(mint)
+
+            if detail:
+                pump_stats.incr("enrich_success")
+                self._enriched.add(mint)
+
+                # 合并 REST 详情到内存
+                if mint in self._tokens:
+                    token = self._tokens[mint]
+                    token["name"] = detail.get("name") or token.get("name", "")
+                    token["symbol"] = detail.get("symbol") or token.get("symbol", "")
+                    token["twitter"] = detail.get("twitter")
+                    token["telegram"] = detail.get("telegram")
+                    token["website"] = detail.get("website")
+                    token["description"] = detail.get("description")
+                    token["image_uri"] = detail.get("image_uri")
+                    token["creator"] = detail.get("creator") or token.get("creator", "")
+                    # 用 REST 的 created_timestamp 修正创建时间
+                    ts = detail.get("created_timestamp")
+                    if ts:
+                        token["_created_at"] = datetime.fromtimestamp(
+                            ts / 1000, tz=timezone.utc
+                        )
+
+                # 同步更新 DB（补全 social 等字段）
+                created_at = None
+                ts = detail.get("created_timestamp")
+                if ts:
+                    created_at = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).isoformat()
+
+                upsert_token({
+                    "mint":        mint,
+                    "name":        detail.get("name"),
+                    "symbol":      detail.get("symbol"),
+                    "description": detail.get("description"),
+                    "image_uri":   detail.get("image_uri"),
+                    "creator":     detail.get("creator", ""),
+                    "twitter":     detail.get("twitter"),
+                    "telegram":    detail.get("telegram"),
+                    "website":     detail.get("website"),
+                    **({"created_at": created_at} if created_at else {}),
+                })
+
+                log.debug(f"[enrich] 成功: {detail.get('symbol','?')} ({mint[:8]}…)")
+            else:
+                pump_stats.incr("enrich_fail")
+                log.debug(f"[enrich] 失败: {mint[:8]}…")
+
+            await asyncio.sleep(ENRICH_COOLDOWN_S)
 
     # ──────────────────────────────────────────────────
     # 定时快照循环（每分钟）
@@ -336,15 +366,15 @@ class PumpScanner:
             age_hours = (now - created_at).total_seconds() / 3600
             trades = self._trades.get(mint, [])
 
-            # ── 淘汰：超过3小时未毕业 → 腾位置给新币 ──
-            if age_hours > 3:
+            # ── 淘汰：超过 N 小时未毕业 ──
+            if age_hours > TRADE_EVICT_AGE_H:
                 self._tokens.pop(mint, None)
                 self._trades.pop(mint, None)
                 evicted += 1
                 continue
 
-            # ── 淘汰：超过1小时且最近30分钟无交易 → 死币 ──
-            if age_hours > 1 and trades:
+            # ── 淘汰：超过 N 小时且30min无交易 → 死币 ──
+            if age_hours > TRADE_DEAD_AGE_H and trades:
                 last_trade_time = max(
                     t.get("traded_at", created_at) if isinstance(t.get("traded_at"), datetime)
                     else created_at
@@ -356,6 +386,20 @@ class PumpScanner:
                     evicted += 1
                     continue
 
+            # ── 阶段3触发：初筛通过 → 加入 enrich 队列 ──
+            unique_buyers = len({t["trader"] for t in trades if t["tx_type"] == "buy"})
+            v_sol = float(token_info.get("vSolInBondingCurve", 0))
+            bc_progress = calc_bc_progress(v_sol)
+
+            if (
+                mint not in self._enriched
+                and unique_buyers >= ENRICH_MIN_BUYERS
+                and bc_progress >= ENRICH_MIN_BC_PCT
+            ):
+                pump_stats.incr("enrich_triggered")
+                await self._enrich_queue.put(mint)
+
+            # ── 特征提取 + 评分（无论是否 enrich 完成）──
             f: TokenFeatures = extract_features(
                 token_info=token_info,
                 trades=trades,
@@ -384,9 +428,9 @@ class PumpScanner:
                 f"分={result.total} [{result.recommendation}]"
             )
 
-            # ── 实时推送检测 ──────────────────────────────────────────
+            # ── 实时推送检测 ──
 
-            # 1. 高分新币推送：首次打分 >= 70 → 立即推送
+            # 1. 高分新币推送
             if result.total >= 70 and (mint, "high_score") not in self._pushed:
                 asyncio.ensure_future(
                     push_service.push_high_score(
@@ -402,7 +446,7 @@ class PumpScanner:
                     f"bc={f.bc_progress:.0f}%"
                 )
 
-            # 2. BC 里程碑推送：首次跨过 30% / 60%
+            # 2. BC 里程碑推送
             for milestone in (30, 60):
                 key = (mint, f"bc_{milestone}")
                 if f.bc_progress >= milestone and key not in self._pushed:
@@ -427,16 +471,11 @@ class PumpScanner:
     # REST 工具方法
     # ──────────────────────────────────────────────────
     async def _fetch_token_detail(self, mint: str) -> Optional[dict]:
-        """
-        拉取代币详情，带重试 + DNS 容错。
-        尝试顺序：默认 URL → 备用 URL → 最终用 WS 事件数据兜底。
-        """
         urls = [
             f"{PUMP_REST}/coins/{mint}",
             f"https://frontend-api-v3.pump.fun/coins/{mint}",
             f"https://frontend-api.pump.fun/coins/{mint}",
         ]
-        # 去重
         seen = set()
         unique_urls = []
         for u in urls:
@@ -445,22 +484,21 @@ class PumpScanner:
                 unique_urls.append(u)
 
         for url in unique_urls:
-            for attempt in range(2):  # 每个 URL 最多重试 1 次
+            for attempt in range(2):
                 try:
                     async with aiohttp.ClientSession() as s:
                         async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
                             if r.status == 200:
                                 return await r.json()
                             elif r.status == 429:
-                                await asyncio.sleep(2)  # 限速，等一下再试
+                                await asyncio.sleep(2)
                                 continue
                 except Exception as e:
                     if attempt == 0:
                         await asyncio.sleep(1)
                         continue
-                    # 最后一次失败才 log
                     log.debug(f"fetch_token_detail {mint[:8]} {url[:30]}…: {e}")
-                break  # 非限速错误不重试同一 URL
+                break
 
         log.warning(f"fetch_token_detail {mint[:8]} 全部失败")
         return None

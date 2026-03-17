@@ -21,9 +21,21 @@ GRADUATION_SOL_LAMPS = 85_000_000_000  # lamports
 
 # 扫描参数
 SNAPSHOT_INTERVAL_S  = 60          # 每分钟打一次快照
-ENRICH_DELAY_S       = 3           # 新币出现后等 3s 再拉详情
-MAX_TRACKED_TOKENS   = 2000        # 最多同时追踪（配合3h淘汰，日均可处理2万+）
+ENRICH_DELAY_S       = 5           # 初筛通过后等 5s 再拉 REST 详情
 DATA_RETENTION_DAYS  = 30          # 数据保留天数
+
+# 三阶段架构参数
+# 阶段1：WS 全量捕获（无上限，直接写DB）
+# 阶段2：交易观察（内存追踪活跃币的交易）
+MAX_TRADE_TRACKED    = 20_000      # 内存中最多同时追踪交易的代币数（仅交易计数，非全量详情）
+TRADE_EVICT_AGE_H    = 3           # 超过3小时未毕业 → 从交易追踪中移除
+TRADE_DEAD_AGE_H     = 1           # 超过1小时 + 30min无交易 → 死币移除
+
+# 阶段3：按需 enrich（只对初筛通过的币拉 REST）
+ENRICH_MIN_BUYERS    = 3           # 初筛：至少3个独立买家才触发 enrich
+ENRICH_MIN_BC_PCT    = 2.0         # 初筛：至少2%进度才触发 enrich
+ENRICH_CONCURRENCY   = 20          # REST 并发拉取上限
+ENRICH_COOLDOWN_S    = 0.2         # 每次 REST 请求间最小间隔（防429）
 
 # 硬过滤阈值（一票否决）— 放宽以覆盖更多早期代币
 MIN_BUYERS_HARD      = 5           # 至少 5 个买家才进候选池（早期代币60s内不到10人正常）

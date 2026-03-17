@@ -138,7 +138,7 @@ class _MarketScreenState extends State<MarketScreen> {
       goplusRisk: false,
       hasTwitter: s.twitter != null, hasTelegram: s.telegram != null, hasWebsite: s.website != null,
       score: s.score, scoreDetail: s.scoreDetail, recommendation: s.recommendation,
-      source: TokenSource.dailyPick, bcProgress: s.bcProgress, imageUri: s.imageUri,
+      source: TokenSource.pumpSignal, bcProgress: s.bcProgress, imageUri: s.imageUri,
     );
   }
 

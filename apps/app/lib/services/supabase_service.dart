@@ -1,5 +1,4 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../models/daily_pick.dart';
 import '../models/hot_coin.dart';
 import '../models/smart_money_signal.dart';
 
@@ -8,42 +7,6 @@ class SupabaseService {
   SupabaseService._();
 
   SupabaseClient get _db => Supabase.instance.client;
-
-  // ─────────────────────────────────────────────────
-  // 新币榜：今日 AI 推荐 Top10
-  // ─────────────────────────────────────────────────
-  Future<List<DailyPick>> fetchTodayPicks() async {
-    final today = _todayStr();
-    return _fetchPicksByDate(today);
-  }
-
-  // ─────────────────────────────────────────────────
-  // 历史推荐（最近 N 天）
-  // ─────────────────────────────────────────────────
-  Future<Map<String, List<DailyPick>>> fetchHistoryPicks({int days = 14}) async {
-    final until = DateTime.now().toUtc().subtract(const Duration(days: 1));
-    final from  = until.subtract(Duration(days: days));
-
-    final res = await _db
-        .from('daily_picks')
-        .select('''
-          mint, pick_date, rank, score, score_detail,
-          bc_progress, market_cap_sol,
-          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator,
-            token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x))
-        ''')
-        .gte('pick_date', _dateStr(from))
-        .lte('pick_date', _dateStr(until))
-        .order('pick_date', ascending: false)
-        .order('rank');
-
-    final grouped = <String, List<DailyPick>>{};
-    for (final row in (res as List)) {
-      final pick = DailyPick.fromJson(row as Map<String, dynamic>);
-      grouped.putIfAbsent(pick.pickDate, () => []).add(pick);
-    }
-    return grouped;
-  }
 
   // ─────────────────────────────────────────────────
   // 热币榜：多链外盘热币（hot_coins 表，每2小时更新）
@@ -98,27 +61,4 @@ class SupabaseService {
         .toList();
   }
 
-  // ─────────────────────────────────────────────────
-  // 私有工具
-  // ─────────────────────────────────────────────────
-  Future<List<DailyPick>> _fetchPicksByDate(String date) async {
-    final res = await _db
-        .from('daily_picks')
-        .select('''
-          mint, pick_date, rank, score, score_detail,
-          bc_progress, market_cap_sol,
-          pump_tokens!inner(name, symbol, image_uri, twitter, telegram, website, creator,
-            token_outcomes(did_graduate, peak_multiplier, label_2x, label_10x))
-        ''')
-        .eq('pick_date', date)
-        .order('rank');
-
-    return (res as List)
-        .map((e) => DailyPick.fromJson(e as Map<String, dynamic>))
-        .toList();
-  }
-
-  String _todayStr() => _dateStr(DateTime.now().toUtc());
-  String _dateStr(DateTime d) =>
-      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 }

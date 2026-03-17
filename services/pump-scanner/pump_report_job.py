@@ -1,8 +1,8 @@
 """
 内盘每日数据报表
 
-每天 UTC 00:30 运行（在 daily_picks 之后），汇总前一天的漏斗数据。
-数据写入 pump_daily_report 表，供 Admin/App 展示。
+每天 UTC 00:30 运行，汇总前一天的漏斗数据。
+数据写入 pump_daily_report 表，供 Portal 展示。
 """
 
 import logging
@@ -100,22 +100,11 @@ def run_pump_report(report_date: date = None):
         # 从快照总数估算
         snapshots_written = len(res.data) if res.data else 0
 
-    # ── L5: 推荐给用户（daily_picks）──────────────────
-    try:
-        res = db.table("daily_picks").select("mint, score").eq(
-            "pick_date", report_date.isoformat()
-        ).execute()
-        picks = res.data or []
-        picks_count = len(picks)
-        pick_mints = set(r["mint"] for r in picks)
-        # 分数分布
-        strong = sum(1 for r in picks if (r.get("score") or 0) >= 75)
-        normal = sum(1 for r in picks if 55 <= (r.get("score") or 0) < 75)
-    except Exception:
-        picks_count = 0
-        pick_mints = set()
-        strong = 0
-        normal = 0
+    # ── L5: 实时信号（来自计数器 signal_entered）──────────────────
+    picks_count = signal_entered
+    pick_mints = set()  # 实时信号池无法回溯具体 mint
+    strong = 0
+    normal = 0
 
     # ── L6: 真的毕业了（graduated_at 在当天）────────────
     try:

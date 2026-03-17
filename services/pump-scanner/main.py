@@ -7,7 +7,6 @@ pump-scanner 入口
   python main.py
 
 调度任务（所有时间均 UTC）：
-  00:05  每日 pump.fun Top10 推荐（daily_job）
   01:00  创建者成功率更新（creator_stats_updater）
   02:00  热币日榜 Top20 生成（hot_coin_job）
   每1h   结果回填（outcome_labeler）
@@ -35,7 +34,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
 from collector import PumpScanner
-from daily_job import run_daily_job
 from outcome_labeler import run_outcome_labeler
 from smart_wallet_updater import run_smart_wallet_updater
 from smart_wallet_seed import initialize_smart_wallets
@@ -91,15 +89,6 @@ async def main():
     # ══════════════════════════════════════════════════════════
     # 原有定时任务
     # ══════════════════════════════════════════════════════════
-
-    # ── 每日 Top10 推荐（UTC 00:05）────────────────────────
-    scheduler.add_job(
-        run_daily_job,
-        trigger=CronTrigger(hour=0, minute=5, timezone="UTC"),
-        id="daily_picks",
-        name="每日 Top10 推荐",
-        misfire_grace_time=300,
-    )
 
     # ── 创建者成功率更新（UTC 01:00）────────────────────────
     scheduler.add_job(
@@ -233,7 +222,7 @@ async def main():
     # 内盘数据报表
     # ══════════════════════════════════════════════════════════
 
-    # ── 内盘每日报表（UTC 00:30，在 daily_picks 之后）────────
+    # ── 内盘每日报表（UTC 00:30）────────
     scheduler.add_job(
         run_pump_report,
         trigger=CronTrigger(hour=0, minute=30, timezone="UTC"),
@@ -263,7 +252,6 @@ async def main():
     log.info(
         "定时任务已启动:\n"
         "  ── 原有任务 ──\n"
-        "  每日 UTC 00:05 → daily_picks\n"
         "  每日 UTC 01:00 → creator_stats\n"
         "  每日 UTC 02:00 → hot_daily_picks\n"
         "  每1小时        → outcome_labeler\n"

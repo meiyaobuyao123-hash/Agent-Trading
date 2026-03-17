@@ -1,9 +1,8 @@
 import 'hot_coin.dart';
-import 'daily_pick.dart';
 
-enum TokenSource { hotCoin, dailyPick }
+enum TokenSource { hotCoin, pumpSignal }
 
-/// 统一代币详情模型 — 从 HotCoin 或 DailyPick 构造
+/// 统一代币详情模型 — 从 HotCoin 或 PumpSignal 构造
 class TokenDetail {
   final String chain;
   final String address;
@@ -50,7 +49,7 @@ class TokenDetail {
 
   final TokenSource source;
 
-  // DailyPick 专属
+  // pump.fun 信号专属
   final double? bcProgress;
   final bool? didGraduate;
   final double? peakMultiplier;
@@ -146,43 +145,6 @@ class TokenDetail {
     );
   }
 
-  factory TokenDetail.fromDailyPick(DailyPick pick) {
-    return TokenDetail(
-      chain: 'solana',
-      address: pick.mint,
-      name: pick.name,
-      symbol: pick.symbol,
-      priceUsd: 0,
-      marketCapUsd: 0,
-      liquidityUsd: 0,
-      volume24hUsd: 0,
-      volume1hUsd: 0,
-      priceChange1h: 0,
-      priceChange6h: 0,
-      priceChange24h: 0,
-      buys1h: 0,
-      sells1h: 0,
-      buys24h: 0,
-      sells24h: 0,
-      ageDays: 0,
-      holderCount: 0,
-      goplusRisk: false,
-      hasTwitter: pick.twitter != null,
-      hasTelegram: pick.telegram != null,
-      hasWebsite: pick.website != null,
-      score: pick.score,
-      scoreDetail: pick.scoreDetail,
-      recommendation: pick.recommendation,
-      source: TokenSource.dailyPick,
-      bcProgress: pick.bcProgress,
-      didGraduate: pick.didGraduate,
-      peakMultiplier: pick.peakMultiplier,
-      label2x: pick.label2x,
-      label10x: pick.label10x,
-      imageUri: pick.imageUri,
-    );
-  }
-
   // ── 链相关计算属性 ────────────────────────────
   String get geckoNetwork => chain; // solana, bsc, base 均匹配
 
@@ -228,5 +190,5 @@ class TokenDetail {
     return total > 0 ? buys24h / total : 0.5;
   }
 
-  bool get isDailyPick => source == TokenSource.dailyPick;
+  bool get isPumpSignal => source == TokenSource.pumpSignal;
 }

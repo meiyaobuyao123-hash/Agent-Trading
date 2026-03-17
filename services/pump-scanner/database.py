@@ -89,14 +89,6 @@ def mark_graduated(mint: str, graduated_at: str):
         log.error(f"mark_graduated error: {e}")
 
 
-def save_daily_picks(picks: List[dict]):
-    """保存当日 Top10"""
-    try:
-        get_db().table("daily_picks").upsert(picks, on_conflict="pick_date,mint").execute()
-    except Exception as e:
-        log.error(f"save_daily_picks error: {e}")
-
-
 def cleanup_old_trades():
     """清理 30 天前的交易流水"""
     try:

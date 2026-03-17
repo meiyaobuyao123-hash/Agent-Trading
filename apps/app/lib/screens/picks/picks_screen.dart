@@ -193,7 +193,7 @@ class _PicksScreenState extends State<PicksScreen> {
       score: s.score,
       scoreDetail: s.scoreDetail,
       recommendation: s.recommendation,
-      source: TokenSource.dailyPick,
+      source: TokenSource.pumpSignal,
       bcProgress: s.bcProgress,
       imageUri: s.imageUri,
     );

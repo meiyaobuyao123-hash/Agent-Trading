@@ -352,7 +352,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
                     const SizedBox(width: 6),
                   ],
                   _bitgetTag(token.chainLabel, context.colors.primary),
-                  if (token.isDailyPick) ...[const SizedBox(width: 6), _bitgetTag('PumpFun', context.colors.success)],
+                  if (token.isPumpSignal) ...[const SizedBox(width: 6), _bitgetTag('PumpFun', context.colors.success)],
                 ]),
                 const SizedBox(height: 8),
                 Row(children: [

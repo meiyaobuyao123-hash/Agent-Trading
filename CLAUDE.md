@@ -53,8 +53,9 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | 聪明钱追踪 | ✅ 线上 | SOL ~400ms / EVM ~2.5s，55钱包 |
 | KOL 舆情 | ✅ 线上 | 212 KOL，_evaluate_accuracy TODO |
 | Agent 交易 | ✅ 线上 | Claude LLM + OKX DEX，SOL+EVM |
-| Flutter App | ✅ 运行 | 模拟器 iPhone 17 Pro Max |
+| Flutter App | ✅ 运行 | 模拟器 iPhone 17 Pro Max，i18n 4语言 |
 | Portal | ✅ 线上 | 服务器部署(systemd+nginx)，Vercel备用 |
+| i18n 国际化 | ✅ 完成 | zh/en/ja/ko，275+ 本地化字符串，语言切换器 |
 | 合规 | ✅ | 免责声明Gate + CN IP屏蔽 + 推送限流 |
 | XGBoost ML | ⏸ 待训练 | 管线就绪，3/27 提醒 |
 | Firebase 推送 | ⏸ 待配置 | 需创建 Firebase 项目 |
@@ -113,6 +114,7 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
 - ✅ 实时信号池（commit 2c2e227）：替代每日推荐，score>=55 且 BC 3-35% 动态进出
 - ✅ Flutter PicksScreen 重写：30s 轮询 /api/pump/signals 实时显示
 - ✅ nginx 新增 /api/pump/ 路由
+- ✅ **i18n 国际化**（commit fc4740a + 1158d63）：zh/en/ja/ko，275+ 字符串，语言切换器，QA 修复 80+ 遗漏
 
 ---
 
@@ -272,6 +274,7 @@ solana=8  bsc=7  base=14  →  总计 29 个，strong=1，normal=6
 - **Python 3.9 不支持 `X | None`**：用 `Optional[X]`
 - **Python 3.9 不支持 `list[str]`（小写）**：用 `List[str]`
 - **Flutter withOpacity 弃用**：改 `withValues(alpha: ...)`
+- **Flutter i18n**: gen-l10n 需 `pub get` 触发；const 与 S.of(context) 冲突；Model 层不应返回本地化字符串
 - **GeckoTerminal 429 continue bug**：continue 跳下一页，应内层重试循环
 - **ETH/Arbitrum/Polygon 不适合热币策略**：分别因太老/太新被过滤
 - **token_trades 列名**：`bc_progress`（不是 bc_progress_at_buy）

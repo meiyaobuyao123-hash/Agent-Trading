@@ -64,6 +64,9 @@ from ml_config import ML_RETRAIN_INTERVAL_HOURS, USE_ML_SCORING
 # 内盘数据报表
 from pump_report_job import run_pump_report
 
+# AI Optimizer Agent（每3天自动优化推荐算法）
+from governor import run_governor
+
 # 实时价格订阅（Binance WS + DexScreener WS）
 from price_feed import price_feed
 
@@ -232,6 +235,19 @@ async def main():
     )
 
     # ══════════════════════════════════════════════════════════
+    # AI Optimizer Agent（每3天自动优化）
+    # ══════════════════════════════════════════════════════════
+
+    scheduler.add_job(
+        run_governor,
+        trigger=CronTrigger(day="*/3", hour=3, minute=0, timezone="UTC"),
+        id="optimizer_governor",
+        name="AI 优化 Agent（每3天）",
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # ══════════════════════════════════════════════════════════
     # ML 自动重训
     # ══════════════════════════════════════════════════════════
 
@@ -268,6 +284,8 @@ async def main():
         "  常驻 WS        → smart_money_tracker (SOL ~400ms / EVM OKX 5s)\n"
         "  ── 数据报表 ──\n"
         "  每日 UTC 00:30 → pump_report (内盘漏斗报表)\n"
+        "  ── AI Optimizer ──\n"
+        "  每3天 UTC 03:00 → optimizer_governor (AI 自动优化推荐算法)\n"
         "  ── ML 系统 ──\n"
         f"  每{ML_RETRAIN_INTERVAL_HOURS}小时      → ml_retrain (XGBoost 自动重训)"
         f" {'[已启用]' if USE_ML_SCORING else '[未启用，USE_ML_SCORING=0]'}\n"

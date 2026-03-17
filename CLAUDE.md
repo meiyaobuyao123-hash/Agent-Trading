@@ -1,8 +1,116 @@
-# Project Memory — Agent-Trading
+# Project Memory — Agent-Trading (CLAUDE.md — 仓库版，无凭证)
+# 凭证见本地 credentials.md，不在此文件中
 
-## 项目方向
-**双轨策略：pump.fun 内盘 + 多链外盘代币发现系统**
-- 内盘：pump.fun 早期代币（BC 3-35%），每日推送 ≤10 个
+## 🔴 每次会话开始必须执行（强制）
+立即读取以下所有 topic 文件，不得跳过：
+- `CLAUDE.md`（本文件）— 索引 + 规则 + 速查
+- `architecture.md` — 架构、数据流、启动命令
+- `pitfalls.md` — 踩坑记录
+- `rules.md` — 工作规则详细版
+- `sessions-log.md` — 历史会话记录 + 讨论结论 + 被否定方案
+
+## ⚠️ 工作规则摘要
+**记忆更新**: 发现新信息 → 立即更新，不等任务结束
+**双份同步**: 本地 topic 文件 + 仓库 CLAUDE.md 必须同时更新，内容完全一致
+**数据源**: EVM聪明钱用 `web3.okx.com`，SOL用 Helius WS，禁止 Etherscan，禁止 www.okx.com
+**实现规则**: 讨论完先验证API → 实现后grep验证 → 不得悄悄换数据源
+**诚实原则**: 没做就说没做，做了必须有证据同步用户，不得虚报完成
+**用户偏好**: 中文输出，真实数据，不估时间，不过度工程化
+
+---
+
+## 快速速查
+
+### 线上地址
+- Portal: https://agent-trading-portal.vercel.app/hot
+- Backend: http://43.156.207.26
+- GitHub: https://github.com/meiyaobuyao123-hash/Agent-Trading
+
+### 本地路径
+- 后端: `services/pump-scanner/`
+- Flutter: `apps/app/`
+- Portal: `apps/web/`
+
+### 服务器
+- IP: `43.156.207.26`（腾讯云轻量，新加坡，到期 2026-05-16）
+- SSH: `ssh ubuntu@43.156.207.26`（密码见本地 credentials.md）
+
+### Flutter 启动
+```bash
+flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
+  --dart-define=API_BASE_URL=http://43.156.207.26 \
+  --dart-define=HELIUS_API_KEY=<见credentials.md>
+```
+
+---
+
+## 当前功能状态
+| 模块 | 状态 | 备注 |
+|------|------|------|
+| pump.fun 采集 | ✅ 线上 | WS双通道，70+特征 |
+| 热币扫描 | ✅ 线上 | OKX toplist，4链，10min发现/30s刷新 |
+| 聪明钱追踪 | ✅ 线上 | SOL ~400ms / EVM ~2.5s，55钱包 |
+| KOL 舆情 | ✅ 线上 | 212 KOL，_evaluate_accuracy TODO |
+| Agent 交易 | ✅ 线上 | Claude LLM + OKX DEX，SOL+EVM |
+| Flutter App | ✅ 运行 | 模拟器 iPhone 17 Pro Max |
+| Portal | ✅ 线上 | Vercel，自动CI/CD |
+| 合规 | ✅ | 免责声明Gate + CN IP屏蔽 + 推送限流 |
+| XGBoost ML | ⏸ 待训练 | 管线就绪，3/27 提醒 |
+| Firebase 推送 | ⏸ 待配置 | 需创建 Firebase 项目 |
+
+## 待执行（手动）
+- [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`（如未执行）
+- [ ] Firebase 项目创建 + 下载 google-services.json / GoogleService-Info.plist
+
+---
+
+## 系统架构摘要
+
+### 热币数据源分层
+- **发现** (10min): OKX toplist 多时间帧（4时间帧×2排序=8次/链），4链并行
+- **刷新** (30s): DexScreener 批量
+- **安全**: GoPlus；**SOL持仓**: Helius RPC；**打分**: M+Q+P 三维
+
+### 聪明钱追踪
+- SOL: Helius `accountSubscribe` WebSocket，~400ms
+- ETH/BSC/Base: `GET https://web3.okx.com/api/v5/wallet/post-transaction/transactions-by-address`
+  - 参数 `chains=`（List，不是chainIndex=），需 `User-Agent: Mozilla/5.0`
+  - chainIndex: ETH=1 / BSC=56 / Base=8453，响应 `data[].transactionList[]`
+  - 5s轮询，~2.5s感知
+
+### Agent 交易链路
+Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap→sign→broadcast→record）
+
+### Supabase 主要表
+- `hot_coins` / `hot_daily_picks` / `pump_daily_report`
+- `smart_money_signals` / `smart_money_txns` / `smart_wallets`
+  - `smart_wallets` 列名是 `wallet`（非 `address`），无 `chain` 列
+- `strategies` / `strategy_executions` / `user_api_quota`
+- 共 18 个 Migration
+
+---
+
+## 踩坑速查（详见 pitfalls.md）
+- OKX Wallet API 必须用 `web3.okx.com`（www.okx.com 返回403）
+- `transactions-by-address` 参数是 `chains=`（List），不是 `chainIndex=`
+- 响应结构 `data[].transactionList[]`，不是 `tokenTransferDetails[]`
+- EVM nonce 必须动态获取，hardcode 0 只对首笔有效
+- Supabase DDL 只能 Dashboard SQL Editor 手动执行
+- Flutter `|| null` 误杀零值，改用 `?? null`
+- Python 3.9 不支持 `X | None`，用 `Optional[X]`
+- ON CONFLICT 重复行：同批次去重用 `seen_keys: Set[tuple]`
+
+---
+
+## 2026-03-17 本次会话
+- ✅ 聪明钱升级为实时：SOL Helius WS ~400ms + EVM OKX 5s轮询（commit c8fcad7）
+- ✅ 修复 OKX base URL / endpoint / 参数 / 响应解析
+- ✅ 修复 smart_money_txns 批次去重、OKX toplist 429
+- ✅ 记忆文件重构：双份同步机制、topic文件拆分、sessions-log.md 新建
+
+---
+
+# 以下为旧内容（已废弃，忽略）
 - 外盘：多链热币榜（SOL/BSC/Base），每2小时扫描更新
 - 算法：规则打分冷启动 → XGBoost ML（2周后）
 - 信号通过 **Flutter App** 推送给用户

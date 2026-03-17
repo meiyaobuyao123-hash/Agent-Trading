@@ -22,8 +22,9 @@
 ## 快速速查
 
 ### 线上地址
-- Portal: https://agent-trading-portal.vercel.app/hot
-- Backend: http://43.156.207.26
+- Portal: http://43.156.207.26（服务器部署，nginx反代:3000）
+- Portal (Vercel备): https://agent-trading-portal.vercel.app/hot
+- Backend API: http://43.156.207.26（nginx分流到:8000）
 - GitHub: https://github.com/meiyaobuyao123-hash/Agent-Trading
 
 ### 本地路径
@@ -47,13 +48,13 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 ## 当前功能状态
 | 模块 | 状态 | 备注 |
 |------|------|------|
-| pump.fun 采集 | ✅ 线上 | WS双通道，70+特征 |
+| pump.fun 采集 | ✅ 线上 | 三阶段+实时信号池：score>=55动态进出，APP 30s轮询 |
 | 热币扫描 | ✅ 线上 | OKX toplist，4链，10min发现/30s刷新 |
 | 聪明钱追踪 | ✅ 线上 | SOL ~400ms / EVM ~2.5s，55钱包 |
 | KOL 舆情 | ✅ 线上 | 212 KOL，_evaluate_accuracy TODO |
 | Agent 交易 | ✅ 线上 | Claude LLM + OKX DEX，SOL+EVM |
 | Flutter App | ✅ 运行 | 模拟器 iPhone 17 Pro Max |
-| Portal | ✅ 线上 | Vercel，自动CI/CD |
+| Portal | ✅ 线上 | 服务器部署(systemd+nginx)，Vercel备用 |
 | 合规 | ✅ | 免责声明Gate + CN IP屏蔽 + 推送限流 |
 | XGBoost ML | ⏸ 待训练 | 管线就绪，3/27 提醒 |
 | Firebase 推送 | ⏸ 待配置 | 需创建 Firebase 项目 |
@@ -107,6 +108,11 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
 - ✅ 修复 OKX base URL / endpoint / 参数 / 响应解析
 - ✅ 修复 smart_money_txns 批次去重、OKX toplist 429
 - ✅ 记忆文件重构：双份同步机制、topic文件拆分、sessions-log.md 新建
+- ✅ pump采集三阶段架构（commit bac2a06）：WS全量捕获→交易追踪(20k)→按需enrich(Sem20)
+- ✅ Portal 部署到服务器：systemd portal.service + nginx 反代分流（FastAPI:8000 / Next.js:3000）
+- ✅ 实时信号池（commit 2c2e227）：替代每日推荐，score>=55 且 BC 3-35% 动态进出
+- ✅ Flutter PicksScreen 重写：30s 轮询 /api/pump/signals 实时显示
+- ✅ nginx 新增 /api/pump/ 路由
 
 ---
 
@@ -166,7 +172,8 @@ services/pump-scanner/
 ├── collector.py             # WebSocket 采集 + 快照循环 + 聪明钱重载
 ├── features.py              # 特征提取（TokenFeatures + hard_filter）
 ├── scorer.py                # 7维度打分
-├── daily_job.py             # UTC 00:05 生成内盘 Top10
+├── daily_job.py             # UTC 00:05 生成内盘历史记录（APP已切换到实时信号池）
+├── scanner_ref.py           # 全局 scanner 引用（避免循环导入）
 ├── outcome_labeler.py       # 每1h，72h后打结果标签
 ├── smart_wallet_updater.py  # 每6h，多维度分层（v2：Bot检测+时间衰减）
 ├── creator_stats_updater.py # UTC 01:00，计算 creator_success_rate
@@ -239,9 +246,11 @@ solana=8  bsc=7  base=14  →  总计 29 个，strong=1，normal=6
 - **设计**: 白底极简科技风，AppColors（bg:#F5F7FA, primary:#2563EB）
 - **关键文件**:
   - `models/hot_coin.dart` — 对应 hot_coins 表全字段
-  - `models/daily_pick.dart` — pump.fun 内盘推荐
+  - `models/daily_pick.dart` — pump.fun 历史推荐（history_screen 用）
+  - `models/pump_signal.dart` — 实时信号模型（picks_screen/market_screen 用）
+  - `services/pump_signal_service.dart` — 实时信号 API 服务
   - `widgets/hot_coin_card.dart` — 链徽章+评分+涨跌幅卡片
-  - `widgets/pick_card.dart` — 内盘推荐卡片
+  - `widgets/pick_card.dart` — 内盘历史推荐卡片（history_screen 用）
   - `services/supabase_service.dart` — 3个查询
 
 ## 当前运行状态（2026-03-10）

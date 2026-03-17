@@ -211,14 +211,14 @@ def tool_query_tokens(
     cutoff = (date.today() - timedelta(days=days)).isoformat()
 
     # 获取快照（最新一条 per token）
+    # 注意：token_snapshots 表没有 score/recommendation/social_score/creator 列
     snapshots_res = db.table("token_snapshots") \
         .select("mint, bc_progress, v_sol, market_cap_sol, buy_count, sell_count, "
                 "buy_volume_sol, sell_volume_sol, unique_buyers, unique_sellers, "
                 "buy_sell_ratio_count, buy_sell_ratio_vol, inflow_rate_sol_pm, "
                 "inflow_acceleration, large_buy_count, dev_sold_pct, "
                 "smart_elite_count, smart_verified_count, smart_watching_count, "
-                "smart_money_net_sol, social_score, creator_prev_tokens, "
-                "creator_success_rate, score, recommendation, snapshot_at") \
+                "smart_money_net_sol, snapshot_at") \
         .gte("snapshot_at", f"{cutoff}T00:00:00Z") \
         .order("snapshot_at", desc=True) \
         .limit(limit * 3) \

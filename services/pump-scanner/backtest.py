@@ -216,11 +216,11 @@ def _calc_metrics(picks: set, good: set, hits: set) -> dict:
 
 
 def _load_snapshots(db, cutoff: str) -> Dict[str, dict]:
-    """加载历史快照，每个 mint 保留分数最高的一条"""
+    """加载历史快照，每个 mint 保留 market_cap_sol 最高的一条（作为最佳快照）"""
     res = db.table("token_snapshots") \
         .select("*") \
         .gte("snapshot_at", f"{cutoff}T00:00:00Z") \
-        .order("score", desc=True) \
+        .order("market_cap_sol", desc=True) \
         .limit(5000) \
         .execute()
 

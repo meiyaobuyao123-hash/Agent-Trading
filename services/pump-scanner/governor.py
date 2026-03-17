@@ -72,9 +72,10 @@ async def run_governor():
             _auto_rollback()
             return {"status": "rolled_back"}
 
-        # 6. 启动 Optimizer Agent
+        # 6. 启动 Optimizer Agent（在线程池中运行，避免阻塞事件循环）
+        import asyncio
         log.info("🏛️ 🚀 指标未达标，启动 Optimizer Agent...")
-        result = run_optimization()
+        result = await asyncio.to_thread(run_optimization)
         log.info(f"🏛️ Optimizer 完成: {result}")
 
         return {"status": "optimization_run", "result": result}

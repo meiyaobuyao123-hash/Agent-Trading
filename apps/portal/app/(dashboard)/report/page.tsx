@@ -23,7 +23,7 @@ const FUNNEL_STEPS: { key: string; label: string; computed?: boolean }[] = [
   { key: 'tokens_saved', label: '我们抓到' },
   { key: 'rest_success', label: '详情拉取成功' },
   { key: 'observed_tokens', label: '进入观察' },
-  { key: 'picks_count', label: '推荐给用户' },
+  { key: 'picks_count', label: '实时推荐' },
   { key: 'graduated_count', label: '真的毕业了' },
   { key: 'hit_count', label: '推中了' },
 ]
@@ -102,7 +102,7 @@ export default function PumpReportPage() {
             <div className="grid grid-cols-5 gap-3">
               <StatCard label="pump发射" value={fmtNum(latest.ws_creates)} color="var(--yellow)" />
               <StatCard label="我们抓到" value={fmtNum(latest.tokens_saved)} color="var(--text)" sub={latest.ws_creates > 0 ? `覆盖率 ${((latest.tokens_saved / latest.ws_creates) * 100).toFixed(1)}%` : undefined} />
-              <StatCard label="推荐给用户" value={fmtNum(latest.picks_count)} color="var(--blue)" />
+              <StatCard label="实时推荐" value={fmtNum(latest.picks_count)} color="var(--blue)" />
               <StatCard label="命中率" value={fmtPct(latest.hit_rate)} color="var(--green)" />
               <StatCard label="漏选率" value={fmtPct(latest.miss_rate)} color="var(--red)" />
             </div>

@@ -2,11 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web",
+      "name": "portal",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
-      "cwd": "apps/web",
-      "port": 3000
+      "cwd": "apps/portal",
+      "port": 3003
     },
     {
       "name": "admin",
@@ -14,13 +14,6 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
       "cwd": "apps/admin",
       "port": 3002
-    },
-    {
-      "name": "portal",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "cwd": "apps/portal",
-      "port": 3003
     }
   ]
 }

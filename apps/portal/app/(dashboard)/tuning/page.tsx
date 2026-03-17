@@ -466,7 +466,7 @@ function BacktestBox({ label, data, highlight }: {
 }
 
 
-function ConversationBubble({ entry }: { entry: { role: string; content?: string; tool_call?: string; input?: Record<string, unknown>; result_preview?: string; timestamp?: string } }) {
+function ConversationBubble({ entry }: { entry: { role: string; content?: string; tool_call?: string; tool?: string; input?: Record<string, unknown>; result_preview?: string; timestamp?: string } }) {
   const isAssistant = entry.role === 'assistant'
   const isTool = entry.role === 'tool'
 

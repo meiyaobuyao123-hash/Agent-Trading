@@ -9,9 +9,9 @@ import { usePumpReport, PumpDailyReport } from '@/hooks/usePumpReport'
 const FUNNEL_STEPS = [
   { key: 'ws_creates', label: 'pump发射', desc: 'WS 收到的全部 create 事件' },
   { key: 'tokens_saved', label: '我们抓到', desc: '成功入库追踪的代币数' },
-  { key: 'rest_success', label: '详情拉取成功', desc: 'REST API 详情成功' },
+  { key: 'rest_success', label: '详情拉取成功', desc: 'enrich REST 详情成功' },
   { key: 'observed_tokens', label: '进入观察', desc: '通过硬过滤的去重代币' },
-  { key: 'picks_count', label: '推荐给用户', desc: '每日 Top 推荐' },
+  { key: 'picks_count', label: '实时推荐', desc: '进入实时信号池的代币数' },
   { key: 'graduated_count', label: '真的毕业了', desc: '完成 Bonding Curve' },
   { key: 'hit_count', label: '推中了', desc: '推荐 ∩ 毕业' },
 ] as const

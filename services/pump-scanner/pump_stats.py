@@ -31,6 +31,8 @@ def _ensure_today():
             "snapshots_written": 0,    # 写入快照数
             "hard_filter_pass": 0,     # 通过硬过滤数
             "hard_filter_fail": 0,     # 未通过硬过滤数
+            "signal_entered": 0,       # 进入信号池数
+            "signal_exited": 0,        # 移出信号池数
         }
 
 

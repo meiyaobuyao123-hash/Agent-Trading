@@ -23,6 +23,7 @@ from api.routes_agent import router as agent_router
 from api.routes_price import router as price_router
 from api.routes_risk import router as risk_router
 from api.routes_device import router as device_router
+from api.routes_pump import router as pump_router
 from api.geo_middleware import GeoBlockMiddleware
 from routes_smart_money import router as smart_money_router
 
@@ -61,6 +62,7 @@ app.include_router(agent_router)
 app.include_router(price_router)
 app.include_router(risk_router)
 app.include_router(device_router)
+app.include_router(pump_router)
 app.include_router(smart_money_router)
 
 

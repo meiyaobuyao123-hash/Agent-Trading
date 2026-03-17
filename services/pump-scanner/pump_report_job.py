@@ -44,6 +44,8 @@ def run_pump_report(report_date: date = None):
         snapshots_written = stats["snapshots_written"]
         filter_pass = stats["hard_filter_pass"]
         filter_fail = stats["hard_filter_fail"]
+        signal_entered = stats.get("signal_entered", 0)
+        signal_exited = stats.get("signal_exited", 0)
     else:
         # 计数器不可用，从 DB 推算
         ws_creates = 0
@@ -55,6 +57,8 @@ def run_pump_report(report_date: date = None):
         snapshots_written = 0
         filter_pass = 0
         filter_fail = 0
+        signal_entered = 0
+        signal_exited = 0
 
     # ── L2: 我们抓到多少（pump_tokens 当日入库）─────────
     try:
@@ -189,6 +193,10 @@ def run_pump_report(report_date: date = None):
             "ws_reconnects": ws_reconnects,
             "rest_success_pct": rest_success_pct,
             "avg_snapshots_per_min": avg_snapshots_per_min,
+        },
+        "signals": {
+            "entered": signal_entered,
+            "exited": signal_exited,
         },
     }
 

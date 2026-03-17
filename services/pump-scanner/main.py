@@ -80,8 +80,17 @@ ENABLE_API = os.getenv("ENABLE_API", "true").lower() == "true"
 API_PORT = int(os.getenv("API_PORT", "8000"))
 
 
+_scanner: PumpScanner = None  # type: ignore
+
+def get_scanner() -> PumpScanner:
+    """供 API 路由获取 scanner 实例"""
+    return _scanner
+
+
 async def main():
+    global _scanner
     scanner = PumpScanner()
+    _scanner = scanner
     scheduler = AsyncIOScheduler()
 
     # ══════════════════════════════════════════════════════════

@@ -5,14 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../../models/hot_coin.dart';
-import '../../models/daily_pick.dart';
+import '../../models/pump_signal.dart';
 import '../../models/smart_money_signal.dart';
 import '../../models/token_detail.dart';
 import '../../services/supabase_service.dart';
+import '../../services/pump_signal_service.dart';
 import '../../services/price_ticker_service.dart';
 import '../../theme/app_colors.dart';
+import '../../widgets/common/token_avatar.dart';
 import '../../widgets/hot_coin_card.dart';
-import '../../widgets/pick_card.dart';
 import '../../widgets/smart_money_card.dart';
 import '../../widgets/smart_money_detail_sheet.dart';
 import '../../widgets/shimmer_list.dart';
@@ -38,9 +39,10 @@ class _MarketScreenState extends State<MarketScreen> {
   Map<String, PriceTick> _livePrices = {};
   StreamSubscription? _priceSub;
 
-  List<DailyPick> _picks = [];
+  List<PumpSignal> _picks = [];
   bool _picksLoading = true;
   String? _picksError;
+  Timer? _picksTimer;
 
   List<SmartMoneySignal> _smartSignals = [];
   List<SmartMoneySignal> _smartFiltered = [];
@@ -55,6 +57,7 @@ class _MarketScreenState extends State<MarketScreen> {
     _loadHot();
     _loadPicks();
     _loadSmartMoney();
+    _picksTimer = Timer.periodic(const Duration(seconds: 30), (_) => _loadPicks());
     _priceSub = PriceTickerService.instance.stream.listen((prices) {
       if (mounted) setState(() => _livePrices = prices);
     });
@@ -63,6 +66,7 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   void dispose() {
     _priceSub?.cancel();
+    _picksTimer?.cancel();
     PriceTickerService.instance.stop();
     super.dispose();
   }
@@ -91,12 +95,11 @@ class _MarketScreenState extends State<MarketScreen> {
   }
 
   Future<void> _loadPicks() async {
-    if (!_picksLoading) setState(() { _picksLoading = true; _picksError = null; });
     try {
-      final picks = await SupabaseService.instance.fetchTodayPicks();
-      if (mounted) setState(() { _picks = picks; _picksLoading = false; });
+      final signals = await PumpSignalService.instance.fetchSignals();
+      if (mounted) setState(() { _picks = signals; _picksLoading = false; _picksError = null; });
     } catch (e) {
-      if (mounted) setState(() { _picksError = e.toString(); _picksLoading = false; });
+      if (mounted && _picks.isEmpty) setState(() { _picksError = e.toString(); _picksLoading = false; });
     }
   }
 
@@ -119,9 +122,24 @@ class _MarketScreenState extends State<MarketScreen> {
       CupertinoPageRoute(builder: (_) => TokenDetailPage(token: TokenDetail.fromHotCoin(coin))));
   }
 
-  void _openPickDetail(DailyPick pick) {
+  void _openPickDetail(PumpSignal signal) {
     Navigator.push(context,
-      CupertinoPageRoute(builder: (_) => TokenDetailPage(token: TokenDetail.fromDailyPick(pick))));
+      CupertinoPageRoute(builder: (_) => TokenDetailPage(token: _signalToDetail(signal))));
+  }
+
+  TokenDetail _signalToDetail(PumpSignal s) {
+    return TokenDetail(
+      chain: 'solana', address: s.mint, name: s.name, symbol: s.symbol,
+      priceUsd: 0, marketCapUsd: 0, liquidityUsd: 0,
+      volume24hUsd: 0, volume1hUsd: 0,
+      priceChange1h: 0, priceChange6h: 0, priceChange24h: 0,
+      buys1h: 0, sells1h: 0, buys24h: 0, sells24h: 0,
+      ageDays: s.ageMinutes / 1440, holderCount: 0,
+      goplusRisk: false,
+      hasTwitter: s.twitter != null, hasTelegram: s.telegram != null, hasWebsite: s.website != null,
+      score: s.score, scoreDetail: s.scoreDetail, recommendation: s.recommendation,
+      source: TokenSource.dailyPick, bcProgress: s.bcProgress, imageUri: s.imageUri,
+    );
   }
 
   Future<void> _loadSmartMoney() async {
@@ -502,7 +520,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ];
     }
     if (_picksError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadPicks))];
-    if (_picks.isEmpty) return [const SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.bolt, text: '今日信号尚未生成'))];
+    if (_picks.isEmpty) return [const SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.waveform, text: '暂无实时信号'))];
 
     return [
       SliverToBoxAdapter(
@@ -531,9 +549,9 @@ class _MarketScreenState extends State<MarketScreen> {
             borderRadius: BorderRadius.circular(16),
             child: Column(
               children: List.generate(_picks.length, (i) {
-                final pick = _picks[i];
+                final signal = _picks[i];
                 return Column(children: [
-                  PickCard(pick: pick, onTap: () => _openPickDetail(pick)),
+                  _PumpSignalRow(signal: signal, rank: i + 1, onTap: () => _openPickDetail(signal)),
                   if (i < _picks.length - 1)
                     Padding(
                       padding: const EdgeInsets.only(left: 80),
@@ -550,7 +568,7 @@ class _MarketScreenState extends State<MarketScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           child: Center(
             child: Text(
-              '每日 UTC 00:05 更新 · pump.fun 内盘扫描',
+              '实时扫描 · pump.fun · 30s刷新',
               textAlign: TextAlign.center,
               style: TextStyle(color: c.textTertiary, fontSize: 12),
             ),
@@ -660,5 +678,108 @@ class _ErrorView extends StatelessWidget {
         child: Text('重试', style: TextStyle(fontWeight: FontWeight.w600, color: c.primary)),
       ),
     ]));
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  实时信号行（替代 PickCard）
+// ═══════════════════════════════════════════════════════════
+class _PumpSignalRow extends StatelessWidget {
+  final PumpSignal signal;
+  final int rank;
+  final VoidCallback? onTap;
+
+  const _PumpSignalRow({required this.signal, required this.rank, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final isStrong = signal.isStrong;
+
+    return CupertinoButton(
+      padding: EdgeInsets.zero,
+      onPressed: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 24,
+              child: Text(
+                '$rank',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: rank <= 3 ? c.primary : c.textSecondary,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TokenAvatar(imageUrl: signal.imageUri, symbol: signal.symbol, chain: 'solana', size: 38),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Row(children: [
+                    Flexible(
+                      child: Text(
+                        signal.symbol.toUpperCase(),
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: c.textPrimary, letterSpacing: -0.3),
+                      ),
+                    ),
+                    if (isStrong) ...[
+                      const SizedBox(width: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                        decoration: BoxDecoration(gradient: c.successGradient, borderRadius: BorderRadius.circular(4)),
+                        child: const Text('强推', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                      ),
+                    ],
+                  ]),
+                  const SizedBox(height: 5),
+                  Row(children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: c.primary.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'BC ${signal.bcProgress.toStringAsFixed(1)}%',
+                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: c.primary),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text('${signal.uniqueBuyers}人', style: TextStyle(fontSize: 11, color: c.textSecondary)),
+                    const SizedBox(width: 6),
+                    Text(signal.ageLabel, style: TextStyle(fontSize: 11, color: c.textTertiary)),
+                  ]),
+                ],
+              ),
+            ),
+            Container(
+              constraints: const BoxConstraints(minWidth: 38),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              decoration: BoxDecoration(
+                gradient: signal.score >= 75 ? c.successGradient : c.primaryGradient,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                signal.score.toStringAsFixed(0),
+                style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()]),
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(CupertinoIcons.chevron_right, size: 12, color: c.textTertiary),
+          ],
+        ),
+      ),
+    );
   }
 }

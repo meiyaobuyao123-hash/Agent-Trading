@@ -21,6 +21,7 @@ from config import (
     MAX_TRADE_TRACKED, TRADE_EVICT_AGE_H, TRADE_DEAD_AGE_H,
     ENRICH_MIN_BUYERS, ENRICH_MIN_BC_PCT,
     ENRICH_CONCURRENCY, ENRICH_COOLDOWN_S,
+    BC_MIN_PCT, BC_MAX_PCT,
 )
 from features import TokenFeatures, extract_features, hard_filter, to_snapshot_dict, calc_bc_progress
 from scorer import score
@@ -30,6 +31,11 @@ from database import (
 )
 import pump_stats
 import push_service
+
+# ── 实时信号池配置 ──
+SIGNAL_MIN_SCORE     = 55       # 进入信号池最低分
+SIGNAL_DEAD_NO_TRADE = 1800     # 30min 无交易 → 移出信号池
+SIGNAL_MAX_AGE_H     = 3        # 超过3小时 → 移出信号池
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +70,40 @@ class PumpScanner:
 
         # ── 实时推送去重 ──
         self._pushed: Set[tuple] = set()
+
+        # ── 实时信号池（内存）──
+        # mint → {mint, symbol, name, score, recommendation, bc_progress,
+        #         market_cap_sol, score_detail, image_uri, twitter, telegram, website,
+        #         unique_buyers, age_minutes, entered_at, last_trade_at}
+        self._signal_pool: Dict[str, dict] = {}
+
+    # ──────────────────────────────────────────────────
+    # 实时信号池 — 供 API 读取
+    # ──────────────────────────────────────────────────
+    def get_signals(self) -> list:
+        """返回当前信号池快照（按分数降序），供 API 端点调用"""
+        now = datetime.now(timezone.utc)
+        signals = []
+        for mint, sig in list(self._signal_pool.items()):
+            # 再次检查是否过期
+            entered = sig.get("entered_at", now)
+            age_h = (now - entered).total_seconds() / 3600
+            if age_h > SIGNAL_MAX_AGE_H:
+                self._signal_pool.pop(mint, None)
+                continue
+            # 检查是否死币（30min 无交易）
+            last_trade = sig.get("last_trade_at", entered)
+            if (now - last_trade).total_seconds() > SIGNAL_DEAD_NO_TRADE:
+                self._signal_pool.pop(mint, None)
+                continue
+            signals.append({
+                **sig,
+                "entered_at": sig["entered_at"].isoformat(),
+                "last_trade_at": sig.get("last_trade_at", sig["entered_at"]).isoformat(),
+                "age_minutes": round((now - entered).total_seconds() / 60, 1),
+            })
+        signals.sort(key=lambda x: x.get("score", 0), reverse=True)
+        return signals
 
     # ──────────────────────────────────────────────────
     # 主入口
@@ -271,6 +311,10 @@ class PumpScanner:
                 mark_graduated(mint, now.isoformat())
                 symbol = self._tokens[mint].get("symbol", mint[:8])
                 log.info(f"🎓 毕业: {symbol} ({mint[:8]}…)")
+                # 毕业 → 移出信号池
+                if mint in self._signal_pool:
+                    self._signal_pool.pop(mint, None)
+                    pump_stats.incr("signal_exited")
 
                 if (mint, "graduated") not in self._pushed:
                     asyncio.ensure_future(
@@ -370,6 +414,9 @@ class PumpScanner:
             if age_hours > TRADE_EVICT_AGE_H:
                 self._tokens.pop(mint, None)
                 self._trades.pop(mint, None)
+                if mint in self._signal_pool:
+                    self._signal_pool.pop(mint, None)
+                    pump_stats.incr("signal_exited")
                 evicted += 1
                 continue
 
@@ -383,6 +430,9 @@ class PumpScanner:
                 if (now - last_trade_time).total_seconds() > 1800:
                     self._tokens.pop(mint, None)
                     self._trades.pop(mint, None)
+                    if mint in self._signal_pool:
+                        self._signal_pool.pop(mint, None)
+                        pump_stats.incr("signal_exited")
                     evicted += 1
                     continue
 
@@ -427,6 +477,54 @@ class PumpScanner:
                 f"{f.symbol}({mint[:6]}…) BC={f.bc_progress:.1f}% "
                 f"分={result.total} [{result.recommendation}]"
             )
+
+            # ── 实时信号池维护 ──
+            in_bc_window = BC_MIN_PCT <= f.bc_progress <= BC_MAX_PCT
+            if result.total >= SIGNAL_MIN_SCORE and in_bc_window and result.recommendation != "skip":
+                last_trade_at = now
+                if trades:
+                    last_t = max(
+                        (t.get("traded_at", now) if isinstance(t.get("traded_at"), datetime) else now)
+                        for t in trades
+                    )
+                    last_trade_at = last_t
+
+                if mint not in self._signal_pool:
+                    self._signal_pool[mint] = {
+                        "mint": mint,
+                        "symbol": f.symbol,
+                        "name": f.name,
+                        "entered_at": now,
+                    }
+                    pump_stats.incr("signal_entered")
+                    log.info(
+                        f"[信号池+] {f.symbol}({mint[:6]}…) "
+                        f"score={result.total:.0f} bc={f.bc_progress:.1f}%"
+                    )
+                # 更新实时数据
+                self._signal_pool[mint].update({
+                    "score": round(result.total, 1),
+                    "recommendation": result.recommendation,
+                    "bc_progress": round(f.bc_progress, 1),
+                    "market_cap_sol": round(f.market_cap_sol, 2),
+                    "score_detail": result.detail,
+                    "unique_buyers": f.unique_buyers,
+                    "image_uri": token_info.get("image_uri"),
+                    "twitter": token_info.get("twitter"),
+                    "telegram": token_info.get("telegram"),
+                    "website": token_info.get("website"),
+                    "last_trade_at": last_trade_at,
+                })
+            else:
+                # 不再满足条件 → 移出信号池
+                if mint in self._signal_pool:
+                    log.info(
+                        f"[信号池-] {f.symbol}({mint[:6]}…) "
+                        f"score={result.total:.0f} bc={f.bc_progress:.1f}% "
+                        f"reason={'bc_out' if not in_bc_window else 'low_score'}"
+                    )
+                    pump_stats.incr("signal_exited")
+                    self._signal_pool.pop(mint, None)
 
             # ── 实时推送检测 ──
 

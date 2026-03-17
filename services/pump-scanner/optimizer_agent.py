@@ -136,13 +136,31 @@ def run_optimization() -> dict:
         for turn in range(max_turns):
             log.info(f"🤖 Optimizer turn {turn+1}/{max_turns}")
 
-            response = client.messages.create(
-                model=OPTIMIZER_MODEL,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=TOOL_DEFINITIONS,
-                messages=messages,
-            )
+            # 带重试的 API 调用（处理 429/500 等临时错误）
+            for attempt in range(3):
+                try:
+                    response = client.messages.create(
+                        model=OPTIMIZER_MODEL,
+                        max_tokens=4096,
+                        system=SYSTEM_PROMPT,
+                        tools=TOOL_DEFINITIONS,
+                        messages=messages,
+                    )
+                    break
+                except anthropic.RateLimitError as e:
+                    if attempt < 2:
+                        wait = 30 * (attempt + 1)
+                        log.warning(f"🤖 API 429 限速，等待 {wait}s 后重试...")
+                        time.sleep(wait)
+                    else:
+                        raise
+                except anthropic.InternalServerError as e:
+                    if attempt < 2:
+                        wait = 10 * (attempt + 1)
+                        log.warning(f"🤖 API 500 错误，等待 {wait}s 后重试...")
+                        time.sleep(wait)
+                    else:
+                        raise
 
             total_input_tokens += response.usage.input_tokens
             total_output_tokens += response.usage.output_tokens
@@ -205,9 +223,9 @@ def run_optimization() -> dict:
                                 result = {"error": f"未知工具: {tool_name}"}
 
                             result_json = json.dumps(result, ensure_ascii=False, default=str)
-                            # 截断过长的结果
-                            if len(result_json) > 30000:
-                                result_json = result_json[:30000] + "...(truncated)"
+                            # 截断过长的结果（避免触发 rate limit）
+                            if len(result_json) > 15000:
+                                result_json = result_json[:15000] + "...(truncated)"
 
                         except Exception as e:
                             log.error(f"工具 {tool_name} 执行失败: {e}")

@@ -21,9 +21,10 @@ export interface ConversationEntry {
   role: 'user' | 'assistant' | 'tool'
   content?: string
   tool_call?: string
+  tool?: string
   input?: Record<string, unknown>
   result_preview?: string
-  timestamp: string
+  timestamp?: string
 }
 
 export interface OptimizationProposal {

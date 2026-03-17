@@ -25,7 +25,7 @@ async def get_pump_signals():
     - 不再符合条件自动移出（涨过了/死了/超时）
     - 无固定大小，可能为空
     """
-    from main import get_scanner
+    from scanner_ref import get_scanner
 
     scanner = get_scanner()
     if scanner is None:

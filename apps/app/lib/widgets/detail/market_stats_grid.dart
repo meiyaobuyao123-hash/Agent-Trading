@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 
@@ -14,11 +15,11 @@ class MarketStatsGrid extends StatelessWidget {
         : 0.0;
 
     final items = [
-      _Item('市值', _fmtUsd(token.marketCapUsd)),
-      _Item('流动性', _fmtUsd(token.liquidityUsd)),
-      _Item('24h量', _fmtUsd(token.volume24hUsd)),
-      _Item('1h量', _fmtUsd(token.volume1hUsd)),
-      _Item('流/市值', '${liqMcRatio.toStringAsFixed(1)}%'),
+      _Item(S.of(context).marketCap, _fmtUsd(token.marketCapUsd)),
+      _Item(S.of(context).liquiditySmall, _fmtUsd(token.liquidityUsd)),
+      _Item(S.of(context).vol24hShort, _fmtUsd(token.volume24hUsd)),
+      _Item(S.of(context).vol1hShort, _fmtUsd(token.volume1hUsd)),
+      _Item(S.of(context).liqMcShort, '${liqMcRatio.toStringAsFixed(1)}%'),
     ];
 
     return Container(

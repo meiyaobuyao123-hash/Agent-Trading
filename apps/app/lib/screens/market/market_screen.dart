@@ -319,7 +319,7 @@ class _MarketScreenState extends State<MarketScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
                 child: Row(
                   children: [
-                    Text(DateFormat('M月d日').format(DateTime.now()),
+                    Text(DateFormat.MMMd(Localizations.localeOf(context).languageCode).format(DateTime.now()),
                       style: TextStyle(color: c.textSecondary, fontSize: 14)),
                     const Spacer(),
                     if (_picks.isNotEmpty)

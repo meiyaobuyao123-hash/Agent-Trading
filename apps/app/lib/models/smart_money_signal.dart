@@ -173,9 +173,9 @@ class SmartMoneySignal {
     try {
       final dt = DateTime.parse(latestSignalAt!);
       final diff = DateTime.now().toUtc().difference(dt);
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m前';
-      if (diff.inHours < 24) return '${diff.inHours}h前';
-      return '${diff.inDays}d前';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+      if (diff.inHours < 24) return '${diff.inHours}h';
+      return '${diff.inDays}d';
     } catch (_) {
       return '';
     }

@@ -149,7 +149,7 @@ class WalletService extends ChangeNotifier {
     final trimmed = mnemonic.trim().toLowerCase();
     final words = trimmed.split(RegExp(r'\s+'));
     if (words.length != 12 && words.length != 24) {
-      throw ArgumentError('助记词必须是 12 或 24 个单词');
+      throw ArgumentError('Mnemonic must be 12 or 24 words');
     }
 
     final created = <UserWallet>[];
@@ -166,7 +166,7 @@ class WalletService extends ChangeNotifier {
 
       final wallet = UserWallet(
         id: _generateId(),
-        name: name.isNotEmpty ? '$name (${_chainLabel(chain)})' : '${_chainLabel(chain)} 钱包',
+        name: name.isNotEmpty ? '$name (${_chainLabel(chain)})' : '${_chainLabel(chain)} Wallet',
         address: address,
         chain: chain,
         type: WalletType.mnemonic,
@@ -185,7 +185,7 @@ class WalletService extends ChangeNotifier {
     }
 
     if (created.isEmpty) {
-      throw StateError('所有链的钱包均已存在${skipped.isNotEmpty ? '（${skipped.join("/")}）' : ""}');
+      throw StateError('Wallets already exist for all chains');
     }
 
     await _persist();
@@ -201,7 +201,7 @@ class WalletService extends ChangeNotifier {
   }) async {
     final trimmed = privateKey.trim();
     if (trimmed.isEmpty || trimmed.length < 32) {
-      throw ArgumentError('无效的私钥');
+      throw ArgumentError('Invalid private key');
     }
 
     // 简化地址派生
@@ -209,12 +209,12 @@ class WalletService extends ChangeNotifier {
 
     // 去重检查
     if (_wallets.any((w) => w.address == address && w.chain == chain)) {
-      throw StateError('该钱包已存在');
+      throw StateError('Wallet already exists');
     }
 
     final wallet = UserWallet(
       id: _generateId(),
-      name: name.isNotEmpty ? name : '${_chainLabel(chain)} 钱包',
+      name: name.isNotEmpty ? name : '${_chainLabel(chain)} Wallet',
       address: address,
       chain: chain,
       type: WalletType.privateKey,

@@ -1594,6 +1594,438 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'ATH/ATL、总供应量、社区数据等补充信息'**
   String get coinGeckoDesc;
+
+  /// No description provided for @detailTabQuotes.
+  ///
+  /// In zh, this message translates to:
+  /// **'行情'**
+  String get detailTabQuotes;
+
+  /// No description provided for @detailTabDetails.
+  ///
+  /// In zh, this message translates to:
+  /// **'详情'**
+  String get detailTabDetails;
+
+  /// No description provided for @detailTabSecurity.
+  ///
+  /// In zh, this message translates to:
+  /// **'安全检测'**
+  String get detailTabSecurity;
+
+  /// No description provided for @marketCap.
+  ///
+  /// In zh, this message translates to:
+  /// **'市值'**
+  String get marketCap;
+
+  /// No description provided for @liquidityPool.
+  ///
+  /// In zh, this message translates to:
+  /// **'资金池'**
+  String get liquidityPool;
+
+  /// No description provided for @holderAddressCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'持币地址数'**
+  String get holderAddressCount;
+
+  /// No description provided for @tradingAddresses24h.
+  ///
+  /// In zh, this message translates to:
+  /// **'24h交易地址数'**
+  String get tradingAddresses24h;
+
+  /// No description provided for @moreLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'更多'**
+  String get moreLabel;
+
+  /// No description provided for @priceLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'价格'**
+  String get priceLabel;
+
+  /// No description provided for @holderAddressTab.
+  ///
+  /// In zh, this message translates to:
+  /// **'持币地址'**
+  String get holderAddressTab;
+
+  /// No description provided for @liquidityPoolTab.
+  ///
+  /// In zh, this message translates to:
+  /// **'资金池'**
+  String get liquidityPoolTab;
+
+  /// No description provided for @devTokensTab.
+  ///
+  /// In zh, this message translates to:
+  /// **'开发者代币'**
+  String get devTokensTab;
+
+  /// No description provided for @buyTxCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'买入笔数'**
+  String get buyTxCount;
+
+  /// No description provided for @sellTxCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'卖出笔数'**
+  String get sellTxCount;
+
+  /// No description provided for @turnover.
+  ///
+  /// In zh, this message translates to:
+  /// **'成交额'**
+  String get turnover;
+
+  /// No description provided for @netBuy.
+  ///
+  /// In zh, this message translates to:
+  /// **'净买入'**
+  String get netBuy;
+
+  /// No description provided for @holdersSmall.
+  ///
+  /// In zh, this message translates to:
+  /// **'持有人'**
+  String get holdersSmall;
+
+  /// No description provided for @liquiditySmall.
+  ///
+  /// In zh, this message translates to:
+  /// **'流动性'**
+  String get liquiditySmall;
+
+  /// No description provided for @buySellColumn.
+  ///
+  /// In zh, this message translates to:
+  /// **'买/卖'**
+  String get buySellColumn;
+
+  /// No description provided for @allTrades.
+  ///
+  /// In zh, this message translates to:
+  /// **'所有交易'**
+  String get allTrades;
+
+  /// No description provided for @qtyTimeColumn.
+  ///
+  /// In zh, this message translates to:
+  /// **'数量 / 时间'**
+  String get qtyTimeColumn;
+
+  /// No description provided for @valuePriceColumn.
+  ///
+  /// In zh, this message translates to:
+  /// **'价值 / 价格'**
+  String get valuePriceColumn;
+
+  /// No description provided for @addressColumn.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址'**
+  String get addressColumn;
+
+  /// No description provided for @liqMcRatio.
+  ///
+  /// In zh, this message translates to:
+  /// **'流/市值比'**
+  String get liqMcRatio;
+
+  /// No description provided for @vol24h.
+  ///
+  /// In zh, this message translates to:
+  /// **'24h成交额'**
+  String get vol24h;
+
+  /// No description provided for @vol1h.
+  ///
+  /// In zh, this message translates to:
+  /// **'1h成交额'**
+  String get vol1h;
+
+  /// No description provided for @noDevTokenData.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无开发者代币数据'**
+  String get noDevTokenData;
+
+  /// No description provided for @priceChangeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'涨跌幅'**
+  String get priceChangeLabel;
+
+  /// No description provided for @volumeLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'成交量'**
+  String get volumeLabel;
+
+  /// No description provided for @totalTurnover.
+  ///
+  /// In zh, this message translates to:
+  /// **'成交总额'**
+  String get totalTurnover;
+
+  /// No description provided for @tradeCount.
+  ///
+  /// In zh, this message translates to:
+  /// **'交易笔数'**
+  String get tradeCount;
+
+  /// No description provided for @keyData.
+  ///
+  /// In zh, this message translates to:
+  /// **'关键数据'**
+  String get keyData;
+
+  /// No description provided for @circulatingMC.
+  ///
+  /// In zh, this message translates to:
+  /// **'流通市值'**
+  String get circulatingMC;
+
+  /// No description provided for @holderCountTop10.
+  ///
+  /// In zh, this message translates to:
+  /// **'持有人数（Top10占比）'**
+  String get holderCountTop10;
+
+  /// No description provided for @totalLiquidity.
+  ///
+  /// In zh, this message translates to:
+  /// **'总流动性'**
+  String get totalLiquidity;
+
+  /// No description provided for @circulatingSupply.
+  ///
+  /// In zh, this message translates to:
+  /// **'流通供应量'**
+  String get circulatingSupply;
+
+  /// No description provided for @maxSupplyLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'最大供应量'**
+  String get maxSupplyLabel;
+
+  /// No description provided for @athLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'历史最高价'**
+  String get athLabel;
+
+  /// No description provided for @atlLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'历史最低价'**
+  String get atlLabel;
+
+  /// No description provided for @basicInfo.
+  ///
+  /// In zh, this message translates to:
+  /// **'基础信息'**
+  String get basicInfo;
+
+  /// No description provided for @mainChain.
+  ///
+  /// In zh, this message translates to:
+  /// **'主链'**
+  String get mainChain;
+
+  /// No description provided for @tokenFullName.
+  ///
+  /// In zh, this message translates to:
+  /// **'币种全称'**
+  String get tokenFullName;
+
+  /// No description provided for @createdTime.
+  ///
+  /// In zh, this message translates to:
+  /// **'创建时间'**
+  String get createdTime;
+
+  /// No description provided for @aboutToken.
+  ///
+  /// In zh, this message translates to:
+  /// **'关于 {symbol}'**
+  String aboutToken(String symbol);
+
+  /// No description provided for @noDescription.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无简介'**
+  String get noDescription;
+
+  /// No description provided for @socialMedia.
+  ///
+  /// In zh, this message translates to:
+  /// **'社交媒体'**
+  String get socialMedia;
+
+  /// No description provided for @searchOnX.
+  ///
+  /// In zh, this message translates to:
+  /// **'在 X 上搜索'**
+  String get searchOnX;
+
+  /// No description provided for @searchName.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索名称'**
+  String get searchName;
+
+  /// No description provided for @searchAddress.
+  ///
+  /// In zh, this message translates to:
+  /// **'搜索地址'**
+  String get searchAddress;
+
+  /// No description provided for @securityDisclaimerText.
+  ///
+  /// In zh, this message translates to:
+  /// **'本工具旨在提供代币安全性辅助判断，不应作为投资依据或推荐。请在交易前自行评估风险。'**
+  String get securityDisclaimerText;
+
+  /// No description provided for @riskItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'风险项'**
+  String get riskItems;
+
+  /// No description provided for @warningItems.
+  ///
+  /// In zh, this message translates to:
+  /// **'警示项'**
+  String get warningItems;
+
+  /// No description provided for @tf5m.
+  ///
+  /// In zh, this message translates to:
+  /// **'5分'**
+  String get tf5m;
+
+  /// No description provided for @tf15m.
+  ///
+  /// In zh, this message translates to:
+  /// **'15分'**
+  String get tf15m;
+
+  /// No description provided for @tf1hLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'1小时'**
+  String get tf1hLabel;
+
+  /// No description provided for @tf4h.
+  ///
+  /// In zh, this message translates to:
+  /// **'4小时'**
+  String get tf4h;
+
+  /// No description provided for @tf1d.
+  ///
+  /// In zh, this message translates to:
+  /// **'1天'**
+  String get tf1d;
+
+  /// No description provided for @tf5min.
+  ///
+  /// In zh, this message translates to:
+  /// **'5分钟'**
+  String get tf5min;
+
+  /// No description provided for @tf1hour.
+  ///
+  /// In zh, this message translates to:
+  /// **'1小时'**
+  String get tf1hour;
+
+  /// No description provided for @tf4hour.
+  ///
+  /// In zh, this message translates to:
+  /// **'4小时'**
+  String get tf4hour;
+
+  /// No description provided for @tf24hour.
+  ///
+  /// In zh, this message translates to:
+  /// **'24小时'**
+  String get tf24hour;
+
+  /// No description provided for @recentTrades.
+  ///
+  /// In zh, this message translates to:
+  /// **'最近交易'**
+  String get recentTrades;
+
+  /// No description provided for @noTradePairData.
+  ///
+  /// In zh, this message translates to:
+  /// **'无交易对数据'**
+  String get noTradePairData;
+
+  /// No description provided for @noTradeData.
+  ///
+  /// In zh, this message translates to:
+  /// **'暂无交易数据'**
+  String get noTradeData;
+
+  /// No description provided for @secondsAgo.
+  ///
+  /// In zh, this message translates to:
+  /// **'{seconds}秒前'**
+  String secondsAgo(int seconds);
+
+  /// No description provided for @vol24hShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'24h量'**
+  String get vol24hShort;
+
+  /// No description provided for @vol1hShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'1h量'**
+  String get vol1hShort;
+
+  /// No description provided for @liqMcShort.
+  ///
+  /// In zh, this message translates to:
+  /// **'流/市值'**
+  String get liqMcShort;
+
+  /// No description provided for @statusConfirmed.
+  ///
+  /// In zh, this message translates to:
+  /// **'已确认'**
+  String get statusConfirmed;
+
+  /// No description provided for @statusFailed.
+  ///
+  /// In zh, this message translates to:
+  /// **'失败'**
+  String get statusFailed;
+
+  /// No description provided for @statusSubmitting.
+  ///
+  /// In zh, this message translates to:
+  /// **'提交中'**
+  String get statusSubmitting;
+
+  /// No description provided for @statusPending.
+  ///
+  /// In zh, this message translates to:
+  /// **'等待中'**
+  String get statusPending;
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

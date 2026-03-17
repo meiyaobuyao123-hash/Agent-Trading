@@ -858,4 +858,225 @@ class SEn extends S {
 
   @override
   String get coinGeckoDesc => 'ATH/ATL, total supply, community data and more';
+
+  @override
+  String get detailTabQuotes => 'Quotes';
+
+  @override
+  String get detailTabDetails => 'Details';
+
+  @override
+  String get detailTabSecurity => 'Security';
+
+  @override
+  String get marketCap => 'MC';
+
+  @override
+  String get liquidityPool => 'Pool';
+
+  @override
+  String get holderAddressCount => 'Holders';
+
+  @override
+  String get tradingAddresses24h => '24h Traders';
+
+  @override
+  String get moreLabel => 'More';
+
+  @override
+  String get priceLabel => 'Price';
+
+  @override
+  String get holderAddressTab => 'Holders';
+
+  @override
+  String get liquidityPoolTab => 'Liquidity';
+
+  @override
+  String get devTokensTab => 'Dev Tokens';
+
+  @override
+  String get buyTxCount => 'Buy Count';
+
+  @override
+  String get sellTxCount => 'Sell Count';
+
+  @override
+  String get turnover => 'Volume';
+
+  @override
+  String get netBuy => 'Net Buy';
+
+  @override
+  String get holdersSmall => 'Holders';
+
+  @override
+  String get liquiditySmall => 'Liquidity';
+
+  @override
+  String get buySellColumn => 'Buy/Sell';
+
+  @override
+  String get allTrades => 'All Trades';
+
+  @override
+  String get qtyTimeColumn => 'Qty / Time';
+
+  @override
+  String get valuePriceColumn => 'Value / Price';
+
+  @override
+  String get addressColumn => 'Address';
+
+  @override
+  String get liqMcRatio => 'Liq/MC';
+
+  @override
+  String get vol24h => '24h Volume';
+
+  @override
+  String get vol1h => '1h Volume';
+
+  @override
+  String get noDevTokenData => 'No dev token data';
+
+  @override
+  String get priceChangeLabel => 'Change';
+
+  @override
+  String get volumeLabel => 'Volume';
+
+  @override
+  String get totalTurnover => 'Total Volume';
+
+  @override
+  String get tradeCount => 'Trade Count';
+
+  @override
+  String get keyData => 'Key Data';
+
+  @override
+  String get circulatingMC => 'Circulating MC';
+
+  @override
+  String get holderCountTop10 => 'Holders (Top10%)';
+
+  @override
+  String get totalLiquidity => 'Total Liquidity';
+
+  @override
+  String get circulatingSupply => 'Circ. Supply';
+
+  @override
+  String get maxSupplyLabel => 'Max Supply';
+
+  @override
+  String get athLabel => 'ATH';
+
+  @override
+  String get atlLabel => 'ATL';
+
+  @override
+  String get basicInfo => 'Basic Info';
+
+  @override
+  String get mainChain => 'Chain';
+
+  @override
+  String get tokenFullName => 'Full Name';
+
+  @override
+  String get createdTime => 'Created';
+
+  @override
+  String aboutToken(String symbol) {
+    return 'About $symbol';
+  }
+
+  @override
+  String get noDescription => 'No description';
+
+  @override
+  String get socialMedia => 'Social Media';
+
+  @override
+  String get searchOnX => 'Search on X';
+
+  @override
+  String get searchName => 'Search Name';
+
+  @override
+  String get searchAddress => 'Search Address';
+
+  @override
+  String get securityDisclaimerText =>
+      'This tool provides security assessment assistance and should not be used as investment advice. Please evaluate risks before trading.';
+
+  @override
+  String get riskItems => 'Risk';
+
+  @override
+  String get warningItems => 'Warning';
+
+  @override
+  String get tf5m => '5m';
+
+  @override
+  String get tf15m => '15m';
+
+  @override
+  String get tf1hLabel => '1h';
+
+  @override
+  String get tf4h => '4h';
+
+  @override
+  String get tf1d => '1d';
+
+  @override
+  String get tf5min => '5min';
+
+  @override
+  String get tf1hour => '1h';
+
+  @override
+  String get tf4hour => '4h';
+
+  @override
+  String get tf24hour => '24h';
+
+  @override
+  String get recentTrades => 'Recent Trades';
+
+  @override
+  String get noTradePairData => 'No pair data';
+
+  @override
+  String get noTradeData => 'No trade data';
+
+  @override
+  String secondsAgo(int seconds) {
+    return '${seconds}s ago';
+  }
+
+  @override
+  String get vol24hShort => '24h Vol';
+
+  @override
+  String get vol1hShort => '1h Vol';
+
+  @override
+  String get liqMcShort => 'Liq/MC';
+
+  @override
+  String get statusConfirmed => 'Confirmed';
+
+  @override
+  String get statusFailed => 'Failed';
+
+  @override
+  String get statusSubmitting => 'Submitting';
+
+  @override
+  String get statusPending => 'Pending';
 }

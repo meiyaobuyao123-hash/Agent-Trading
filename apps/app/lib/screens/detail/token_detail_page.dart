@@ -17,6 +17,7 @@ import '../../widgets/detail/recent_trades_card.dart';
 import '../../widgets/detail/holder_info_card.dart';
 import '../../widgets/detail/security_check_card.dart';
 import '../../widgets/detail/shimmer_skeleton.dart';
+import '../../l10n/app_localizations.dart';
 
 class TokenDetailPage extends StatefulWidget {
   final TokenDetail token;
@@ -157,7 +158,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
         child: Center(child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(8)),
-          child: const Text('已复制', style: TextStyle(color: Colors.white, fontSize: 14)),
+          child: Text(S.of(context).textCopied, style: const TextStyle(color: Colors.white, fontSize: 14)),
         )),
       ),
     );
@@ -244,7 +245,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
                     decoration: BoxDecoration(color: context.colors.bg, borderRadius: BorderRadius.circular(6)),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      child: Text('${token.ageDays.toStringAsFixed(0)}天',
+                      child: Text(S.of(context).daysUnit(token.ageDays.toStringAsFixed(0)),
                         style: TextStyle(fontSize: 11, color: context.colors.textSecondary)),
                     ),
                   ),
@@ -263,7 +264,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
               dividerColor: Colors.transparent,
               splashFactory: NoSplash.splashFactory,
               overlayColor: WidgetStateProperty.all(Colors.transparent),
-              tabs: const [Tab(text: '行情'), Tab(text: '详情'), Tab(text: '安全检测')],
+              tabs: [Tab(text: S.of(context).detailTabQuotes), Tab(text: S.of(context).detailTabDetails), Tab(text: S.of(context).detailTabSecurity)],
             ),
           ),
           // ── 价格区域（Bitget 左右布局）──
@@ -371,21 +372,21 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           Expanded(
             flex: 5,
             child: Column(children: [
-              _statRow('市值', _fmtWan(
+              _statRow(S.of(context).marketCap, _fmtWan(
                 token.marketCapUsd > 0 ? token.marketCapUsd
                 : (_dexInfo?.marketCap ?? _coinGecko?.marketCap ?? 0)
               )),
-              _statRow('资金池', _fmtWan(
+              _statRow(S.of(context).liquidityPool, _fmtWan(
                 token.liquidityUsd > 0 ? token.liquidityUsd
                 : (_dexInfo?.pairs.isNotEmpty == true ? _dexInfo!.pairs.first.liquidity : 0)
               )),
-              _statRow('持币地址数', (_goplus?.holderCount ?? token.holderCount) > 0 ? _fmtNum(_goplus?.holderCount ?? token.holderCount) : '-'),
-              _statRow('Top 10 占比', () {
+              _statRow(S.of(context).holderAddressCount, (_goplus?.holderCount ?? token.holderCount) > 0 ? _fmtNum(_goplus?.holderCount ?? token.holderCount) : '-'),
+              _statRow(S.of(context).top10Ratio, () {
                 // 优先用链 RPC 精确数据，fallback 到 GoPlus
                 final pct = _top10PctRpc ?? _goplus?.top10HolderPct ?? token.top10HolderPct;
                 return pct != null ? '${pct.toStringAsFixed(1)}%' : '-';
               }()),
-              _statRow('24h交易地址数', _fmtNum(token.buys24h + token.sells24h)),
+              _statRow(S.of(context).tradingAddresses24h, _fmtNum(token.buys24h + token.sells24h)),
             ]),
           ),
         ],
@@ -408,7 +409,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   // ── K线时间选择器 ──
   Widget _buildTimeframeSelector() {
     const tfs = ['5m', '15m', '1h', '4h', '1d'];
-    const tfLabels = {'5m': '5分', '15m': '15分', '1h': '1小时', '4h': '4小时', '1d': '1天'};
+    final tfLabels = {'5m': S.of(context).tf5m, '15m': S.of(context).tf15m, '1h': S.of(context).tf1hLabel, '4h': S.of(context).tf4h, '1d': S.of(context).tf1d};
 
     return ColoredBox(
       color: context.colors.bg,
@@ -435,7 +436,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             );
           }),
           const SizedBox(width: 4),
-          Text('更多', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
+          Text(S.of(context).moreLabel, style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
           Icon(Icons.arrow_drop_down, size: 16, color: context.colors.textSecondary),
           const Spacer(),
           // 图表类型切换按钮（K线 / 折线）
@@ -461,7 +462,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             ),
           ),
           const SizedBox(width: 8),
-          Text('价格', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
+          Text(S.of(context).priceLabel, style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
           Icon(Icons.arrow_drop_down, size: 16, color: context.colors.textSecondary),
           const SizedBox(width: 8),
           Icon(CupertinoIcons.slider_horizontal_3, size: 16, color: context.colors.textSecondary),
@@ -513,7 +514,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
 
   // ── 子Tab栏（交易动态 | 持币地址 | 资金池 | 开发者代币）──
   Widget _buildSubTabBar() {
-    const tabs = ['交易动态', '持币地址', '资金池', '开发者代币'];
+    final tabs = [S.of(context).tradeDynamics, S.of(context).holderAddressTab, S.of(context).liquidityPoolTab, S.of(context).devTokensTab];
     return Container(
       decoration: BoxDecoration(
         color: context.colors.bg,
@@ -612,12 +613,12 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: context.colors.cardGlass, borderRadius: BorderRadius.circular(12)),
       child: Column(children: [
-        _dynamicsRow('买入笔数', '$buys', '卖出笔数', '$sells', buyRatio),
+        _dynamicsRow(S.of(context).buyTxCount, '$buys', S.of(context).sellTxCount, '$sells', buyRatio),
         const Divider(height: 28, thickness: 0.5, color: Color(0xFFF2F2F7)),
-        _dynamicsRow('成交额', _fmtWan(volume), '净买入', '${buys - sells}', buyRatio),
+        _dynamicsRow(S.of(context).turnover, _fmtWan(volume), S.of(context).netBuy, '${buys - sells}', buyRatio),
         const Divider(height: 28, thickness: 0.5, color: Color(0xFFF2F2F7)),
-        _dynamicsRow('持有人', token.holderCount > 0 ? _fmtNum(token.holderCount) : '-',
-          '流动性', _fmtWan(token.liquidityUsd), buyRatio),
+        _dynamicsRow(S.of(context).holdersSmall, token.holderCount > 0 ? _fmtNum(token.holderCount) : '-',
+          S.of(context).liquiditySmall, _fmtWan(token.liquidityUsd), buyRatio),
       ]),
     );
   }
@@ -640,7 +641,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       ])),
       Expanded(flex: 3, child: Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('买/卖', style: TextStyle(fontSize: 11, color: context.colors.textSecondary)),
+          Text(S.of(context).buySellColumn, style: TextStyle(fontSize: 11, color: context.colors.textSecondary)),
           const SizedBox(height: 6),
           ClipRRect(borderRadius: BorderRadius.circular(2), child: SizedBox(height: 10, child: Row(children: [
             Expanded(flex: buyPct, child: Container(color: const Color(0xFF00D4FF))),
@@ -658,7 +659,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 6),
       child: Row(children: [
-        Text('所有交易', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.colors.textPrimary)),
+        Text(S.of(context).allTrades, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: context.colors.textPrimary)),
         Icon(Icons.arrow_drop_down, size: 18, color: context.colors.textSecondary),
         const Spacer(),
         Text('USD', style: TextStyle(fontSize: 13, color: context.colors.textSecondary)),
@@ -672,9 +673,9 @@ class _TokenDetailPageState extends State<TokenDetailPage>
     return Padding(
       padding: EdgeInsets.fromLTRB(16, 4, 16, 6),
       child: Row(children: [
-        Expanded(flex: 4, child: Text('数量 / 时间', style: TextStyle(fontSize: 11, color: context.colors.textSecondary))),
-        Expanded(flex: 3, child: Text('价值 / 价格', style: TextStyle(fontSize: 11, color: context.colors.textSecondary))),
-        Expanded(flex: 3, child: Text('地址', style: TextStyle(fontSize: 11, color: context.colors.textSecondary), textAlign: TextAlign.right)),
+        Expanded(flex: 4, child: Text(S.of(context).qtyTimeColumn, style: TextStyle(fontSize: 11, color: context.colors.textSecondary))),
+        Expanded(flex: 3, child: Text(S.of(context).valuePriceColumn, style: TextStyle(fontSize: 11, color: context.colors.textSecondary))),
+        Expanded(flex: 3, child: Text(S.of(context).addressColumn, style: TextStyle(fontSize: 11, color: context.colors.textSecondary), textAlign: TextAlign.right)),
       ]),
     );
   }
@@ -685,11 +686,11 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       margin: const EdgeInsets.all(16), padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(color: context.colors.cardGlass, borderRadius: BorderRadius.circular(12)),
       child: Column(children: [
-        _infoRow('资金池', _fmtWan(token.liquidityUsd)),
-        const SizedBox(height: 12), _infoRow('市值', _fmtWan(token.marketCapUsd)),
-        const SizedBox(height: 12), _infoRow('流/市值比', '${liqMcRatio.toStringAsFixed(1)}%'),
-        const SizedBox(height: 12), _infoRow('24h成交额', _fmtWan(token.volume24hUsd)),
-        const SizedBox(height: 12), _infoRow('1h成交额', _fmtWan(token.volume1hUsd)),
+        _infoRow(S.of(context).liquidityPool, _fmtWan(token.liquidityUsd)),
+        const SizedBox(height: 12), _infoRow(S.of(context).marketCap, _fmtWan(token.marketCapUsd)),
+        const SizedBox(height: 12), _infoRow(S.of(context).liqMcRatio, '${liqMcRatio.toStringAsFixed(1)}%'),
+        const SizedBox(height: 12), _infoRow(S.of(context).vol24h, _fmtWan(token.volume24hUsd)),
+        const SizedBox(height: 12), _infoRow(S.of(context).vol1h, _fmtWan(token.volume1hUsd)),
       ]),
     );
   }
@@ -701,7 +702,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(children: [
         Icon(CupertinoIcons.doc_text_search, size: 32, color: context.colors.textTertiary),
         const SizedBox(height: 8),
-        Text('暂无开发者代币数据', style: TextStyle(fontSize: 13, color: context.colors.textSecondary)),
+        Text(S.of(context).noDevTokenData, style: TextStyle(fontSize: 13, color: context.colors.textSecondary)),
       ]),
     );
   }
@@ -735,7 +736,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   // ── Section 1: 交易动态（使用 DexScreener 实时数据） ──
   Widget _buildDetailTradingDynamics(TokenDetail token) {
     const tfs = ['5m', '1h', '4h', '24h'];
-    const tfLabels = {'5m': '5分钟', '1h': '1小时', '4h': '4小时', '24h': '24小时'};
+    final tfLabels = {'5m': S.of(context).tf5min, '1h': S.of(context).tf1hour, '4h': S.of(context).tf4hour, '24h': S.of(context).tf24hour};
 
     // 优先使用 DexScreener 实时数据
     final tfData = _dexInfo?.getTimeframe(_detailDynTf);
@@ -783,7 +784,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('交易动态', style: TextStyle(
+          Text(S.of(context).tradeDynamics, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 12),
           // 时间筛选 pills
@@ -811,19 +812,19 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           const SizedBox(height: 16),
           // 涨跌幅
           _detailKvRow(
-            '涨跌幅',
+            S.of(context).priceChangeLabel,
             '${isPos ? "+" : ""}${change.toStringAsFixed(2)}%',
             valueColor: isPos ? context.colors.success : context.colors.danger,
           ),
           const Divider(height: 20, thickness: 0.5, color: Color(0xFFF2F2F7)),
           // 成交量
-          _detailKvRow('成交量', _fmtWan(volume)),
+          _detailKvRow(S.of(context).volumeLabel, _fmtWan(volume)),
           const Divider(height: 20, thickness: 0.5, color: Color(0xFFF2F2F7)),
           // 成交总额（买/卖 按比例估算）
-          _detailBuySellAmountRow('成交总额', volume, buys, sells),
+          _detailBuySellAmountRow(S.of(context).totalTurnover, volume, buys, sells),
           const Divider(height: 20, thickness: 0.5, color: Color(0xFFF2F2F7)),
           // 交易笔数（买/卖）
-          _detailBuySellRow('交易笔数', buys, sells),
+          _detailBuySellRow(S.of(context).tradeCount, buys, sells),
         ],
       ),
     );
@@ -918,26 +919,26 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('关键数据', style: TextStyle(
+          Text(S.of(context).keyData, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 14),
-          _detailKvRow('流通市值', _fmtWan(mktCap)),
+          _detailKvRow(S.of(context).circulatingMC, _fmtWan(mktCap)),
           const SizedBox(height: 10),
           _detailKvRow('FDV', _fmtWan(fdv)),
           const SizedBox(height: 10),
-          _detailKvRow('持有人数（Top10占比）', holderStr),
+          _detailKvRow(S.of(context).holderCountTop10, holderStr),
           const Divider(height: 24, thickness: 0.5, color: Color(0xFFF2F2F7)),
-          _detailKvRow('总流动性', _fmtWan(liquidity)),
+          _detailKvRow(S.of(context).totalLiquidity, _fmtWan(liquidity)),
           const SizedBox(height: 10),
-          _detailKvRow('流通供应量', circulatingSupply > 0 ? _fmtSupply(circulatingSupply) : '-'),
+          _detailKvRow(S.of(context).circulatingSupply, circulatingSupply > 0 ? _fmtSupply(circulatingSupply) : '-'),
           const SizedBox(height: 10),
-          _detailKvRow('最大供应量',
+          _detailKvRow(S.of(context).maxSupplyLabel,
             _coinGecko?.maxSupply != null ? _fmtSupply(_coinGecko!.maxSupply!) : '-'),
           const Divider(height: 24, thickness: 0.5, color: Color(0xFFF2F2F7)),
-          _detailKvRow('历史最高价',
+          _detailKvRow(S.of(context).athLabel,
             _coinGecko?.ath != null ? '\$${_fmtPrice(_coinGecko!.ath!)}' : '-'),
           const SizedBox(height: 10),
-          _detailKvRow('历史最低价',
+          _detailKvRow(S.of(context).atlLabel,
             _coinGecko?.atl != null ? '\$${_fmtPrice(_coinGecko!.atl!)}' : '-'),
         ],
       ),
@@ -945,9 +946,10 @@ class _TokenDetailPageState extends State<TokenDetailPage>
   }
 
   String _fmtSupply(double v) {
-    if (v >= 1e12) return '${(v / 1e12).toStringAsFixed(2)}万亿';
-    if (v >= 1e8) return '${(v / 1e8).toStringAsFixed(2)}亿';
-    if (v >= 1e4) return '${(v / 1e4).toStringAsFixed(2)}万';
+    if (v >= 1e12) return '${(v / 1e12).toStringAsFixed(2)}T';
+    if (v >= 1e9) return '${(v / 1e9).toStringAsFixed(2)}B';
+    if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(2)}M';
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(0)}K';
     return v.toStringAsFixed(0);
   }
 
@@ -996,7 +998,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('基础信息', style: TextStyle(
+          Text(S.of(context).basicInfo, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 14),
           // 两列：主链 + 币种全称
@@ -1004,7 +1006,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('主链', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
+                Text(S.of(context).mainChain, style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
                 const SizedBox(height: 6),
                 Row(children: [
                   Container(
@@ -1026,7 +1028,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             Expanded(child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('币种全称', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
+                Text(S.of(context).tokenFullName, style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
                 const SizedBox(height: 6),
                 Text(token.name, style: TextStyle(
                   fontSize: 14, fontWeight: FontWeight.w600, color: context.colors.textPrimary),
@@ -1035,7 +1037,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
             )),
           ]),
           const SizedBox(height: 14),
-          Text('创建时间', style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
+          Text(S.of(context).createdTime, style: TextStyle(fontSize: 12, color: context.colors.textSecondary)),
           const SizedBox(height: 6),
           Text(createdTimeStr, style: TextStyle(
             fontSize: 14, fontWeight: FontWeight.w500, color: context.colors.textPrimary,
@@ -1064,7 +1066,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('关于 ${token.symbol.toUpperCase()}', style: TextStyle(
+          Text(S.of(context).aboutToken(token.symbol.toUpperCase()), style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 10),
           if (hasDesc)
@@ -1072,7 +1074,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
               fontSize: 14, color: context.colors.textSecondary, height: 1.6),
               maxLines: 4, overflow: TextOverflow.ellipsis)
           else
-            Text('暂无简介', style: TextStyle(
+            Text(S.of(context).noDescription, style: TextStyle(
               fontSize: 14, color: context.colors.textTertiary)),
         ],
       ),
@@ -1097,10 +1099,10 @@ class _TokenDetailPageState extends State<TokenDetailPage>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('社交媒体', style: TextStyle(
+            Text(S.of(context).socialMedia, style: TextStyle(
               fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
             const SizedBox(height: 12),
-            Text('暂无社交信息', style: TextStyle(fontSize: 14, color: context.colors.textTertiary)),
+            Text(S.of(context).noSocialInfo, style: TextStyle(fontSize: 14, color: context.colors.textTertiary)),
           ],
         ),
       );
@@ -1117,7 +1119,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('社交媒体', style: TextStyle(
+          Text(S.of(context).socialMedia, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 12),
           Row(children: [
@@ -1172,11 +1174,11 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('在 X 上搜索', style: TextStyle(
+          Text(S.of(context).searchOnX, style: TextStyle(
             fontSize: 16, fontWeight: FontWeight.w700, color: context.colors.textPrimary)),
           const SizedBox(height: 12),
           Row(children: [
-            _searchPill('搜索名称', () async {
+            _searchPill(S.of(context).searchName, () async {
               final query = Uri.encodeComponent('\$${token.symbol}');
               final uri = Uri.parse('https://x.com/search?q=$query');
               if (await canLaunchUrl(uri)) {
@@ -1184,7 +1186,7 @@ class _TokenDetailPageState extends State<TokenDetailPage>
               }
             }),
             const SizedBox(width: 10),
-            _searchPill('搜索地址', () async {
+            _searchPill(S.of(context).searchAddress, () async {
               final query = Uri.encodeComponent(token.address);
               final uri = Uri.parse('https://x.com/search?q=$query');
               if (await canLaunchUrl(uri)) {
@@ -1227,16 +1229,16 @@ class _TokenDetailPageState extends State<TokenDetailPage>
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Text('本工具旨在提供代币安全性辅助判断，不应作为投资依据或推荐。请在交易前自行评估风险。',
+          child: Text(S.of(context).securityDisclaimerText,
             style: TextStyle(fontSize: 13, color: context.colors.textSecondary, height: 1.5)),
         ),
         const SizedBox(height: 16),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(children: [
-            _riskStat('风险项', _goplus?.dangerCount ?? 0, context.colors.danger),
+            _riskStat(S.of(context).riskItems, _goplus?.dangerCount ?? 0, context.colors.danger),
             const SizedBox(width: 16),
-            _riskStat('警示项', _goplus?.warningCount ?? 0, context.colors.warning),
+            _riskStat(S.of(context).warningItems, _goplus?.warningCount ?? 0, context.colors.warning),
           ]),
         ),
         const SizedBox(height: 16),
@@ -1318,18 +1320,16 @@ class _TokenDetailPageState extends State<TokenDetailPage>
 
   String _fmtWan(double v) {
     if (v <= 0) return '-';
-    if (v >= 1e8) return '\$${(v / 1e8).toStringAsFixed(2)}亿';
-    if (v >= 1e4) return '\$${(v / 1e4).toStringAsFixed(2)}万';
+    if (v >= 1e9) return '\$${(v / 1e9).toStringAsFixed(2)}B';
+    if (v >= 1e6) return '\$${(v / 1e6).toStringAsFixed(2)}M';
+    if (v >= 1e3) return '\$${(v / 1e3).toStringAsFixed(1)}K';
     return '\$${v.toStringAsFixed(2)}';
   }
 
   String _fmtNum(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}万';
-    if (n >= 1000) {
-      final s = n.toString();
-      return '${s.substring(0, s.length - 3)},${s.substring(s.length - 3)}';
-    }
+    if (n >= 1e9) return '${(n / 1e9).toStringAsFixed(1)}B';
+    if (n >= 1e6) return '${(n / 1e6).toStringAsFixed(1)}M';
+    if (n >= 1e3) return '${(n / 1e3).toStringAsFixed(1)}K';
     return '$n';
   }
 }

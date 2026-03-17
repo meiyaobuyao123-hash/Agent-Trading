@@ -29,17 +29,17 @@ class GoPlusReport {
 
   List<SecurityItem> get items => [
         SecurityItem(
-          label: '蜜罐检测',
-          value: isHoneypot ? '危险' : '安全',
+          key: 'honeypot',
+          value: isHoneypot ? 'danger' : 'safe',
           status: isHoneypot ? SecurityStatus.danger : SecurityStatus.safe,
         ),
         SecurityItem(
-          label: '合约开源',
-          value: isOpenSource ? '是' : '否',
+          key: 'open_source',
+          value: isOpenSource ? 'yes' : 'no',
           status: isOpenSource ? SecurityStatus.safe : SecurityStatus.warning,
         ),
         SecurityItem(
-          label: '买入税',
+          key: 'buy_tax',
           value: '${buyTax.toStringAsFixed(1)}%',
           status: buyTax > 10
               ? SecurityStatus.danger
@@ -48,7 +48,7 @@ class GoPlusReport {
                   : SecurityStatus.safe,
         ),
         SecurityItem(
-          label: '卖出税',
+          key: 'sell_tax',
           value: '${sellTax.toStringAsFixed(1)}%',
           status: sellTax > 10
               ? SecurityStatus.danger
@@ -57,7 +57,7 @@ class GoPlusReport {
                   : SecurityStatus.safe,
         ),
         SecurityItem(
-          label: 'Top10 集中度',
+          key: 'top10_concentration',
           value: '${top10HolderPct.toStringAsFixed(1)}%',
           status: top10HolderPct > 80
               ? SecurityStatus.danger
@@ -69,10 +69,10 @@ class GoPlusReport {
 }
 
 class SecurityItem {
-  final String label;
+  final String key;   // identifier for i18n resolution
   final String value;
   final SecurityStatus status;
-  const SecurityItem({required this.label, required this.value, required this.status});
+  const SecurityItem({required this.key, required this.value, required this.status});
 }
 
 enum SecurityStatus { safe, warning, danger }

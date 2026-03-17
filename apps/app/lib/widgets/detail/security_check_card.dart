@@ -96,6 +96,29 @@ class _SecurityTag extends StatelessWidget {
   final SecurityItem item;
   const _SecurityTag({required this.item});
 
+  String _resolveLabel(BuildContext context, String key) {
+    final t = S.of(context);
+    return switch (key) {
+      'honeypot' => t.honeypotDetection,
+      'open_source' => t.contractOpenSource,
+      'buy_tax' => t.buyTax,
+      'sell_tax' => t.sellTax,
+      'top10_concentration' => t.top10Concentration,
+      _ => key,
+    };
+  }
+
+  String _resolveValue(BuildContext context, String rawValue) {
+    final t = S.of(context);
+    return switch (rawValue) {
+      'danger' => t.dangerous,
+      'safe' => t.safe,
+      'yes' => t.yes,
+      'no' => t.no,
+      _ => rawValue,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final (icon, color) = switch (item.status) {
@@ -103,6 +126,9 @@ class _SecurityTag extends StatelessWidget {
       SecurityStatus.warning => (CupertinoIcons.exclamationmark_shield, context.colors.warning),
       SecurityStatus.danger => (CupertinoIcons.xmark_shield, context.colors.danger),
     };
+
+    final label = _resolveLabel(context, item.key);
+    final value = _resolveValue(context, item.value);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -116,7 +142,7 @@ class _SecurityTag extends StatelessWidget {
         children: [
           Icon(icon, size: 14, color: color),
           const SizedBox(width: 5),
-          Text('${item.label} ${item.value}',
+          Text('$label $value',
               style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: color)),
         ],
       ),

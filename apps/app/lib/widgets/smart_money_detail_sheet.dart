@@ -656,6 +656,16 @@ class _TxnRow extends StatelessWidget {
   final SmartMoneyTxn txn;
   const _TxnRow({required this.txn});
 
+  String _tierText(BuildContext context, String tier) {
+    final t = S.of(context);
+    return switch (tier) {
+      'elite' => t.elite,
+      'verified' => t.verified,
+      'watching' => t.watching,
+      _ => tier,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -721,7 +731,7 @@ class _TxnRow extends StatelessWidget {
                           borderRadius: BorderRadius.circular(3),
                         ),
                         child: Text(
-                          txn.tierLabel,
+                          _tierText(context, txn.tierLabel),
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.w700,

@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import '../../l10n/app_localizations.dart';
 import '../../services/gecko_terminal_service.dart';
 import '../../theme/app_colors.dart';
 
@@ -17,6 +18,7 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
   List<Map<String, dynamic>> _trades = [];
   bool _loading = true;
   String? _error;
+  bool _noPairData = false;
 
   @override
   void initState() {
@@ -26,7 +28,7 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
 
   Future<void> _load() async {
     if (widget.pairAddress == null || widget.pairAddress!.isEmpty) {
-      setState(() { _loading = false; _error = '无交易对数据'; });
+      setState(() { _loading = false; _noPairData = true; });
       return;
     }
     setState(() { _loading = true; _error = null; });
@@ -45,7 +47,7 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (!widget.embedded) ...[
-          Text('最近交易',
+          Text(S.of(context).recentTrades,
               style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                   color: context.colors.textPrimary)),
           const SizedBox(height: 12),
@@ -55,6 +57,11 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
             padding: EdgeInsets.symmetric(vertical: 20),
             child: Center(child: CupertinoActivityIndicator(radius: 10)),
           )
+        else if (_noPairData)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 20),
+            child: Center(child: Text(S.of(context).noTradePairData, style: TextStyle(fontSize: 13, color: context.colors.textSecondary))),
+          )
         else if (_error != null)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
@@ -63,7 +70,7 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
         else if (_trades.isEmpty)
           Padding(
             padding: EdgeInsets.symmetric(vertical: 20),
-            child: Center(child: Text('暂无交易数据',
+            child: Center(child: Text(S.of(context).noTradeData,
                 style: TextStyle(fontSize: 13, color: context.colors.textSecondary))),
           )
         else
@@ -106,7 +113,7 @@ class _BitgetTradeRow extends StatelessWidget {
     final kind = trade['kind'] as String? ?? '';
     final isBuy = kind == 'buy';
     final color = isBuy ? context.colors.success : context.colors.danger;
-    final label = isBuy ? '买入' : '卖出';
+    final label = isBuy ? S.of(context).buy : S.of(context).sell;
 
     final volumeUsd = (trade['volume_usd'] as num?)?.toDouble() ?? 0;
     final priceUsd = (trade['price_usd'] as num?)?.toDouble() ?? 0;
@@ -124,13 +131,13 @@ class _BitgetTradeRow extends StatelessWidget {
         final dt = DateTime.parse(timestamp);
         final diff = DateTime.now().toUtc().difference(dt);
         if (diff.inSeconds < 60) {
-          timeStr = '${diff.inSeconds}秒前';
+          timeStr = S.of(context).secondsAgo(diff.inSeconds);
         } else if (diff.inMinutes < 60) {
-          timeStr = '${diff.inMinutes}分前';
+          timeStr = S.of(context).minutesAgo(diff.inMinutes);
         } else if (diff.inHours < 24) {
-          timeStr = '${diff.inHours}小时前';
+          timeStr = S.of(context).hoursAgo(diff.inHours);
         } else {
-          timeStr = '${diff.inDays}天前';
+          timeStr = S.of(context).daysAgo(diff.inDays);
         }
       } catch (_) {}
     }
@@ -207,8 +214,7 @@ class _BitgetTradeRow extends StatelessWidget {
 
   String _fmtQty(double v) {
     if (v >= 1e6) return '${(v / 1e6).toStringAsFixed(1)}M';
-    if (v >= 1e4) return '${(v / 1e4).toStringAsFixed(2)}万';
-    if (v >= 1000) return v.toStringAsFixed(0);
+    if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K';
     if (v >= 1) return v.toStringAsFixed(2);
     return v.toStringAsFixed(4);
   }

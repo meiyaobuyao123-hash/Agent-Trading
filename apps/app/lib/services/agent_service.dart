@@ -25,9 +25,9 @@ class AgentService {
   String _parseError(http.Response resp) {
     try {
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      return body['detail'] as String? ?? '服务器错误 (${resp.statusCode})';
+      return body['detail'] as String? ?? 'Server error (${resp.statusCode})';
     } catch (_) {
-      return '服务器错误 (${resp.statusCode})';
+      return 'Server error (${resp.statusCode})';
     }
   }
 
@@ -58,7 +58,7 @@ class AgentService {
     } on AgentException {
       rethrow;
     } catch (e) {
-      throw AgentException('网络连接失败，请检查后端服务是否启动');
+      throw AgentException('Network error');
     }
   }
 
@@ -109,13 +109,13 @@ class AgentService {
         final data = jsonDecode(resp.body) as Map<String, dynamic>;
         final s = data['strategy'] as Map<String, dynamic>?;
         if (s != null) return AgentStrategy.fromJson(s);
-        throw AgentException('返回数据格式异常');
+        throw AgentException('Invalid response format');
       }
       throw AgentException(_parseError(resp));
     } on AgentException {
       rethrow;
     } catch (e) {
-      throw AgentException('网络错误: $e');
+      throw AgentException('Network error: $e');
     }
   }
 
@@ -302,7 +302,7 @@ class AgentStrategy {
 
   factory AgentStrategy.fromJson(Map<String, dynamic> json) => AgentStrategy(
         id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '未命名',
+        name: json['name'] as String? ?? 'Unnamed',
         description: json['description'] as String?,
         conditions: json['conditions'] as Map<String, dynamic>? ?? {},
         actions: json['actions'] as List<dynamic>? ?? [],
@@ -456,23 +456,17 @@ class AgentExecution {
     _ => chain?.toUpperCase() ?? '',
   };
 
-  String get statusLabel => switch (status) {
-    'confirmed' => '已确认',
-    'failed' => '失败',
-    'submitted' => '提交中',
-    'pending' => '等待中',
-    _ => status,
-  };
+  String get statusLabel => status;
 
   String get timeAgo {
     if (createdAt.isEmpty) return '';
     try {
       final dt = DateTime.parse(createdAt);
       final diff = DateTime.now().toUtc().difference(dt);
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m前';
-      if (diff.inHours < 24) return '${diff.inHours}h前';
-      return '${diff.inDays}d前';
+      if (diff.inMinutes < 1) return 'now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+      if (diff.inHours < 24) return '${diff.inHours}h';
+      return '${diff.inDays}d';
     } catch (_) {
       return '';
     }

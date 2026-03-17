@@ -838,4 +838,225 @@ class SJa extends S {
 
   @override
   String get coinGeckoDesc => 'ATH/ATL、総供給量、コミュニティデータなどの補足情報';
+
+  @override
+  String get detailTabQuotes => '相場';
+
+  @override
+  String get detailTabDetails => '詳細';
+
+  @override
+  String get detailTabSecurity => 'セキュリティ';
+
+  @override
+  String get marketCap => '時価総額';
+
+  @override
+  String get liquidityPool => '流動性プール';
+
+  @override
+  String get holderAddressCount => '保有者数';
+
+  @override
+  String get tradingAddresses24h => '24h取引アドレス';
+
+  @override
+  String get moreLabel => 'もっと';
+
+  @override
+  String get priceLabel => '価格';
+
+  @override
+  String get holderAddressTab => '保有者';
+
+  @override
+  String get liquidityPoolTab => '流動性';
+
+  @override
+  String get devTokensTab => '開発者トークン';
+
+  @override
+  String get buyTxCount => '買い件数';
+
+  @override
+  String get sellTxCount => '売り件数';
+
+  @override
+  String get turnover => '出来高';
+
+  @override
+  String get netBuy => '純買い';
+
+  @override
+  String get holdersSmall => '保有者';
+
+  @override
+  String get liquiditySmall => '流動性';
+
+  @override
+  String get buySellColumn => '買/売';
+
+  @override
+  String get allTrades => '全取引';
+
+  @override
+  String get qtyTimeColumn => '数量 / 時間';
+
+  @override
+  String get valuePriceColumn => '価額 / 価格';
+
+  @override
+  String get addressColumn => 'アドレス';
+
+  @override
+  String get liqMcRatio => '流動性/時価';
+
+  @override
+  String get vol24h => '24h出来高';
+
+  @override
+  String get vol1h => '1h出来高';
+
+  @override
+  String get noDevTokenData => '開発者トークンデータなし';
+
+  @override
+  String get priceChangeLabel => '変動率';
+
+  @override
+  String get volumeLabel => '出来高';
+
+  @override
+  String get totalTurnover => '合計出来高';
+
+  @override
+  String get tradeCount => '取引件数';
+
+  @override
+  String get keyData => '主要データ';
+
+  @override
+  String get circulatingMC => '流通時価総額';
+
+  @override
+  String get holderCountTop10 => '保有者数（Top10占有率）';
+
+  @override
+  String get totalLiquidity => '総流動性';
+
+  @override
+  String get circulatingSupply => '流通供給量';
+
+  @override
+  String get maxSupplyLabel => '最大供給量';
+
+  @override
+  String get athLabel => '史上最高値';
+
+  @override
+  String get atlLabel => '史上最安値';
+
+  @override
+  String get basicInfo => '基本情報';
+
+  @override
+  String get mainChain => 'メインチェーン';
+
+  @override
+  String get tokenFullName => 'トークン名';
+
+  @override
+  String get createdTime => '作成日時';
+
+  @override
+  String aboutToken(String symbol) {
+    return '$symbolについて';
+  }
+
+  @override
+  String get noDescription => '説明なし';
+
+  @override
+  String get socialMedia => 'ソーシャルメディア';
+
+  @override
+  String get searchOnX => 'Xで検索';
+
+  @override
+  String get searchName => '名前で検索';
+
+  @override
+  String get searchAddress => 'アドレスで検索';
+
+  @override
+  String get securityDisclaimerText =>
+      'このツールはトークンのセキュリティ評価を支援するものであり、投資助言として使用すべきではありません。取引前にリスクを自己評価してください。';
+
+  @override
+  String get riskItems => 'リスク';
+
+  @override
+  String get warningItems => '警告';
+
+  @override
+  String get tf5m => '5分';
+
+  @override
+  String get tf15m => '15分';
+
+  @override
+  String get tf1hLabel => '1時間';
+
+  @override
+  String get tf4h => '4時間';
+
+  @override
+  String get tf1d => '1日';
+
+  @override
+  String get tf5min => '5分';
+
+  @override
+  String get tf1hour => '1時間';
+
+  @override
+  String get tf4hour => '4時間';
+
+  @override
+  String get tf24hour => '24時間';
+
+  @override
+  String get recentTrades => '最近の取引';
+
+  @override
+  String get noTradePairData => 'ペアデータなし';
+
+  @override
+  String get noTradeData => '取引データなし';
+
+  @override
+  String secondsAgo(int seconds) {
+    return '$seconds秒前';
+  }
+
+  @override
+  String get vol24hShort => '24h量';
+
+  @override
+  String get vol1hShort => '1h量';
+
+  @override
+  String get liqMcShort => '流/時価';
+
+  @override
+  String get statusConfirmed => '確認済み';
+
+  @override
+  String get statusFailed => '失敗';
+
+  @override
+  String get statusSubmitting => '送信中';
+
+  @override
+  String get statusPending => '待機中';
 }

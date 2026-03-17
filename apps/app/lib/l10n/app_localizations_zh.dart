@@ -838,4 +838,225 @@ class SZh extends S {
 
   @override
   String get coinGeckoDesc => 'ATH/ATL、总供应量、社区数据等补充信息';
+
+  @override
+  String get detailTabQuotes => '行情';
+
+  @override
+  String get detailTabDetails => '详情';
+
+  @override
+  String get detailTabSecurity => '安全检测';
+
+  @override
+  String get marketCap => '市值';
+
+  @override
+  String get liquidityPool => '资金池';
+
+  @override
+  String get holderAddressCount => '持币地址数';
+
+  @override
+  String get tradingAddresses24h => '24h交易地址数';
+
+  @override
+  String get moreLabel => '更多';
+
+  @override
+  String get priceLabel => '价格';
+
+  @override
+  String get holderAddressTab => '持币地址';
+
+  @override
+  String get liquidityPoolTab => '资金池';
+
+  @override
+  String get devTokensTab => '开发者代币';
+
+  @override
+  String get buyTxCount => '买入笔数';
+
+  @override
+  String get sellTxCount => '卖出笔数';
+
+  @override
+  String get turnover => '成交额';
+
+  @override
+  String get netBuy => '净买入';
+
+  @override
+  String get holdersSmall => '持有人';
+
+  @override
+  String get liquiditySmall => '流动性';
+
+  @override
+  String get buySellColumn => '买/卖';
+
+  @override
+  String get allTrades => '所有交易';
+
+  @override
+  String get qtyTimeColumn => '数量 / 时间';
+
+  @override
+  String get valuePriceColumn => '价值 / 价格';
+
+  @override
+  String get addressColumn => '地址';
+
+  @override
+  String get liqMcRatio => '流/市值比';
+
+  @override
+  String get vol24h => '24h成交额';
+
+  @override
+  String get vol1h => '1h成交额';
+
+  @override
+  String get noDevTokenData => '暂无开发者代币数据';
+
+  @override
+  String get priceChangeLabel => '涨跌幅';
+
+  @override
+  String get volumeLabel => '成交量';
+
+  @override
+  String get totalTurnover => '成交总额';
+
+  @override
+  String get tradeCount => '交易笔数';
+
+  @override
+  String get keyData => '关键数据';
+
+  @override
+  String get circulatingMC => '流通市值';
+
+  @override
+  String get holderCountTop10 => '持有人数（Top10占比）';
+
+  @override
+  String get totalLiquidity => '总流动性';
+
+  @override
+  String get circulatingSupply => '流通供应量';
+
+  @override
+  String get maxSupplyLabel => '最大供应量';
+
+  @override
+  String get athLabel => '历史最高价';
+
+  @override
+  String get atlLabel => '历史最低价';
+
+  @override
+  String get basicInfo => '基础信息';
+
+  @override
+  String get mainChain => '主链';
+
+  @override
+  String get tokenFullName => '币种全称';
+
+  @override
+  String get createdTime => '创建时间';
+
+  @override
+  String aboutToken(String symbol) {
+    return '关于 $symbol';
+  }
+
+  @override
+  String get noDescription => '暂无简介';
+
+  @override
+  String get socialMedia => '社交媒体';
+
+  @override
+  String get searchOnX => '在 X 上搜索';
+
+  @override
+  String get searchName => '搜索名称';
+
+  @override
+  String get searchAddress => '搜索地址';
+
+  @override
+  String get securityDisclaimerText =>
+      '本工具旨在提供代币安全性辅助判断，不应作为投资依据或推荐。请在交易前自行评估风险。';
+
+  @override
+  String get riskItems => '风险项';
+
+  @override
+  String get warningItems => '警示项';
+
+  @override
+  String get tf5m => '5分';
+
+  @override
+  String get tf15m => '15分';
+
+  @override
+  String get tf1hLabel => '1小时';
+
+  @override
+  String get tf4h => '4小时';
+
+  @override
+  String get tf1d => '1天';
+
+  @override
+  String get tf5min => '5分钟';
+
+  @override
+  String get tf1hour => '1小时';
+
+  @override
+  String get tf4hour => '4小时';
+
+  @override
+  String get tf24hour => '24小时';
+
+  @override
+  String get recentTrades => '最近交易';
+
+  @override
+  String get noTradePairData => '无交易对数据';
+
+  @override
+  String get noTradeData => '暂无交易数据';
+
+  @override
+  String secondsAgo(int seconds) {
+    return '$seconds秒前';
+  }
+
+  @override
+  String get vol24hShort => '24h量';
+
+  @override
+  String get vol1hShort => '1h量';
+
+  @override
+  String get liqMcShort => '流/市值';
+
+  @override
+  String get statusConfirmed => '已确认';
+
+  @override
+  String get statusFailed => '失败';
+
+  @override
+  String get statusSubmitting => '提交中';
+
+  @override
+  String get statusPending => '等待中';
 }

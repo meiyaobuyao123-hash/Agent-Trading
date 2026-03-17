@@ -469,6 +469,17 @@ class _ExecutionRow extends StatelessWidget {
   final AgentExecution execution;
   const _ExecutionRow({required this.execution});
 
+  String _statusText(BuildContext context, String status) {
+    final t = S.of(context);
+    return switch (status) {
+      'confirmed' => t.statusConfirmed,
+      'failed' => t.statusFailed,
+      'submitted' => t.statusSubmitting,
+      'pending' => t.statusPending,
+      _ => status,
+    };
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -565,7 +576,7 @@ class _ExecutionRow extends StatelessWidget {
               ),
               const SizedBox(width: 4),
               Text(
-                execution.statusLabel,
+                _statusText(context, execution.statusLabel),
                 style: TextStyle(
                   color: statusColor,
                   fontSize: 10,

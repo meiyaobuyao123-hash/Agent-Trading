@@ -45,21 +45,17 @@ class SmartMoneyTxn {
     try {
       final dt = DateTime.parse(txTime);
       final diff = DateTime.now().toUtc().difference(dt);
-      if (diff.inMinutes < 1) return '刚刚';
-      if (diff.inMinutes < 60) return '${diff.inMinutes}m前';
-      if (diff.inHours < 24) return '${diff.inHours}h前';
-      return '${diff.inDays}d前';
+      if (diff.inMinutes < 1) return 'now';
+      if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+      if (diff.inHours < 24) return '${diff.inHours}h';
+      return '${diff.inDays}d';
     } catch (_) {
       return '';
     }
   }
 
-  /// tier 中文标签
-  String get tierLabel => switch (walletTier) {
-    'elite' => '精英',
-    'verified' => '认证',
-    _ => '关注',
-  };
+  /// tier label — returns raw tier string for UI-layer i18n resolution
+  String get tierLabel => walletTier;
 }
 
 /// 汇总统计

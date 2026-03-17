@@ -838,4 +838,225 @@ class SKo extends S {
 
   @override
   String get coinGeckoDesc => 'ATH/ATL, 총 공급량, 커뮤니티 데이터 등 보충 정보';
+
+  @override
+  String get detailTabQuotes => '시세';
+
+  @override
+  String get detailTabDetails => '상세';
+
+  @override
+  String get detailTabSecurity => '보안검사';
+
+  @override
+  String get marketCap => '시가총액';
+
+  @override
+  String get liquidityPool => '유동성 풀';
+
+  @override
+  String get holderAddressCount => '보유자 수';
+
+  @override
+  String get tradingAddresses24h => '24h 거래 주소';
+
+  @override
+  String get moreLabel => '더보기';
+
+  @override
+  String get priceLabel => '가격';
+
+  @override
+  String get holderAddressTab => '보유자';
+
+  @override
+  String get liquidityPoolTab => '유동성';
+
+  @override
+  String get devTokensTab => '개발자 토큰';
+
+  @override
+  String get buyTxCount => '매수 건수';
+
+  @override
+  String get sellTxCount => '매도 건수';
+
+  @override
+  String get turnover => '거래액';
+
+  @override
+  String get netBuy => '순매수';
+
+  @override
+  String get holdersSmall => '보유자';
+
+  @override
+  String get liquiditySmall => '유동성';
+
+  @override
+  String get buySellColumn => '매수/매도';
+
+  @override
+  String get allTrades => '전체 거래';
+
+  @override
+  String get qtyTimeColumn => '수량 / 시간';
+
+  @override
+  String get valuePriceColumn => '가치 / 가격';
+
+  @override
+  String get addressColumn => '주소';
+
+  @override
+  String get liqMcRatio => '유동성/시총';
+
+  @override
+  String get vol24h => '24h 거래액';
+
+  @override
+  String get vol1h => '1h 거래액';
+
+  @override
+  String get noDevTokenData => '개발자 토큰 데이터 없음';
+
+  @override
+  String get priceChangeLabel => '등락률';
+
+  @override
+  String get volumeLabel => '거래량';
+
+  @override
+  String get totalTurnover => '총 거래액';
+
+  @override
+  String get tradeCount => '거래 건수';
+
+  @override
+  String get keyData => '주요 데이터';
+
+  @override
+  String get circulatingMC => '유통 시가총액';
+
+  @override
+  String get holderCountTop10 => '보유자 수(Top10 비율)';
+
+  @override
+  String get totalLiquidity => '총 유동성';
+
+  @override
+  String get circulatingSupply => '유통 공급량';
+
+  @override
+  String get maxSupplyLabel => '최대 공급량';
+
+  @override
+  String get athLabel => '역대 최고가';
+
+  @override
+  String get atlLabel => '역대 최저가';
+
+  @override
+  String get basicInfo => '기본 정보';
+
+  @override
+  String get mainChain => '메인체인';
+
+  @override
+  String get tokenFullName => '토큰 전체명';
+
+  @override
+  String get createdTime => '생성 시간';
+
+  @override
+  String aboutToken(String symbol) {
+    return '$symbol 소개';
+  }
+
+  @override
+  String get noDescription => '설명 없음';
+
+  @override
+  String get socialMedia => '소셜 미디어';
+
+  @override
+  String get searchOnX => 'X에서 검색';
+
+  @override
+  String get searchName => '이름 검색';
+
+  @override
+  String get searchAddress => '주소 검색';
+
+  @override
+  String get securityDisclaimerText =>
+      '이 도구는 토큰 보안 평가를 지원하며 투자 조언으로 사용해서는 안 됩니다. 거래 전 리스크를 직접 평가하세요.';
+
+  @override
+  String get riskItems => '위험';
+
+  @override
+  String get warningItems => '경고';
+
+  @override
+  String get tf5m => '5분';
+
+  @override
+  String get tf15m => '15분';
+
+  @override
+  String get tf1hLabel => '1시간';
+
+  @override
+  String get tf4h => '4시간';
+
+  @override
+  String get tf1d => '1일';
+
+  @override
+  String get tf5min => '5분';
+
+  @override
+  String get tf1hour => '1시간';
+
+  @override
+  String get tf4hour => '4시간';
+
+  @override
+  String get tf24hour => '24시간';
+
+  @override
+  String get recentTrades => '최근 거래';
+
+  @override
+  String get noTradePairData => '페어 데이터 없음';
+
+  @override
+  String get noTradeData => '거래 데이터 없음';
+
+  @override
+  String secondsAgo(int seconds) {
+    return '$seconds초 전';
+  }
+
+  @override
+  String get vol24hShort => '24h량';
+
+  @override
+  String get vol1hShort => '1h량';
+
+  @override
+  String get liqMcShort => '유/시총';
+
+  @override
+  String get statusConfirmed => '확인됨';
+
+  @override
+  String get statusFailed => '실패';
+
+  @override
+  String get statusSubmitting => '제출 중';
+
+  @override
+  String get statusPending => '대기 중';
 }

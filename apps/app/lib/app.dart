@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'l10n/app_localizations.dart';
@@ -76,6 +77,14 @@ class _PumpSignalAppState extends State<PumpSignalApp> {
       localizationsDelegates: S.localizationsDelegates,
       supportedLocales: S.supportedLocales,
       locale: localeProvider.locale, // null = 跟随系统
+      localeResolutionCallback: (deviceLocale, supportedLocales) {
+        for (final locale in supportedLocales) {
+          if (locale.languageCode == deviceLocale?.languageCode) {
+            return locale;
+          }
+        }
+        return const Locale('en'); // 显式回退到英文
+      },
       home: const _DisclaimerGate(),
     );
   }
@@ -102,13 +111,23 @@ class _DisclaimerGateState extends State<_DisclaimerGate> {
   }
 
   Future<void> _checkDisclaimer() async {
-    final prefs = await SharedPreferences.getInstance();
-    final accepted = prefs.getBool('app_global_disclaimer_v1') ?? false;
-    if (mounted) {
-      setState(() {
-        _accepted = accepted;
-        _checked = true;
-      });
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final accepted = prefs.getBool('app_global_disclaimer_v1') ?? false;
+      if (mounted) {
+        setState(() {
+          _accepted = accepted;
+          _checked = true;
+        });
+      }
+    } catch (e) {
+      debugPrint('[DisclaimerGate] SharedPreferences error: $e');
+      if (mounted) {
+        setState(() {
+          _accepted = false;
+          _checked = true;
+        });
+      }
     }
   }
 

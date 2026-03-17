@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../l10n/app_localizations.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
@@ -55,7 +56,7 @@ class _AgentScreenState extends State<AgentScreen>
             Icon(Icons.info_outline_rounded, color: c.primary, size: 22),
             const SizedBox(width: 8),
             Text(
-              '使用须知',
+              S.of(ctx).usageNotice,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 18,
@@ -70,7 +71,7 @@ class _AgentScreenState extends State<AgentScreen>
           children: [
             // 主说明
             Text(
-              '本工具仅提供数据分析和自动化执行能力，不构成任何投资建议。',
+              S.of(ctx).agentDisclaimer1,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 14,
@@ -80,13 +81,13 @@ class _AgentScreenState extends State<AgentScreen>
             ),
             const SizedBox(height: 12),
             // 条目列表
-            _agentDisclaimerItem(c, '所有交易策略由您自行设定，风险自担'),
-            _agentDisclaimerItem(c, '平台不持有任何金融牌照'),
+            _agentDisclaimerItem(c, S.of(ctx).riskSelfBorne),
+            _agentDisclaimerItem(c, S.of(ctx).noPlatformLicense),
             _agentDisclaimerItem(
-                c, '自动交易存在亏损风险，请谨慎设置参数',
+                c, S.of(ctx).autoTradeRisk,
                 isWarning: true),
             _agentDisclaimerItem(
-                c, '平台仅负责执行，不对收益或亏损承担责任',
+                c, S.of(ctx).platformNotResponsible,
                 isWarning: true),
           ],
         ),
@@ -101,9 +102,9 @@ class _AgentScreenState extends State<AgentScreen>
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text(
-              '我已阅读并同意',
-              style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            child: Text(
+              S.of(ctx).iReadAndAgree,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -131,7 +132,7 @@ class _AgentScreenState extends State<AgentScreen>
             pinned: true,
             backgroundColor: c.bg,
             title: Text(
-              'Agent 策略',
+              S.of(context).agentStrategy,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 20,
@@ -146,10 +147,10 @@ class _AgentScreenState extends State<AgentScreen>
               labelColor: c.primary,
               unselectedLabelColor: c.textTertiary,
               labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              tabs: const [
-                Tab(text: '策略对话'),
-                Tab(text: '我的策略'),
-                Tab(text: '数据源'),
+              tabs: [
+                Tab(text: S.of(context).chatTab),
+                Tab(text: S.of(context).myStrategyTab),
+                Tab(text: S.of(context).dataSourceTab),
               ],
             ),
           ),
@@ -224,18 +225,18 @@ class _ChatTabState extends State<_ChatTab>
   @override
   bool get wantKeepAlive => true;
 
+  bool _introAdded = false;
+
   @override
-  void initState() {
-    super.initState();
-    _messages.add(_ChatMessage(
-      isUser: false,
-      text: '你好！我是你的交易 Agent。\n\n'
-          '你可以告诉我你的策略想法，比如：\n'
-          '• "帮我找内盘进度 10%-25%、买卖比 > 2 的代币"\n'
-          '• "当某代币有3个聪明钱买入时，提醒我"\n'
-          '• "自动买入评分>85的热币，止损20%，止盈3倍"\n\n'
-          '我会把你的想法转化为自动化策略。',
-    ));
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_introAdded) {
+      _introAdded = true;
+      _messages.add(_ChatMessage(
+        isUser: false,
+        text: S.of(context).agentIntro,
+      ));
+    }
   }
 
   @override
@@ -300,9 +301,7 @@ class _ChatTabState extends State<_ChatTab>
       setState(() {
         _messages.add(_ChatMessage(
           isUser: false,
-          text: '策略「${result.name}」已创建并激活！\n'
-              '系统将每 30 秒检查条件。\n'
-              '可在「我的策略」标签页管理。',
+          text: S.of(context).strategyCreated(result.name),
         ));
         _pendingStrategy = null;
         _pendingPrompt = null;
@@ -324,7 +323,7 @@ class _ChatTabState extends State<_ChatTab>
       _strategyError = null;
       _messages.add(_ChatMessage(
         isUser: false,
-        text: '已取消。你可以继续描述其他策略想法。',
+        text: S.of(context).cancelled,
       ));
     });
   }
@@ -649,7 +648,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
   /// 启用策略前的风险二次确认弹窗 — 返回 true 表示用户点击"确认启用"
   Future<bool?> _showStrategyRiskDialog(BuildContext context) {
     final c = context.colors;
-    final name = widget.strategy['name'] as String? ?? '未命名策略';
+    final name = widget.strategy['name'] as String? ?? S.of(context).unnamedStrategy;
     return showDialog<bool>(
       context: context,
       barrierDismissible: true,
@@ -663,7 +662,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                 color: c.primary, size: 22),
             const SizedBox(width: 8),
             Text(
-              '确认启用策略',
+              S.of(ctx).confirmEnableStrategy,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 18,
@@ -685,7 +684,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
-                '「$name」',
+                '\u300C$name\u300D',
                 style: TextStyle(
                   color: c.primary,
                   fontSize: 14,
@@ -696,7 +695,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
             const SizedBox(height: 12),
             // 说明文字
             Text(
-              '您即将启用自动化交易策略，请确认：',
+              S.of(ctx).aboutToEnable,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 13,
@@ -705,9 +704,9 @@ class _ConfirmCardState extends State<_ConfirmCard> {
             ),
             const SizedBox(height: 10),
             // 风险条目
-            _riskItem(c, '策略参数由您本人设定'),
-            _riskItem(c, '您了解自动交易的相关风险', isWarning: true),
-            _riskItem(c, '平台仅负责执行，不提供投资建议',
+            _riskItem(c, S.of(ctx).paramSetByYou),
+            _riskItem(c, S.of(ctx).understandRisk, isWarning: true),
+            _riskItem(c, S.of(ctx).platformExecuteOnly,
                 isWarning: true),
           ],
         ),
@@ -716,7 +715,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
             child: Text(
-              '取消',
+              S.of(ctx).cancel,
               style: TextStyle(color: c.textTertiary),
             ),
           ),
@@ -729,7 +728,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text('确认启用'),
+            child: Text(S.of(ctx).confirmEnable),
           ),
         ],
       ),
@@ -770,7 +769,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final name = widget.strategy['name'] as String? ?? '未命名策略';
+    final name = widget.strategy['name'] as String? ?? S.of(context).unnamedStrategy;
     final desc = widget.strategy['description'] as String? ?? '';
     final cooldown = widget.strategy['cooldown_minutes'] as int? ?? 30;
     final wallets = WalletService.instance.wallets;
@@ -811,19 +810,19 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                   )),
             ],
             const SizedBox(height: 4),
-            Text('冷却时间: $cooldown分钟',
+            Text(S.of(context).cooldownTime(cooldown),
                 style: TextStyle(color: c.textTertiary, fontSize: 12)),
 
             // ── 止盈止损摘要（交易策略时显示） ──
             if (hasTradeAction) ...[
               const SizedBox(height: 12),
-              _paramRow(c, '止损', '${_stopLoss.toStringAsFixed(0)}%',
+              _paramRow(c, S.of(context).stopLoss, '${_stopLoss.toStringAsFixed(0)}%',
                   Icons.trending_down, c.danger),
               const SizedBox(height: 6),
-              _paramRow(c, '止盈', '${_takeProfit.toStringAsFixed(0)}%',
+              _paramRow(c, S.of(context).takeProfit, '${_takeProfit.toStringAsFixed(0)}%',
                   Icons.trending_up, c.success),
               const SizedBox(height: 6),
-              _paramRow(c, '滑点', '${_slippage.toStringAsFixed(1)}%',
+              _paramRow(c, S.of(context).slippageLabel, '${_slippage.toStringAsFixed(1)}%',
                   Icons.swap_horiz, c.warning),
             ],
 
@@ -839,20 +838,20 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                       color: c.textTertiary, size: 18,
                     ),
                     const SizedBox(width: 4),
-                    Text('高级交易设置',
+                    Text(S.of(context).advancedTradeSettings,
                         style: TextStyle(color: c.textTertiary, fontSize: 12)),
                   ],
                 ),
               ),
               if (_showAdvanced) ...[
                 const SizedBox(height: 8),
-                _slider(c, '止损', _stopLoss, 5, 50,
+                _slider(c, S.of(context).stopLoss, _stopLoss, 5, 50,
                     (v) => setState(() => _stopLoss = v), '%'),
-                _slider(c, '止盈', _takeProfit, 10, 1000,
+                _slider(c, S.of(context).takeProfit, _takeProfit, 10, 1000,
                     (v) => setState(() => _takeProfit = v), '%'),
-                _slider(c, '滑点', _slippage, 0.1, 10,
+                _slider(c, S.of(context).slippageLabel, _slippage, 0.1, 10,
                     (v) => setState(() => _slippage = v), '%'),
-                _slider(c, '优先费', _priorityFee, 0.0001, 0.01,
+                _slider(c, S.of(context).priorityFee, _priorityFee, 0.0001, 0.01,
                     (v) => setState(() => _priorityFee = v), ' SOL'),
                 _slider(c, 'MEV', _mevBribe, 0, 0.01,
                     (v) => setState(() => _mevBribe = v), ' SOL'),
@@ -862,7 +861,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
             // ── 钱包选择 ──
             if (wallets.isNotEmpty) ...[
               const SizedBox(height: 10),
-              Text('交易钱包', style: TextStyle(
+              Text(S.of(context).tradingWallet, style: TextStyle(
                 color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w600,
               )),
               const SizedBox(height: 6),
@@ -914,7 +913,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        '未导入钱包，策略仅发送告警，不会自动交易',
+                        S.of(context).notImported,
                         style: TextStyle(color: c.warning, fontSize: 12),
                       ),
                     ),
@@ -957,7 +956,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: Text('取消',
+                    child: Text(S.of(context).cancel,
                         style: TextStyle(color: c.textSecondary)),
                   ),
                 ),
@@ -978,8 +977,8 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation(Colors.white),
                             ))
-                        : const Text('创建策略',
-                            style: TextStyle(color: Colors.white)),
+                        : Text(S.of(context).confirmEnable,
+                            style: const TextStyle(color: Colors.white)),
                   ),
                 ),
               ],
@@ -1097,7 +1096,7 @@ class _ChatInput extends StatelessWidget {
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => onSend(),
                 decoration: InputDecoration(
-                  hintText: '描述你的策略想法...',
+                  hintText: S.of(context).describeStrategy,
                   hintStyle: TextStyle(color: c.textTertiary, fontSize: 14),
                   contentPadding:
                       const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -1187,7 +1186,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                     color: c.primary, size: 36),
               ),
               const SizedBox(height: 20),
-              Text('还没有策略',
+              Text(S.of(context).noSignals,
                   style: TextStyle(
                     color: c.textPrimary,
                     fontSize: 18,
@@ -1195,7 +1194,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                   )),
               const SizedBox(height: 10),
               Text(
-                '通过对话窗口描述你的策略\nAI 会帮你生成、命名并激活',
+                S.of(context).whenTokenAppears,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: c.textSecondary,
@@ -1239,7 +1238,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                             color: c.primary, size: 22),
                         const SizedBox(width: 8),
                         Text(
-                          '确认启用策略',
+                          S.of(dialogCtx).confirmEnableStrategy,
                           style: TextStyle(
                             color: c.textPrimary,
                             fontSize: 18,
@@ -1261,7 +1260,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            '「${s.name}」',
+                            '\u300C${s.name}\u300D',
                             style: TextStyle(
                               color: c.primary,
                               fontSize: 14,
@@ -1271,7 +1270,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          '您即将启用自动化交易策略，请确认：',
+                          S.of(dialogCtx).aboutToEnable,
                           style: TextStyle(
                             color: c.textPrimary,
                             fontSize: 13,
@@ -1280,11 +1279,11 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                         ),
                         const SizedBox(height: 10),
                         // 风险条目
-                        _agentDisclaimerItem(c, '策略参数由您本人设定'),
-                        _agentDisclaimerItem(c, '您了解自动交易的相关风险',
+                        _agentDisclaimerItem(c, S.of(dialogCtx).paramSetByYou),
+                        _agentDisclaimerItem(c, S.of(dialogCtx).understandRisk,
                             isWarning: true),
                         _agentDisclaimerItem(
-                            c, '平台仅负责执行，不提供投资建议',
+                            c, S.of(dialogCtx).platformExecuteOnly,
                             isWarning: true),
                       ],
                     ),
@@ -1292,7 +1291,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                       TextButton(
                         onPressed: () =>
                             Navigator.pop(dialogCtx, false),
-                        child: Text('取消',
+                        child: Text(S.of(dialogCtx).cancel,
                             style: TextStyle(color: c.textTertiary)),
                       ),
                       FilledButton(
@@ -1304,7 +1303,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                             borderRadius: BorderRadius.circular(10),
                           ),
                         ),
-                        child: const Text('确认启用'),
+                        child: Text(S.of(dialogCtx).confirmEnable),
                       ),
                     ],
                   ),
@@ -1319,7 +1318,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                 _loadStrategies();
               } else {
                 ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('操作失败，请重试')),
+                  SnackBar(content: Text(S.of(ctx).loadFailed)),
                 );
               }
             },
@@ -1327,17 +1326,17 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
               final confirmed = await showDialog<bool>(
                 context: ctx,
                 builder: (dialogCtx) => AlertDialog(
-                  title: const Text('删除策略'),
-                  content: Text('确定要删除策略「${s.name}」吗？此操作不可撤销。'),
+                  title: Text(S.of(dialogCtx).delete),
+                  content: Text(S.of(dialogCtx).deleteWalletConfirm(s.name)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(dialogCtx, false),
-                      child: const Text('取消'),
+                      child: Text(S.of(dialogCtx).cancel),
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(dialogCtx, true),
                       style: TextButton.styleFrom(foregroundColor: Colors.red),
-                      child: const Text('删除'),
+                      child: Text(S.of(dialogCtx).delete),
                     ),
                   ],
                 ),
@@ -1349,7 +1348,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                   _loadStrategies();
                 } else {
                   ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(content: Text('删除失败，请重试')),
+                    SnackBar(content: Text(S.of(ctx).loadFailed)),
                   );
                 }
               }
@@ -1449,7 +1448,7 @@ class _StrategyCardState extends State<_StrategyCard> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      isActive ? '暂停' : '恢复',
+                      isActive ? S.of(context).paused : S.of(context).running,
                       style: TextStyle(
                         color: isActive ? c.warning : c.success,
                         fontSize: 11,
@@ -1486,12 +1485,7 @@ class _StrategyCardState extends State<_StrategyCard> {
               children: [
                 Icon(Icons.bolt, size: 12, color: c.textTertiary),
                 const SizedBox(width: 3),
-                Text('${s.triggerCount}次触发',
-                    style: TextStyle(color: c.textTertiary, fontSize: 11)),
-                const SizedBox(width: 8),
-                Icon(Icons.timer, size: 12, color: c.textTertiary),
-                const SizedBox(width: 3),
-                Text('${s.cooldownMin}分钟冷却',
+                Text(S.of(context).triggerInfo(s.triggerCount, s.cooldownMin),
                     style: TextStyle(color: c.textTertiary, fontSize: 11)),
                 const Spacer(),
                 ...s.dataSources.take(2).map((ds) => Padding(
@@ -1526,7 +1520,7 @@ class _StrategyCardState extends State<_StrategyCard> {
                         size: 14, color: c.textTertiary),
                     const SizedBox(width: 6),
                     Text(
-                      '${_summary!.totalCount}笔交易',
+                      S.of(context).txCount(_summary!.totalCount),
                       style: TextStyle(
                         color: c.textSecondary,
                         fontSize: 11,
@@ -1561,7 +1555,7 @@ class _StrategyCardState extends State<_StrategyCard> {
                       size: 12, color: c.textTertiary),
                   const SizedBox(width: 4),
                   Text(
-                    '暂无交易记录 · 点击查看详情',
+                    S.of(context).noTradeRecords,
                     style: TextStyle(
                       color: c.textTertiary,
                       fontSize: 11,
@@ -1582,13 +1576,13 @@ class _StrategyCardState extends State<_StrategyCard> {
   String _dsLabel(String ds) {
     switch (ds) {
       case 'pump_tokens':
-        return '内盘';
+        return 'Pump';
       case 'hot_coins':
-        return '热币';
+        return S.of(context).hotCoins;
       case 'kol_mentions':
         return 'KOL';
       case 'kol_signals':
-        return '共振';
+        return 'KOL+';
       default:
         return ds;
     }
@@ -1601,47 +1595,47 @@ class _StrategyCardState extends State<_StrategyCard> {
 class _DataSourcesTab extends StatelessWidget {
   const _DataSourcesTab();
 
-  static const _sources = [
+  List<({IconData icon, String name, String desc, String status, bool ready})> _sources(BuildContext context) => [
     (
       icon: Icons.rocket_launch_rounded,
       name: 'pump.fun',
-      desc: '内盘实时 WebSocket + REST，BC进度、交易流、毕业事件',
-      status: '采集中',
+      desc: S.of(context).pumpFunSource,
+      status: S.of(context).pumpFunStatus,
       ready: true,
     ),
     (
       icon: Icons.local_fire_department_rounded,
-      name: '多链热币',
-      desc: 'SOL/BSC/Base/ETH 四链热币扫描，每2小时更新',
-      status: '已接入',
+      name: S.of(context).multiChainHot,
+      desc: S.of(context).multiChainHotDesc,
+      status: S.of(context).connected,
       ready: true,
     ),
     (
       icon: Icons.people_alt_rounded,
-      name: 'KOL 舆情',
-      desc: '212个 Twitter KOL 监控，共振信号检测，情绪分析',
-      status: '已接入',
+      name: S.of(context).kolSentiment,
+      desc: S.of(context).kolSentimentDesc,
+      status: S.of(context).connected,
       ready: true,
     ),
     (
       icon: Icons.account_balance_wallet_rounded,
-      name: '聪明钱',
-      desc: '多维度分层（Elite/Verified/Watching），60天衰减，Bot检测',
-      status: '已接入',
+      name: S.of(context).smartMoneySource,
+      desc: S.of(context).smartMoneySourceDesc,
+      status: S.of(context).connected,
       ready: true,
     ),
     (
       icon: Icons.currency_exchange_rounded,
       name: 'OKX DEX v6',
-      desc: '30条链，实时报价 + 执行引擎，支持自动交易',
-      status: '已接入',
+      desc: S.of(context).okxDexDesc,
+      status: S.of(context).connected,
       ready: true,
     ),
     (
       icon: Icons.show_chart_rounded,
       name: 'CoinGecko',
-      desc: 'ATH/ATL、总供应量、社区数据等补充信息',
-      status: '已接入',
+      desc: S.of(context).coinGeckoDesc,
+      status: S.of(context).connected,
       ready: true,
     ),
   ];
@@ -1649,12 +1643,13 @@ class _DataSourcesTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final sources = _sources(context);
     return ListView.separated(
       padding: const EdgeInsets.all(16),
-      itemCount: _sources.length,
+      itemCount: sources.length,
       separatorBuilder: (_, __) => const SizedBox(height: 8),
       itemBuilder: (ctx, i) {
-        final s = _sources[i];
+        final s = sources[i];
         return Container(
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(

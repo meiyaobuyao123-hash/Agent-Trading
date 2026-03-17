@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../models/goplus_report.dart';
 import '../../models/dexscreener_info.dart';
@@ -36,10 +37,15 @@ class BottomTabsSection extends StatefulWidget {
 class _BottomTabsSectionState extends State<BottomTabsSection> {
   int _tabIdx = 0;
 
-  static const _tabs = ['交易动态', '安全检测', '代币信息'];
+  List<String> _tabs(BuildContext context) => [
+    S.of(context).tradeDynamics,
+    S.of(context).securityCheck,
+    S.of(context).tokenInfo,
+  ];
 
   @override
   Widget build(BuildContext context) {
+    final tabs = _tabs(context);
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(
@@ -55,7 +61,7 @@ class _BottomTabsSectionState extends State<BottomTabsSection> {
           Container(
             padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
             child: Row(
-              children: List.generate(_tabs.length, (i) {
+              children: List.generate(tabs.length, (i) {
                 final selected = i == _tabIdx;
                 return Expanded(
                   child: GestureDetector(
@@ -71,7 +77,7 @@ class _BottomTabsSectionState extends State<BottomTabsSection> {
                         ),
                       ),
                       child: Text(
-                        _tabs[i],
+                        tabs[i],
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 13,

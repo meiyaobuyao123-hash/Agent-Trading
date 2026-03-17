@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/pump_signal.dart';
 import '../../models/token_detail.dart';
 import '../../services/pump_signal_service.dart';
@@ -84,7 +85,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
               collapseMode: CollapseMode.pin,
               titlePadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
               title: Text(
-                '实时信号',
+                S.of(context).realtimeSignals,
                 style: TextStyle(
                   color: c.textPrimary,
                   fontSize: 20,
@@ -109,13 +110,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ),
                   child: Row(
                     children: [
-                      _StatItem(value: '${_signals.length}', label: '实时信号'),
+                      _StatItem(value: '${_signals.length}', label: S.of(context).realtimeSignals),
                       _Divider(),
-                      _StatItem(value: '$strongCount', label: '强推', color: c.success),
+                      _StatItem(value: '$strongCount', label: S.of(context).strongPush, color: c.success),
                       _Divider(),
                       _StatItem(
                         value: '${_signals.length - strongCount}',
-                        label: '关注',
+                        label: S.of(context).watch,
                         color: c.primary,
                       ),
                     ],
@@ -142,7 +143,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     const SizedBox(height: 16),
                     TextButton(
                       onPressed: _load,
-                      child: Text('重试', style: TextStyle(color: c.primary)),
+                      child: Text(S.of(context).retry, style: TextStyle(color: c.primary)),
                     ),
                   ],
                 ),
@@ -156,10 +157,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   children: [
                     Icon(CupertinoIcons.waveform, size: 48, color: c.textTertiary),
                     const SizedBox(height: 14),
-                    Text('暂无实时信号',
+                    Text(S.of(context).noSignals,
                       style: TextStyle(color: c.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),
-                    Text('当有符合条件的代币时会自动出现',
+                    Text(S.of(context).whenTokenAppears,
                       style: TextStyle(color: c.textSecondary, fontSize: 15)),
                   ],
                 ),
@@ -208,7 +209,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
                 child: Center(
                   child: Text(
-                    '实时扫描 · pump.fun · 30s刷新',
+                    S.of(context).scanInfo,
                     style: TextStyle(fontSize: 12, color: c.textTertiary),
                   ),
                 ),
@@ -316,8 +317,8 @@ class _SignalRow extends StatelessWidget {
                           gradient: c.successGradient,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: const Text('强推',
-                          style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                        child: Text(S.of(context).strongPush,
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ]),
@@ -335,7 +336,7 @@ class _SignalRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text('${signal.uniqueBuyers}人',
+                    Text(S.of(context).buyersCount(signal.uniqueBuyers),
                       style: TextStyle(fontSize: 11, color: c.textSecondary)),
                     const SizedBox(width: 6),
                     Text(signal.ageLabel,

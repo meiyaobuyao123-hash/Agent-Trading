@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 import '../../utils/chain_utils.dart';
@@ -61,8 +62,8 @@ class DetailHeader extends StatelessWidget {
                               ),
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Text('强推',
-                                style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
+                            child: Text(S.of(context).strongPush,
+                                style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700,
                                     color: Colors.white)),
                           ),
                         ],
@@ -85,7 +86,7 @@ class DetailHeader extends StatelessWidget {
                     color: context.colors.bg,
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('${token.ageDays.toStringAsFixed(0)}天',
+                  child: Text(S.of(context).daysUnit(token.ageDays.toStringAsFixed(0)),
                       style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500,
                           color: context.colors.textSecondary)),
                 ),

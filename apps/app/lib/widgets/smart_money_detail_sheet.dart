@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import '../models/smart_money_signal.dart';
 import '../models/smart_money_txn.dart';
 import '../models/token_detail.dart';
@@ -72,7 +73,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = '加载失败';
+          _error = S.of(context).loadFailed;
           _loading = false;
         });
       }
@@ -226,7 +227,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('详情',
+                  Text(S.of(context).detail,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -256,27 +257,27 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
         child: Row(
           children: [
             _StatBox(
-              label: '总流入',
+              label: S.of(context).totalInflow,
               value: FormatUtils.fmtVolume(_summary.totalInflow),
               color: c.success,
             ),
             _divider(c),
             _StatBox(
-              label: '总流出',
+              label: S.of(context).totalOutflow,
               value: FormatUtils.fmtVolume(_summary.totalOutflow),
               color: c.danger,
             ),
             _divider(c),
             _StatBox(
-              label: '净流向',
+              label: S.of(context).netFlowLabel,
               value: FormatUtils.fmtVolume(_summary.netFlow.abs()),
               prefix: _summary.netFlow >= 0 ? '+' : '-',
               color: _summary.isNetPositive ? c.success : c.danger,
             ),
             _divider(c),
             _StatBox(
-              label: '钱包',
-              value: '${_summary.uniqueBuyers}买/${_summary.uniqueSellers}卖',
+              label: S.of(context).wallet,
+              value: S.of(context).buyerSellerCount(_summary.uniqueBuyers, _summary.uniqueSellers),
               color: c.textPrimary,
             ),
           ],
@@ -303,8 +304,8 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
         ),
         child: Row(
           children: [
-            _tabButton(c, 0, '买入', _summary.buyCount, c.success),
-            _tabButton(c, 1, '卖出', _summary.sellCount, c.danger),
+            _tabButton(c, 0, S.of(context).buy, _summary.buyCount, c.success),
+            _tabButton(c, 1, S.of(context).sell, _summary.sellCount, c.danger),
           ],
         ),
       ),
@@ -376,11 +377,11 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
 
     final tiers = <_TierData>[
       if (eliteCount > 0)
-        _TierData('精英', eliteCount, const Color(0xFFFFB81C)),
+        _TierData(S.of(context).elite, eliteCount, const Color(0xFFFFB81C)),
       if (verifiedCount > 0)
-        _TierData('认证', verifiedCount, const Color(0xFF3B82F6)),
+        _TierData(S.of(context).verified, verifiedCount, const Color(0xFF3B82F6)),
       if (watchingCount > 0)
-        _TierData('关注', watchingCount, const Color(0xFF8B95A5)),
+        _TierData(S.of(context).watching, watchingCount, const Color(0xFF8B95A5)),
     ];
 
     return ListView(
@@ -400,7 +401,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    isBuyTab ? '买入概览' : '卖出概览',
+                    isBuyTab ? S.of(context).buyOverview : S.of(context).sellOverview,
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w700,
@@ -421,11 +422,11 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('$walletCount 个钱包 · $totalCount 笔交易',
+                  Text(S.of(context).walletTxInfo(walletCount, totalCount),
                       style: TextStyle(fontSize: 12, color: c.textSecondary)),
                   if (totalCount > 0 && walletCount > 0)
                     Text(
-                      '均 ${FormatUtils.fmtVolume(totalVolume / totalCount)}/笔',
+                      S.of(context).avgPerTx(FormatUtils.fmtVolume(totalVolume / totalCount)),
                       style: TextStyle(fontSize: 12, color: c.textSecondary),
                     ),
                 ],
@@ -473,7 +474,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
                 Text(t.label,
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: c.textPrimary)),
                 const Spacer(),
-                Text('${t.count} 笔',
+                Text(S.of(context).txCount(t.count),
                     style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: t.color)),
                 const SizedBox(width: 12),
                 SizedBox(
@@ -498,7 +499,7 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
               children: [
                 Icon(Icons.info_outline_rounded, size: 14, color: c.textTertiary),
                 const SizedBox(width: 4),
-                Text('了解钱包分层',
+                Text(S.of(context).learnTier,
                     style: TextStyle(fontSize: 12, color: c.textTertiary)),
               ],
             ),
@@ -532,15 +533,15 @@ class _SmartMoneyDetailSheetState extends State<_SmartMoneyDetailSheet> {
               ),
             ),
             const SizedBox(height: 16),
-            Text('聪明钱分层说明',
+            Text(S.of(context).tierExplanation,
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
             const SizedBox(height: 14),
-            _tierRow(c, '精英', const Color(0xFFFFB81C), '胜率≥65%且≥10笔交易，信号权重×5'),
-            _tierRow(c, '认证', const Color(0xFF3B82F6), '胜率≥50%且≥5笔交易，信号权重×3'),
-            _tierRow(c, '关注', const Color(0xFF8B95A5), '胜率≥40%且≥3笔交易，信号权重×1'),
+            _tierRow(c, S.of(context).elite, const Color(0xFFFFB81C), S.of(context).eliteDesc),
+            _tierRow(c, S.of(context).verified, const Color(0xFF3B82F6), S.of(context).verifiedDesc),
+            _tierRow(c, S.of(context).watching, const Color(0xFF8B95A5), S.of(context).watchingDesc),
             const SizedBox(height: 12),
             Text(
-              '系统追踪链上聪明钱钱包的历史交易表现，自动评级。精英钱包的买入信号可信度最高。',
+              S.of(context).tierSystemDesc,
               style: TextStyle(fontSize: 12, color: c.textSecondary, height: 1.5),
             ),
           ],
@@ -669,7 +670,7 @@ class _TxnRow extends StatelessWidget {
         Clipboard.setData(ClipboardData(text: txn.walletAddress));
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('已复制 ${txn.walletShort}'),
+            content: Text(S.of(context).copied(txn.walletShort)),
             duration: const Duration(seconds: 1),
             behavior: SnackBarBehavior.floating,
           ),

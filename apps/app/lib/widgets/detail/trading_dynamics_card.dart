@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 
@@ -20,11 +21,11 @@ class TradingDynamicsCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('交易动态',
+            Text(S.of(context).tradeDynamics,
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                     color: context.colors.textPrimary)),
             const Spacer(),
-            Text('$buyPct1h% 买压',
+            Text(S.of(context).buyPressure(buyPct1h.toString()),
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
                     color: buyPct1h >= 50 ? context.colors.success : context.colors.danger)),
             if (trending.isNotEmpty)
@@ -120,9 +121,9 @@ class _RatioBar extends StatelessWidget {
         Row(
           children: [
             const SizedBox(width: 30),
-            Text('买 $buys', style: TextStyle(fontSize: 12, color: context.colors.success)),
+            Text(S.of(context).buyLabel(buys.toString()), style: TextStyle(fontSize: 12, color: context.colors.success)),
             const Spacer(),
-            Text('卖 $sells', style: TextStyle(fontSize: 12, color: context.colors.danger)),
+            Text(S.of(context).sellLabel(sells.toString()), style: TextStyle(fontSize: 12, color: context.colors.danger)),
           ],
         ),
       ],

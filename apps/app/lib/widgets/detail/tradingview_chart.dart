@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/ohlcv_data.dart';
 import '../../theme/app_colors.dart';
 
@@ -157,11 +158,11 @@ class _TradingViewChartState extends State<TradingViewChart> {
                           children: [
                             Icon(CupertinoIcons.chart_bar_alt_fill, size: 32, color: Colors.white24),
                             const SizedBox(height: 8),
-                            const Text('暂无K线数据',
-                              style: TextStyle(color: Colors.white38, fontSize: 14, decoration: TextDecoration.none)),
+                            Text(S.of(context).noKlineData,
+                              style: const TextStyle(color: Colors.white38, fontSize: 14, decoration: TextDecoration.none)),
                             const SizedBox(height: 4),
-                            const Text('该代币可能上线时间较短',
-                              style: TextStyle(color: Colors.white24, fontSize: 11, decoration: TextDecoration.none)),
+                            Text(S.of(context).tokenTooNew,
+                              style: const TextStyle(color: Colors.white24, fontSize: 11, decoration: TextDecoration.none)),
                           ],
                         ),
                       )

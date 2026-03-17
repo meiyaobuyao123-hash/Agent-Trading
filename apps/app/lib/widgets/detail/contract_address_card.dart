@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 
@@ -19,7 +20,7 @@ class ContractAddressCard extends StatelessWidget {
       children: [
         _Row(
           icon: CupertinoIcons.doc_on_doc,
-          label: '合约地址',
+          label: S.of(context).contractAddress,
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
             Text(short, style: TextStyle(fontSize: 13,
                 color: context.colors.textSecondary,
@@ -37,7 +38,7 @@ class ContractAddressCard extends StatelessWidget {
           child: Divider(height: 0.5, thickness: 0.5, color: Color(0xFFE5E5EA))),
         _Row(
           icon: CupertinoIcons.compass,
-          label: '区块浏览器',
+          label: S.of(context).blockExplorer,
           onTap: () => _launch(token.explorerTokenUrl),
         ),
         const Padding(padding: EdgeInsets.only(left: 44),
@@ -84,7 +85,7 @@ class ContractAddressCard extends StatelessWidget {
               color: Colors.black87,
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Text('已复制', style: TextStyle(color: Colors.white, fontSize: 14)),
+            child: Text(S.of(context).textCopied, style: const TextStyle(color: Colors.white, fontSize: 14)),
           ),
         ),
       ),

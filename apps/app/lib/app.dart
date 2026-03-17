@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'l10n/app_localizations.dart';
+import 'providers/locale_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
 import 'theme/gradients.dart';
@@ -50,11 +52,13 @@ class _PumpSignalAppState extends State<PumpSignalApp> {
   void initState() {
     super.initState();
     themeNotifier.addListener(_rebuild);
+    localeProvider.addListener(_rebuild);
   }
 
   @override
   void dispose() {
     themeNotifier.removeListener(_rebuild);
+    localeProvider.removeListener(_rebuild);
     super.dispose();
   }
 
@@ -63,11 +67,15 @@ class _PumpSignalAppState extends State<PumpSignalApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Pump Signal',
+      title: 'AI Trading',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeNotifier.mode,
+      // i18n
+      localizationsDelegates: S.localizationsDelegates,
+      supportedLocales: S.supportedLocales,
+      locale: localeProvider.locale, // null = 跟随系统
       home: const _DisclaimerGate(),
     );
   }
@@ -139,17 +147,18 @@ class _MainShellState extends State<MainShell> {
     ProfileScreen(),
   ];
 
-  static const _tabItems = [
-    _TabItem(icon: CupertinoIcons.chart_bar_square, label: '行情'),
-    _TabItem(icon: CupertinoIcons.square_grid_2x2, label: 'Agent'),
-    _TabItem(icon: CupertinoIcons.clock, label: '历史'),
-    _TabItem(icon: CupertinoIcons.person, label: '我的'),
-  ];
-
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final bottomPadding = MediaQuery.of(context).padding.bottom;
+    final t = S.of(context);
+
+    final tabItems = [
+      _TabItem(icon: CupertinoIcons.chart_bar_square, label: t.tabMarket),
+      _TabItem(icon: CupertinoIcons.square_grid_2x2, label: t.tabAgent),
+      _TabItem(icon: CupertinoIcons.clock, label: t.tabHistory),
+      _TabItem(icon: CupertinoIcons.person, label: t.tabProfile),
+    ];
 
     return Scaffold(
       backgroundColor: c.bg,
@@ -171,11 +180,11 @@ class _MainShellState extends State<MainShell> {
           ),
         ],
       ),
-      bottomNavigationBar: _buildGlassTabBar(c, bottomPadding),
+      bottomNavigationBar: _buildGlassTabBar(c, bottomPadding, tabItems),
     );
   }
 
-  Widget _buildGlassTabBar(AppColorScheme c, double bottomPadding) {
+  Widget _buildGlassTabBar(AppColorScheme c, double bottomPadding, List<_TabItem> tabItems) {
     return Container(
       margin: EdgeInsets.only(
         left: 16,
@@ -202,8 +211,8 @@ class _MainShellState extends State<MainShell> {
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: List.generate(_tabItems.length, (i) {
-                final item = _tabItems[i];
+              children: List.generate(tabItems.length, (i) {
+                final item = tabItems[i];
                 final isActive = i == _currentIndex;
                 return _buildTabItem(c, item, isActive, () {
                   setState(() => _currentIndex = i);

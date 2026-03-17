@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../models/goplus_report.dart';
 import '../../theme/app_colors.dart';
@@ -21,18 +22,18 @@ class HolderInfoCard extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('持有者',
+        Text(S.of(context).holders,
             style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                 color: context.colors.textPrimary)),
         const SizedBox(height: 14),
         Row(
           children: [
-            _Stat(label: '持有人数', value: _fmtCount(holders), color: context.colors.textPrimary),
+            _Stat(label: S.of(context).holderCount, value: _fmtCount(holders), color: context.colors.textPrimary),
             if (top10 != null)
-              _Stat(label: 'Top10 占比', value: '${top10.toStringAsFixed(1)}%',
+              _Stat(label: S.of(context).top10Ratio, value: '${top10.toStringAsFixed(1)}%',
                   color: _pctColor(context, top10)),
             if (top1 != null)
-              _Stat(label: 'Top1 占比', value: '${top1.toStringAsFixed(1)}%',
+              _Stat(label: S.of(context).top1Ratio, value: '${top1.toStringAsFixed(1)}%',
                   color: _pctColor(context, top1)),
           ],
         ),

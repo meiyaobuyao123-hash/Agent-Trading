@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'app.dart';
 import 'config/app_config.dart';
+import 'providers/locale_provider.dart';
 import 'services/wallet_service.dart';
 import 'services/push_notification_service.dart';
 
@@ -21,6 +22,9 @@ void main() async {
     DeviceOrientation.portraitUp,
     DeviceOrientation.portraitDown,
   ]);
+
+  // 加载用户语言偏好
+  await localeProvider.load();
 
   // 初始化钱包服务
   await WalletService.instance.init();

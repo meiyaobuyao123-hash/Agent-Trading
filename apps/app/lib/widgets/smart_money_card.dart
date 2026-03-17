@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import '../models/smart_money_signal.dart';
 import '../theme/app_colors.dart';
 import '../utils/chain_utils.dart';
@@ -114,7 +115,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                         const SizedBox(height: 2),
                         // 市值 · 流动性
                         Text(
-                          'MC ${sig.marketCapShort} · 流动性 ${sig.liquidityShort}',
+                          S.of(context).mcLiquidity(sig.marketCapShort, sig.liquidityShort),
                           style: TextStyle(
                             fontSize: 11,
                             color: c.textTertiary,
@@ -167,7 +168,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                     Icon(Icons.arrow_upward_rounded, size: 10, color: c.success),
                     const SizedBox(width: 2),
                     Text(
-                      '${sig.uniqueBuyers}钱包',
+                      S.of(context).walletsCount(sig.uniqueBuyers),
                       style: TextStyle(
                         fontSize: 11, color: c.success,
                         fontWeight: FontWeight.w600,
@@ -175,7 +176,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                     ),
                     if (sig.eliteBuyCount > 0) ...[
                       Text(
-                        '(${sig.eliteBuyCount}精英)',
+                        S.of(context).eliteCountLabel(sig.eliteBuyCount),
                         style: TextStyle(
                           fontSize: 9, color: c.accentGold,
                           fontWeight: FontWeight.w700,
@@ -187,7 +188,7 @@ class _SmartMoneyCardState extends State<SmartMoneyCard> {
                     Icon(Icons.arrow_downward_rounded, size: 10, color: c.danger),
                     const SizedBox(width: 2),
                     Text(
-                      '${sig.uniqueSellers}钱包',
+                      S.of(context).walletsCount(sig.uniqueSellers),
                       style: TextStyle(
                         fontSize: 11, color: c.danger,
                         fontWeight: FontWeight.w600,
@@ -263,14 +264,14 @@ class _FlowBar extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
             Text(
-              '买 ${signal.buyVolumeShort}',
+              S.of(context).buyVolume(signal.buyVolumeShort),
               style: TextStyle(
                 fontSize: 10, color: c.success,
                 fontWeight: FontWeight.w600,
               ),
             ),
             Text(
-              '卖 ${signal.sellVolumeShort}',
+              S.of(context).sellVolume(signal.sellVolumeShort),
               style: TextStyle(
                 fontSize: 10, color: c.danger,
                 fontWeight: FontWeight.w600,
@@ -300,7 +301,7 @@ class _NetFlowChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        '净${signal.netFlowShort}',
+        S.of(context).netAmount(signal.netFlowShort),
         style: TextStyle(
           fontSize: 10, fontWeight: FontWeight.w700,
           color: color,

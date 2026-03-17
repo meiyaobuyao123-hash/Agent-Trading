@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/dexscreener_info.dart';
 import '../../theme/app_colors.dart';
 
@@ -28,7 +29,7 @@ class SocialLinksBar extends StatelessWidget {
         children: [
           Icon(CupertinoIcons.link, size: 14, color: context.colors.textTertiary),
           const SizedBox(width: 6),
-          Text('暂无社交信息',
+          Text(S.of(context).noSocialInfo,
               style: TextStyle(fontSize: 13, color: context.colors.textTertiary)),
         ],
       );

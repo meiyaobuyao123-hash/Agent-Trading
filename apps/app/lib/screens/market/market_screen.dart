@@ -17,6 +17,7 @@ import '../../widgets/hot_coin_card.dart';
 import '../../widgets/smart_money_card.dart';
 import '../../widgets/smart_money_detail_sheet.dart';
 import '../../widgets/shimmer_list.dart';
+import '../../l10n/app_localizations.dart';
 import '../detail/token_detail_page.dart';
 
 class MarketScreen extends StatefulWidget {
@@ -185,6 +186,7 @@ class _MarketScreenState extends State<MarketScreen> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final t = S.of(context);
     final topPadding = MediaQuery.of(context).padding.top;
 
     return Scaffold(
@@ -206,7 +208,7 @@ class _MarketScreenState extends State<MarketScreen> {
                   padding: EdgeInsets.only(top: topPadding + 8, left: 20, bottom: 8),
                   alignment: Alignment.bottomLeft,
                   child: Text(
-                    '行情',
+                    t.marketTitle,
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
@@ -225,7 +227,7 @@ class _MarketScreenState extends State<MarketScreen> {
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
               child: _GlassSegment(
                 selected: _segment,
-                items: const ['热币', '聪明钱', '新币'],
+                items: [t.hotCoins, t.smartMoney, t.newCoins],
                 onChanged: (v) {
                   HapticFeedback.selectionClick();
                   setState(() => _segment = v);
@@ -248,7 +250,7 @@ class _MarketScreenState extends State<MarketScreen> {
                         final isSmartTab = _segment == 1;
                         final selected = isSmartTab ? _smartChainIndex == i : _chainIndex == i;
                         final chainKey = isSmartTab ? _smartChainKeys[i] : _chainKeys[i];
-                        final label = i == 0 ? '全部' : (isSmartTab
+                        final label = i == 0 ? t.all : (isSmartTab
                             ? switch (chainKey) { 'solana' => 'SOL', 'eth' => 'ETH', 'bsc' => 'BSC', 'base' => 'BASE', _ => '' }
                             : chainKey!);
                         final count = isSmartTab ? _smartChainCount(chainKey) : _chainCount(chainKey);
@@ -329,7 +331,7 @@ class _MarketScreenState extends State<MarketScreen> {
                           border: Border.all(color: c.success.withValues(alpha: 0.2)),
                         ),
                         child: Text(
-                          '${_picks.where((p) => p.recommendation == "strong").length} 强推',
+                          t.strongPushWithCount(_picks.where((p) => p.recommendation == "strong").length),
                           style: TextStyle(color: c.success, fontSize: 12, fontWeight: FontWeight.w700),
                         ),
                       ),
@@ -361,6 +363,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<Widget> _buildHotContent() {
     final c = context.colors;
+    final t = S.of(context);
 
     if (_hotLoading) {
       return [
@@ -370,7 +373,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ];
     }
     if (_hotError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadHot))];
-    if (_hotFiltered.isEmpty) return [const SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.flame, text: '暂无热门代币'))];
+    if (_hotFiltered.isEmpty) return [SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.flame, text: t.noHotCoins))];
 
     return [
       // ── 列头 ──────────────────────
@@ -380,9 +383,9 @@ class _MarketScreenState extends State<MarketScreen> {
           child: Row(
             children: [
               const SizedBox(width: 34),
-              Text('代币', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.token, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const Spacer(),
-              Text('价格 / 24h涨跌', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.priceChange24hLabel, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const SizedBox(width: 14),
             ],
           ),
@@ -426,7 +429,7 @@ class _MarketScreenState extends State<MarketScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           child: Center(
             child: Text(
-              '${_hotFiltered.where((c) => c.recommendation == "strong").length} 强推 · ${_hotFiltered.length} 个代币 · 实时',
+              t.tokenCountRealtime(_hotFiltered.where((c) => c.recommendation == "strong").length, _hotFiltered.length),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
           ),
@@ -437,6 +440,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<Widget> _buildSmartMoneyContent() {
     final c = context.colors;
+    final t = S.of(context);
 
     if (_smartLoading) {
       return [
@@ -446,7 +450,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ];
     }
     if (_smartError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadSmartMoney))];
-    if (_smartFiltered.isEmpty) return [const SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.money_dollar_circle, text: '暂无聪明钱信号'))];
+    if (_smartFiltered.isEmpty) return [SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.money_dollar_circle, text: t.noSmartMoneySignals))];
 
     return [
       // ── 列头 ──────────────────
@@ -456,9 +460,9 @@ class _MarketScreenState extends State<MarketScreen> {
           child: Row(
             children: [
               const SizedBox(width: 34),
-              Text('代币', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.token, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const Spacer(),
-              Text('价格 / 热度', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.priceHeatLabel, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const SizedBox(width: 14),
             ],
           ),
@@ -500,7 +504,7 @@ class _MarketScreenState extends State<MarketScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           child: Center(
             child: Text(
-              '${_smartFiltered.where((s) => s.signalStrength == "strong").length} 强信号 · ${_smartFiltered.length} 个代币 · 每5分钟更新',
+              t.strongSignalInfo(_smartFiltered.where((s) => s.signalStrength == "strong").length, _smartFiltered.length),
               style: TextStyle(fontSize: 12, color: c.textTertiary),
             ),
           ),
@@ -511,6 +515,7 @@ class _MarketScreenState extends State<MarketScreen> {
 
   List<Widget> _buildPicksContent() {
     final c = context.colors;
+    final t = S.of(context);
 
     if (_picksLoading) {
       return [
@@ -520,7 +525,7 @@ class _MarketScreenState extends State<MarketScreen> {
       ];
     }
     if (_picksError != null) return [SliverFillRemaining(child: _ErrorView(onRetry: _loadPicks))];
-    if (_picks.isEmpty) return [const SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.waveform, text: '暂无实时信号'))];
+    if (_picks.isEmpty) return [SliverFillRemaining(child: _EmptyView(icon: CupertinoIcons.waveform, text: t.noSignals))];
 
     return [
       SliverToBoxAdapter(
@@ -529,9 +534,9 @@ class _MarketScreenState extends State<MarketScreen> {
           child: Row(
             children: [
               const SizedBox(width: 34),
-              Text('代币', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.token, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const Spacer(),
-              Text('评分', style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
+              Text(t.scoreLabel, style: TextStyle(fontSize: 11, color: c.textTertiary, fontWeight: FontWeight.w500)),
               const SizedBox(width: 22),
             ],
           ),
@@ -568,7 +573,7 @@ class _MarketScreenState extends State<MarketScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
           child: Center(
             child: Text(
-              '实时扫描 · pump.fun · 30s刷新',
+              t.scanInfo,
               textAlign: TextAlign.center,
               style: TextStyle(color: c.textTertiary, fontSize: 12),
             ),
@@ -657,7 +662,7 @@ class _EmptyView extends StatelessWidget {
       const SizedBox(height: 14),
       Text(text, style: TextStyle(color: c.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
       const SizedBox(height: 8),
-      Text('下拉刷新试试', style: TextStyle(color: c.textSecondary, fontSize: 15)),
+      Text(S.of(context).pullToRefresh, style: TextStyle(color: c.textSecondary, fontSize: 15)),
     ]));
   }
 }
@@ -671,11 +676,11 @@ class _ErrorView extends StatelessWidget {
     return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
       Icon(CupertinoIcons.wifi_slash, size: 48, color: c.textTertiary),
       const SizedBox(height: 14),
-      Text('加载失败', style: TextStyle(color: c.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
+      Text(S.of(context).loadFailed, style: TextStyle(color: c.textPrimary, fontSize: 17, fontWeight: FontWeight.w600)),
       const SizedBox(height: 16),
       CupertinoButton(
         onPressed: onRetry,
-        child: Text('重试', style: TextStyle(fontWeight: FontWeight.w600, color: c.primary)),
+        child: Text(S.of(context).retry, style: TextStyle(fontWeight: FontWeight.w600, color: c.primary)),
       ),
     ]));
   }
@@ -737,7 +742,7 @@ class _PumpSignalRow extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                         decoration: BoxDecoration(gradient: c.successGradient, borderRadius: BorderRadius.circular(4)),
-                        child: const Text('强推', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                        child: Text(S.of(context).strongPush, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ]),
@@ -755,7 +760,7 @@ class _PumpSignalRow extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    Text('${signal.uniqueBuyers}人', style: TextStyle(fontSize: 11, color: c.textSecondary)),
+                    Text(S.of(context).buyersCount(signal.uniqueBuyers), style: TextStyle(fontSize: 11, color: c.textSecondary)),
                     const SizedBox(width: 6),
                     Text(signal.ageLabel, style: TextStyle(fontSize: 11, color: c.textTertiary)),
                   ]),

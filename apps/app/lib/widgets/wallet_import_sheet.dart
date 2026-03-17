@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../services/wallet_service.dart';
 
@@ -51,7 +52,7 @@ Future<bool?> _showDisclaimerDialog(BuildContext context) {
           Icon(Icons.security_rounded, color: c.primary, size: 22),
           const SizedBox(width: 8),
           Text(
-            '安全声明',
+            S.of(ctx).securityStatement,
             style: TextStyle(
               color: c.textPrimary,
               fontSize: 18,
@@ -66,23 +67,23 @@ Future<bool?> _showDisclaimerDialog(BuildContext context) {
         children: [
           _disclaimerItem(
             c,
-            '您的助记词/私钥仅存储在本设备系统加密区（iOS Keychain / Android Keystore）',
+            S.of(ctx).walletDisclaimer1,
           ),
           _disclaimerItem(
             c,
-            '我们的服务器从不接收、存储或传输您的私钥',
+            S.of(ctx).walletDisclaimer2,
           ),
           _disclaimerItem(
             c,
-            '所有交易均在设备本地签名后广播',
+            S.of(ctx).walletDisclaimer3,
           ),
           _disclaimerItem(
             c,
-            '本平台为非托管工具，不持有您的资金',
+            S.of(ctx).walletDisclaimer4,
           ),
           _disclaimerItem(
             c,
-            '请务必妥善备份助记词，丢失将无法找回',
+            S.of(ctx).walletDisclaimer5,
             isWarning: true,
           ),
         ],
@@ -92,7 +93,7 @@ Future<bool?> _showDisclaimerDialog(BuildContext context) {
         TextButton(
           onPressed: () => Navigator.of(ctx).pop(false),
           child: Text(
-            '取消',
+            S.of(ctx).cancel,
             style: TextStyle(color: c.textTertiary),
           ),
         ),
@@ -105,7 +106,7 @@ Future<bool?> _showDisclaimerDialog(BuildContext context) {
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          child: const Text('我已了解，继续'),
+          child: Text(S.of(ctx).understood),
         ),
       ],
     ),
@@ -186,14 +187,14 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
       _secretCtrl.text = data.text!;
       setState(() => _error = null);
     } else {
-      setState(() => _error = '剪切板为空');
+      setState(() => _error = S.of(context).clipboardEmpty);
     }
   }
 
   Future<void> _doImport() async {
     final secret = _secretCtrl.text.trim();
     if (secret.isEmpty) {
-      setState(() => _error = _isMnemonic ? '请输入助记词' : '请输入私钥');
+      setState(() => _error = _isMnemonic ? S.of(context).enterMnemonic : S.of(context).enterPrivateKey);
       return;
     }
 
@@ -212,7 +213,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
             .map((e) => e.key)
             .toList();
         if (selectedChains.isEmpty) {
-          setState(() { _error = '请至少选择一条链'; _loading = false; });
+          setState(() { _error = S.of(context).selectAtLeastOneChain; _loading = false; });
           return;
         }
         final wallets = await svc.importFromMnemonicAllChains(
@@ -235,7 +236,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
     } on StateError catch (e) {
       setState(() => _error = e.message);
     } catch (e) {
-      setState(() => _error = '导入失败: $e');
+      setState(() => _error = S.of(context).importFailed(e.toString()));
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -277,7 +278,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
 
             // ── 标题 ──
             Text(
-              '导入钱包',
+              S.of(context).importWallet,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w700,
@@ -297,7 +298,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
               const SizedBox(height: 16),
             ] else ...[
               Text(
-                '选择链',
+                S.of(context).selectChain,
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
@@ -312,8 +313,8 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
             // ── 钱包名称 ──
             _buildTextField(
               controller: _nameCtrl,
-              label: '钱包名称（可选）',
-              hint: '例如：主钱包',
+              label: S.of(context).walletNameLabel,
+              hint: S.of(context).walletNameHint,
               colors: c,
             ),
             const SizedBox(height: 12),
@@ -339,7 +340,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
                         size: 16, color: c.primary),
                     const SizedBox(width: 6),
                     Text(
-                      '从剪切板粘贴',
+                      S.of(context).pasteFromClipboard,
                       style: TextStyle(
                         color: c.primary,
                         fontSize: 13,
@@ -392,9 +393,9 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
                               AlwaysStoppedAnimation(c.textInverse),
                         ),
                       )
-                    : const Text(
-                        '导入钱包',
-                        style: TextStyle(
+                    : Text(
+                        S.of(context).importWallet,
+                        style: const TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600),
                       ),
               ),
@@ -419,8 +420,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '助记词和私钥仅存储在本设备的加密安全区域中，'
-                      '不会上传至任何服务器。请务必妥善保管备份。',
+                      S.of(context).securityNote,
                       style: TextStyle(
                         fontSize: 12,
                         color: c.textSecondary,
@@ -451,7 +451,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
         children: [
           Expanded(
             child: _toggleItem(
-              label: '助记词',
+              label: S.of(context).mnemonic,
               selected: _isMnemonic,
               onTap: () => setState(() => _isMnemonic = true),
               colors: c,
@@ -459,7 +459,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
           ),
           Expanded(
             child: _toggleItem(
-              label: '私钥',
+              label: S.of(context).privateKey,
               selected: !_isMnemonic,
               onTap: () => setState(() => _isMnemonic = false),
               colors: c,
@@ -521,7 +521,7 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
               Icon(Icons.account_tree_rounded, size: 14, color: c.primary),
               const SizedBox(width: 6),
               Text(
-                '一个助记词自动派生多链地址',
+                S.of(context).mnemonicMultiChain,
                 style: TextStyle(
                   fontSize: 12,
                   color: c.primary,
@@ -671,10 +671,10 @@ class _WalletImportSheetState extends State<_WalletImportSheet> {
         fontFamily: 'monospace',
       ),
       decoration: InputDecoration(
-        labelText: _isMnemonic ? '助记词' : '私钥',
+        labelText: _isMnemonic ? S.of(context).mnemonic : S.of(context).privateKey,
         hintText: _isMnemonic
-            ? '输入 12 或 24 个助记词，用空格分隔'
-            : '输入私钥（十六进制或 Base58）',
+            ? S.of(context).mnemonicHint
+            : S.of(context).privateKeyHint,
         labelStyle: TextStyle(color: c.textTertiary, fontSize: 13),
         hintStyle: TextStyle(color: c.textTertiary, fontSize: 12),
         filled: true,

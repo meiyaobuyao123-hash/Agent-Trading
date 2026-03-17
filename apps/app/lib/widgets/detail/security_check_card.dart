@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/goplus_report.dart';
 import '../../theme/app_colors.dart';
 
@@ -17,7 +18,7 @@ class SecurityCheckCard extends StatelessWidget {
       children: [
         Row(
           children: [
-            Text('安全检测',
+            Text(S.of(context).securityCheck,
                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600,
                     color: context.colors.textPrimary)),
             const Spacer(),
@@ -42,7 +43,7 @@ class SecurityCheckCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      report!.overallRisk ? '有风险' : '安全',
+                      report!.overallRisk ? S.of(context).riskDetected : S.of(context).safe,
                       style: TextStyle(
                         fontSize: 13, fontWeight: FontWeight.w700,
                         color: report!.overallRisk ? context.colors.danger : context.colors.success,
@@ -57,7 +58,7 @@ class SecurityCheckCard extends StatelessWidget {
         if (loading)
           const Center(child: CupertinoActivityIndicator(radius: 10))
         else if (report == null)
-          Text('安全数据暂不可用',
+          Text(S.of(context).securityUnavailable,
               style: TextStyle(fontSize: 13, color: context.colors.textSecondary))
         else
           SingleChildScrollView(

@@ -2,6 +2,8 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../app.dart';
+import '../../l10n/app_localizations.dart';
+import '../../providers/locale_provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
@@ -28,7 +30,7 @@ class ProfileScreen extends StatelessWidget {
               ),
             ),
             title: Text(
-              '我的',
+              S.of(context).profileTitle,
               style: TextStyle(
                 color: c.textPrimary,
                 fontSize: 20,
@@ -49,26 +51,26 @@ class ProfileScreen extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // ── 通知设置 ───────────────────
-                  _SectionLabel(label: '通知设置'),
+                  _SectionLabel(label: S.of(context).notificationSettings),
                   const SizedBox(height: 8),
                   _ToggleItem(
                     icon: Icons.bolt_rounded,
-                    title: '新币榜推送',
-                    subtitle: '每日 08:05 推送今日 Top10',
+                    title: S.of(context).newCoinPush,
+                    subtitle: S.of(context).newCoinPushDesc,
                     value: true,
                     onChanged: (_) => _showComingSoon(context),
                   ),
                   _ToggleItem(
                     icon: Icons.local_fire_department_rounded,
-                    title: '热币预警',
-                    subtitle: '热度突然飙升时推送',
+                    title: S.of(context).hotCoinAlert,
+                    subtitle: S.of(context).hotCoinAlertDesc,
                     value: false,
                     onChanged: (_) => _showComingSoon(context),
                   ),
                   _ToggleItem(
                     icon: Icons.smart_toy_rounded,
-                    title: 'Agent 执行通知',
-                    subtitle: '策略触发自动交易时推送',
+                    title: S.of(context).agentNotification,
+                    subtitle: S.of(context).agentNotificationDesc,
                     value: true,
                     onChanged: (_) => _showComingSoon(context),
                   ),
@@ -76,37 +78,49 @@ class ProfileScreen extends StatelessWidget {
                   const SizedBox(height: 16),
 
                   // ── 外观设置 ───────────────────
-                  _SectionLabel(label: '外观设置'),
+                  _SectionLabel(label: S.of(context).appearanceSettings),
                   const SizedBox(height: 8),
                   _SettingItem(
                     icon: context.isDark
                         ? Icons.dark_mode_rounded
                         : Icons.light_mode_rounded,
-                    title: '深色模式',
-                    value: context.isDark ? '开启' : '关闭',
+                    title: S.of(context).darkMode,
+                    value: context.isDark ? S.of(context).darkModeOn : S.of(context).darkModeOff,
                     onTap: () => themeNotifier.toggle(),
                   ),
 
                   const SizedBox(height: 16),
 
+                  // ── 语言设置 ───────────────────
+                  _SectionLabel(label: S.of(context).languageSettings),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: Icons.language_rounded,
+                    title: S.of(context).language,
+                    value: LocaleProvider.displayName(localeProvider.locale),
+                    onTap: () => _showLanguagePicker(context),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // ── 关于 ───────────────────────
-                  _SectionLabel(label: '关于'),
+                  _SectionLabel(label: S.of(context).about),
                   const SizedBox(height: 8),
                   _SettingItem(
                     icon: Icons.info_outline_rounded,
-                    title: '版本',
+                    title: S.of(context).version,
                     value: 'v1.0.0',
                     onTap: null,
                   ),
                   _SettingItem(
                     icon: Icons.data_object_rounded,
-                    title: '数据来源',
+                    title: S.of(context).dataSource,
                     value: 'pump.fun · OKX · Binance',
                     onTap: null,
                   ),
                   _SettingItem(
                     icon: Icons.warning_amber_rounded,
-                    title: '风险提示',
+                    title: S.of(context).riskWarning,
                     value: '',
                     onTap: () => _showRiskDisclaimer(context),
                   ),
@@ -126,7 +140,7 @@ class ProfileScreen extends StatelessWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '该功能即将上线',
+          S.of(context).comingSoon,
           style: TextStyle(color: c.textPrimary),
         ),
         backgroundColor: c.cardGlass,
@@ -142,24 +156,92 @@ class ProfileScreen extends StatelessWidget {
         final dc = dialogCtx.colors;
         return AlertDialog(
           backgroundColor: dc.bg,
-          title: Text('风险提示',
+          title: Text(S.of(dialogCtx).riskWarning,
               style: TextStyle(
                   color: dc.textPrimary, fontWeight: FontWeight.w700)),
           content: Text(
-            '本 App 提供的信号仅供参考，不构成投资建议。\n\n'
-            'Meme 代币高度投机，存在归零风险。\n\n'
-            '请根据自身风险承受能力独立决策，谨慎操作。',
+            S.of(dialogCtx).riskContent,
             style: TextStyle(color: dc.textSecondary, height: 1.6),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogCtx),
               child:
-                  Text('我知道了', style: TextStyle(color: dc.primary)),
+                  Text(S.of(dialogCtx).iKnow, style: TextStyle(color: dc.primary)),
             ),
           ],
         );
       },
+    );
+  }
+
+  void _showLanguagePicker(BuildContext context) {
+    final c = context.colors;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        decoration: BoxDecoration(
+          color: c.bgSecondary,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 36, height: 4,
+              decoration: BoxDecoration(
+                color: c.textTertiary.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(S.of(context).languageSettings,
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
+            const SizedBox(height: 14),
+            // Follow system
+            _languageOption(ctx, c, null, S.of(context).followSystem),
+            // zh
+            _languageOption(ctx, c, const Locale('zh'), '中文'),
+            // en
+            _languageOption(ctx, c, const Locale('en'), 'English'),
+            // ja
+            _languageOption(ctx, c, const Locale('ja'), '日本語'),
+            // ko
+            _languageOption(ctx, c, const Locale('ko'), '한국어'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _languageOption(BuildContext ctx, AppColorScheme c, Locale? locale, String label) {
+    final isSelected = localeProvider.locale?.languageCode == locale?.languageCode;
+    return GestureDetector(
+      onTap: () {
+        localeProvider.setLocale(locale);
+        Navigator.pop(ctx);
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? c.primary.withValues(alpha: 0.12) : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Text(label, style: TextStyle(
+              fontSize: 15, color: isSelected ? c.primary : c.textPrimary,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+            )),
+            const Spacer(),
+            if (isSelected) Icon(Icons.check_rounded, color: c.primary, size: 20),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -203,20 +285,20 @@ class _WalletCardState extends State<_WalletCard> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.bg,
-        title: Text('删除钱包', style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
-        content: Text('确定删除 "${wallet.name}" 吗？密钥将从设备中移除。',
+        title: Text(S.of(ctx).deleteWallet, style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        content: Text(S.of(ctx).deleteWalletConfirm(wallet.name),
             style: TextStyle(color: c.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('取消', style: TextStyle(color: c.textSecondary)),
+            child: Text(S.of(ctx).cancel, style: TextStyle(color: c.textSecondary)),
           ),
           TextButton(
             onPressed: () {
               WalletService.instance.deleteWallet(wallet.id);
               Navigator.pop(ctx);
             },
-            child: Text('删除', style: TextStyle(color: c.danger)),
+            child: Text(S.of(ctx).delete, style: TextStyle(color: c.danger)),
           ),
         ],
       ),
@@ -268,7 +350,7 @@ class _WalletCardState extends State<_WalletCard> {
             children: [
               Icon(Icons.account_balance_wallet_rounded, color: c.primary, size: 20),
               const SizedBox(width: 8),
-              Text('我的钱包', style: TextStyle(
+              Text(S.of(context).myWallets, style: TextStyle(
                 color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w500,
               )),
               const Spacer(),
@@ -281,7 +363,7 @@ class _WalletCardState extends State<_WalletCard> {
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  _wallets.isEmpty ? '未导入' : '${_wallets.length} 个',
+                  _wallets.isEmpty ? S.of(context).notImported : S.of(context).countUnit(_wallets.length),
                   style: TextStyle(
                     color: _wallets.isEmpty ? c.textTertiary : c.success,
                     fontSize: 11, fontWeight: FontWeight.w600,
@@ -297,7 +379,7 @@ class _WalletCardState extends State<_WalletCard> {
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
-                '导入钱包后，Agent 可以代你自动执行交易策略',
+                S.of(context).walletImportHint,
                 style: TextStyle(color: c.textPrimary, fontSize: 14,
                     fontWeight: FontWeight.w500, height: 1.5),
               ),
@@ -345,7 +427,7 @@ class _WalletCardState extends State<_WalletCard> {
                                 color: c.primary.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text('默认', style: TextStyle(
+                              child: Text(S.of(context).defaultLabel, style: TextStyle(
                                 color: c.primary, fontSize: 9, fontWeight: FontWeight.w700,
                               )),
                             ),
@@ -373,7 +455,7 @@ class _WalletCardState extends State<_WalletCard> {
                     onTap: () {
                       Clipboard.setData(ClipboardData(text: w.address));
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text('地址已复制', style: TextStyle(color: c.textPrimary)),
+                        content: Text(S.of(context).addressCopied, style: TextStyle(color: c.textPrimary)),
                         backgroundColor: c.cardGlass,
                         behavior: SnackBarBehavior.floating,
                         duration: const Duration(seconds: 1),
@@ -403,7 +485,7 @@ class _WalletCardState extends State<_WalletCard> {
               onPressed: _openImport,
               icon: const Icon(Icons.add_rounded, size: 18),
               label: Text(
-                _wallets.isEmpty ? '导入钱包' : '添加钱包',
+                _wallets.isEmpty ? S.of(context).importWallet : S.of(context).addWallet,
                 style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
               ),
               style: ElevatedButton.styleFrom(

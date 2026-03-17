@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 import '../score_ring.dart';
@@ -60,11 +61,11 @@ class _ScoreBreakdownCardState extends State<ScoreBreakdownCard>
 
           // M/Q/P 维度
           if (token.scoreM != null) ...[
-            _AnimatedScoreBar(label: '动量 M', value: token.scoreM!, max: 50, animation: _barController),
+            _AnimatedScoreBar(label: S.of(context).momentumM, value: token.scoreM!, max: 50, animation: _barController),
             const SizedBox(height: 12),
-            _AnimatedScoreBar(label: '品质 Q', value: token.scoreQ ?? 0, max: 30, animation: _barController),
+            _AnimatedScoreBar(label: S.of(context).qualityQ, value: token.scoreQ ?? 0, max: 30, animation: _barController),
             const SizedBox(height: 12),
-            _AnimatedScoreBar(label: '潜力 P', value: token.scoreP ?? 0, max: 20, animation: _barController),
+            _AnimatedScoreBar(label: S.of(context).potentialP, value: token.scoreP ?? 0, max: 20, animation: _barController),
           ] else if (token.scoreDetail != null && token.scoreDetail!.isNotEmpty) ...[
             ...token.scoreDetail!.entries.map((e) => Padding(
               padding: const EdgeInsets.only(bottom: 10),
@@ -88,14 +89,14 @@ class _ScoreBreakdownCardState extends State<ScoreBreakdownCard>
   }
 
   String _zhLabel(String key) => switch (key) {
-    'buy_sell' => '买卖比',
-    'smart_money' => '聪明钱',
-    'inflow_accel' => '流入加速',
-    'creator_history' => '创建者',
-    'buyer_diversity' => '买家分散',
-    'social_score' => '社交',
-    'progress_speed' => '进度速度',
-    'whale_bonus' => '大单加成',
+    'buy_sell' => S.of(context).buySellRatio,
+    'smart_money' => S.of(context).smartMoneyLabel,
+    'inflow_accel' => S.of(context).inflowAccel,
+    'creator_history' => S.of(context).creatorLabel,
+    'buyer_diversity' => S.of(context).buyerDiversity,
+    'social_score' => S.of(context).socialLabel,
+    'progress_speed' => S.of(context).progressSpeed,
+    'whale_bonus' => S.of(context).whaleBonus,
     _ => key,
   };
 }
@@ -109,9 +110,9 @@ class _RecommendationLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (text, icon) = switch (recommendation) {
-      'strong' => ('AI 强推', Icons.bolt_rounded),
-      'normal' => ('AI 关注', Icons.visibility_rounded),
-      _ => ('AI 观望', Icons.remove_red_eye_outlined),
+      'strong' => (S.of(context).aiStrongPush, Icons.bolt_rounded),
+      'normal' => (S.of(context).aiWatch, Icons.visibility_rounded),
+      _ => (S.of(context).aiObserve, Icons.remove_red_eye_outlined),
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),

@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/hot_coin.dart';
 import '../../models/token_detail.dart';
 import '../../services/supabase_service.dart';
@@ -76,12 +77,12 @@ class _HotScreenState extends State<HotScreen> {
         slivers: [
           // ── iOS 大标题导航栏 ──────────────────────
           CupertinoSliverNavigationBar(
-            largeTitle: const Text('热币榜'),
+            largeTitle: Text(S.of(context).hotCoinList),
             backgroundColor: AppColors.bg.withValues(alpha: 0.9),
             border: null,
             trailing: _coins.isNotEmpty
                 ? Text(
-                    '${_filtered.length} 个',
+                    S.of(context).countUnit(_filtered.length),
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 15,
@@ -103,24 +104,24 @@ class _HotScreenState extends State<HotScreen> {
                     _applyFilter();
                   });
                 },
-                children: const {
+                children: {
                   0: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 4),
-                    child: Text('全部', style: TextStyle(fontSize: 13)),
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Text(S.of(context).all, style: const TextStyle(fontSize: 13)),
                   ),
-                  1: Padding(
+                  1: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text('SOL', style: TextStyle(fontSize: 13)),
                   ),
-                  2: Padding(
+                  2: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text('BSC', style: TextStyle(fontSize: 13)),
                   ),
-                  3: Padding(
+                  3: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text('BASE', style: TextStyle(fontSize: 13)),
                   ),
-                  4: Padding(
+                  4: const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 4),
                     child: Text('ETH', style: TextStyle(fontSize: 13)),
                   ),
@@ -174,8 +175,10 @@ class _HotScreenState extends State<HotScreen> {
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                 child: Text(
-                  '${_filtered.where((c) => c.recommendation == "strong").length} 强推  '
-                  '${_filtered.length - _filtered.where((c) => c.recommendation == "strong").length} 普通  ·  每 2 小时更新',
+                  S.of(context).strongNormal2h(
+                    _filtered.where((c) => c.recommendation == "strong").length,
+                    _filtered.length - _filtered.where((c) => c.recommendation == "strong").length,
+                  ),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
@@ -213,12 +216,12 @@ class _EmptyView extends StatelessWidget {
         children: [
           Icon(CupertinoIcons.flame, size: 44, color: AppColors.textTertiary),
           const SizedBox(height: 12),
-          const Text('暂无热门代币',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 17,
+          Text(S.of(context).noHotCoins,
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 17,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 6),
-          const Text('下拉刷新试试',
-              style: TextStyle(color: AppColors.textSecondary, fontSize: 15)),
+          Text(S.of(context).pullToRefresh,
+              style: const TextStyle(color: AppColors.textSecondary, fontSize: 15)),
         ],
       ),
     );
@@ -237,13 +240,13 @@ class _ErrorView extends StatelessWidget {
         children: [
           Icon(CupertinoIcons.wifi_slash, size: 44, color: AppColors.textTertiary),
           const SizedBox(height: 12),
-          const Text('加载失败',
-              style: TextStyle(color: AppColors.textPrimary, fontSize: 17,
+          Text(S.of(context).loadFailed,
+              style: const TextStyle(color: AppColors.textPrimary, fontSize: 17,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           CupertinoButton(
             onPressed: onRetry,
-            child: const Text('重试'),
+            child: Text(S.of(context).retry),
           ),
         ],
       ),

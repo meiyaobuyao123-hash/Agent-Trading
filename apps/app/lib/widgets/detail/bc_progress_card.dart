@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/token_detail.dart';
 import '../../theme/app_colors.dart';
 
@@ -110,7 +111,7 @@ class BcProgressCard extends StatelessWidget {
           // 距离毕业提示
           if (pct < 100)
             Text(
-              '距离毕业还差 ${remaining.toStringAsFixed(1)}%',
+              S.of(context).distanceToGrad(remaining.toStringAsFixed(1)),
               style: TextStyle(
                 fontSize: 13,
                 color: context.colors.textSecondary,
@@ -125,7 +126,7 @@ class BcProgressCard extends StatelessWidget {
             children: [
               if (token.didGraduate != null)
                 _Tag(
-                  label: token.didGraduate! ? '已毕业' : '未毕业',
+                  label: token.didGraduate! ? S.of(context).graduated : S.of(context).notGraduated,
                   color: token.didGraduate! ? context.colors.success : context.colors.textSecondary,
                   icon: token.didGraduate! ? Icons.check_circle : Icons.pending,
                 ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/pump_signal.dart';
 import '../../models/token_detail.dart';
 import '../../services/pump_signal_service.dart';
@@ -57,7 +58,7 @@ class _PicksScreenState extends State<PicksScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           CupertinoSliverNavigationBar(
-            largeTitle: const Text('实时信号'),
+            largeTitle: Text(S.of(context).realtimeSignals),
             backgroundColor: AppColors.bg.withValues(alpha: 0.9),
             border: null,
             trailing: _signals.isNotEmpty
@@ -72,7 +73,7 @@ class _PicksScreenState extends State<PicksScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            '$strongCount 强推',
+                            S.of(context).strongPushWithCount(strongCount),
                             style: const TextStyle(
                               color: AppColors.strong,
                               fontSize: 13,
@@ -106,7 +107,7 @@ class _PicksScreenState extends State<PicksScreen> {
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Text(
-                '实时扫描 pump.fun · 30s刷新',
+                S.of(context).scanPumpFun,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 13,
@@ -267,9 +268,9 @@ class _SignalCard extends StatelessWidget {
                             gradient: c.successGradient,
                             borderRadius: BorderRadius.circular(4),
                           ),
-                          child: const Text(
-                            '强推',
-                            style: TextStyle(
+                          child: Text(
+                            S.of(context).strongPush,
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 9,
                               fontWeight: FontWeight.w800,
@@ -301,7 +302,7 @@ class _SignalCard extends StatelessWidget {
                       const SizedBox(width: 6),
                       // 买家数
                       Text(
-                        '${signal.uniqueBuyers}人',
+                        S.of(context).buyersCount(signal.uniqueBuyers),
                         style: TextStyle(fontSize: 11, color: c.textSecondary),
                       ),
                       const SizedBox(width: 6),
@@ -382,15 +383,15 @@ class _EmptyView extends StatelessWidget {
         children: [
           Icon(CupertinoIcons.waveform, size: 44, color: AppColors.textTertiary),
           const SizedBox(height: 12),
-          const Text(
-            '暂无实时信号',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17,
+          Text(
+            S.of(context).noSignals,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 17,
               fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 6),
-          const Text(
-            '当有符合条件的代币时会自动出现',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 15),
+          Text(
+            S.of(context).whenTokenAppears,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 15),
           ),
         ],
       ),
@@ -410,13 +411,13 @@ class _ErrorView extends StatelessWidget {
         children: [
           Icon(CupertinoIcons.wifi_slash, size: 44, color: AppColors.textTertiary),
           const SizedBox(height: 12),
-          const Text('加载失败',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 17,
+          Text(S.of(context).loadFailed,
+            style: const TextStyle(color: AppColors.textPrimary, fontSize: 17,
               fontWeight: FontWeight.w600)),
           const SizedBox(height: 16),
           CupertinoButton(
             onPressed: onRetry,
-            child: const Text('重试'),
+            child: Text(S.of(context).retry),
           ),
         ],
       ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../l10n/app_localizations.dart';
 import '../theme/app_colors.dart';
 import '../services/agent_service.dart';
 import '../utils/format_utils.dart';
@@ -125,13 +126,13 @@ class _StrategyDetailSheetState extends State<_StrategyDetailSheet> {
                               Icon(Icons.cloud_off_rounded,
                                   size: 48, color: c.textTertiary),
                               const SizedBox(height: 12),
-                              Text('加载失败',
+                              Text(S.of(context).loadFailed,
                                   style: TextStyle(
                                       color: c.textTertiary, fontSize: 14)),
                               const SizedBox(height: 8),
                               TextButton(
                                 onPressed: _loadExecutions,
-                                child: Text('点击重试',
+                                child: Text(S.of(context).tapToRetry,
                                     style: TextStyle(color: c.primary)),
                               ),
                             ],
@@ -204,7 +205,7 @@ class _SheetHeader extends StatelessWidget {
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        isActive ? '运行中' : '已暂停',
+                        isActive ? S.of(context).running : S.of(context).paused,
                         style: TextStyle(
                           color: isActive ? c.success : c.textTertiary,
                           fontSize: 10,
@@ -216,7 +217,7 @@ class _SheetHeader extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '${strategy.triggerCount}次触发 · ${strategy.cooldownMin}分钟冷却',
+                  S.of(context).triggerInfo(strategy.triggerCount, strategy.cooldownMin),
                   style: TextStyle(fontSize: 11, color: c.textTertiary),
                 ),
               ],
@@ -251,7 +252,7 @@ class _PnlSummary extends StatelessWidget {
             Icon(Icons.info_outline_rounded, size: 16, color: c.textTertiary),
             const SizedBox(width: 8),
             Text(
-              '暂无交易记录',
+              S.of(context).noTradeRecords,
               style: TextStyle(color: c.textTertiary, fontSize: 13),
             ),
           ],
@@ -278,7 +279,7 @@ class _PnlSummary extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('已实现收益',
+              Text(S.of(context).realizedProfit,
                   style: TextStyle(color: c.textTertiary, fontSize: 11)),
             ],
           ),
@@ -319,12 +320,12 @@ class _PnlSummary extends StatelessWidget {
           Row(
             children: [
               _StatCell(
-                label: '买入',
+                label: S.of(context).buy,
                 value: '\$${FormatUtils.fmtAmtRaw(summary.totalBuyUsd)}',
                 color: c.danger,
               ),
               _StatCell(
-                label: '卖出',
+                label: S.of(context).sell,
                 value: '\$${FormatUtils.fmtAmtRaw(summary.totalSellUsd)}',
                 color: c.success,
               ),
@@ -334,7 +335,7 @@ class _PnlSummary extends StatelessWidget {
                 color: c.warning,
               ),
               _StatCell(
-                label: '成功率',
+                label: S.of(context).successRate,
                 value: summary.totalCount > 0
                     ? '${(summary.confirmedCount / summary.totalCount * 100).toStringAsFixed(0)}%'
                     : '-',
@@ -399,20 +400,20 @@ class _FilterTabs extends StatelessWidget {
     return Row(
       children: [
         _TabChip(
-          label: '全部 ${summary.totalCount}',
+          label: S.of(context).allWithCount(summary.totalCount),
           active: selected == 'all',
           onTap: () => onChanged('all'),
         ),
         const SizedBox(width: 6),
         _TabChip(
-          label: '买入 ${summary.buyCount}',
+          label: S.of(context).buyWithCount(summary.buyCount),
           active: selected == 'buy',
           activeColor: c.danger,
           onTap: () => onChanged('buy'),
         ),
         const SizedBox(width: 6),
         _TabChip(
-          label: '卖出 ${summary.sellCount}',
+          label: S.of(context).sellWithCount(summary.sellCount),
           active: selected == 'sell',
           activeColor: c.success,
           onTap: () => onChanged('sell'),
@@ -500,7 +501,7 @@ class _ExecutionRow extends StatelessWidget {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  isBuy ? '买入' : '卖出',
+                  isBuy ? S.of(context).buy : S.of(context).sell,
                   style: TextStyle(
                     color: actionColor,
                     fontSize: 11,
@@ -537,7 +538,7 @@ class _ExecutionRow extends StatelessWidget {
                         ClipboardData(text: execution.tokenAddress!));
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: const Text('地址已复制'),
+                        content: Text(S.of(context).addressCopied),
                         duration: const Duration(seconds: 1),
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -618,7 +619,7 @@ class _ExecutionRow extends StatelessWidget {
                 Clipboard.setData(ClipboardData(text: execution.txHash!));
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: const Text('交易哈希已复制'),
+                    content: Text(S.of(context).txHashCopied),
                     duration: const Duration(seconds: 1),
                     behavior: SnackBarBehavior.floating,
                   ),
@@ -708,10 +709,10 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final label = filter == 'buy'
-        ? '暂无买入记录'
+        ? S.of(context).noBuyRecords
         : filter == 'sell'
-            ? '暂无卖出记录'
-            : '暂无交易记录';
+            ? S.of(context).noSellRecords
+            : S.of(context).noTradeRecords;
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -724,7 +725,7 @@ class _EmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            '当策略触发交易后，记录将在这里展示',
+            S.of(context).tradeRecordHint,
             style: TextStyle(color: c.textTertiary, fontSize: 12),
           ),
         ],

@@ -236,13 +236,20 @@ class HotCoinManager:
 
     def _enter_token(self, addr: str, coin: dict, result: HotScoreResult) -> None:
         """代币入榜"""
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
+        today_str = now.strftime("%Y-%m-%d")
+        discovery_price = coin.get("price_usd", 0)
+
         coin["score"] = result.total
         coin["score_m"] = result.score_m
         coin["score_q"] = result.score_q
         coin["score_p"] = result.score_p
         coin["score_detail"] = result.detail
         coin["recommendation"] = result.recommendation
-        coin["entered_at"] = datetime.now(timezone.utc).isoformat()
+        coin["entered_at"] = now_iso
+        coin["discovery_price"] = discovery_price
+        coin["discovery_date"] = today_str
 
         self._active[addr] = coin
         self._low_score_count[addr] = 0
@@ -257,11 +264,16 @@ class HotCoinManager:
         sym = coin.get("symbol", addr[:8])
         log.info(
             f"[HotCoin] ✅ 入榜 {sym} ({chain}) "
-            f"score={result.total} M={result.score_m} Q={result.score_q} P={result.score_p}"
+            f"score={result.total} M={result.score_m} Q={result.score_q} P={result.score_p} "
+            f"price=${discovery_price:.8f}"
         )
 
-        # 立即写 DB
+        # 立即写 hot_coins DB
         self._write_to_db(addr, coin)
+
+        # 写入 token_performance 追踪（发现瞬间价格）
+        if discovery_price > 0:
+            self._write_performance_entry(coin, today_str, discovery_price, result)
 
     def _exit_token(self, addr: str, reason: str) -> None:
         """代币退出榜单"""
@@ -327,6 +339,86 @@ class HotCoinManager:
             return True, f"连续 {miss} 轮不在发现源"
 
         return False, ""
+
+    # ═══════════════════════════════════════════════════════════
+    # 表现追踪：入榜时写入 token_performance
+    # ═══════════════════════════════════════════════════════════
+
+    def _write_performance_entry(
+        self, coin: dict, pick_date: str, discovery_price: float, result: HotScoreResult
+    ) -> None:
+        """入榜时写入 token_performance，记录发现瞬间价格"""
+        try:
+            row = {
+                "source": "hot_live",
+                "pick_date": pick_date,
+                "chain": coin.get("chain", ""),
+                "address": coin.get("address", ""),
+                "symbol": coin.get("symbol", ""),
+                "name": coin.get("name", ""),
+                "rank": None,
+                "score": result.total,
+                "price_at_pick": discovery_price,
+                "denomination": "usd",
+                "daily_highs": {
+                    "D0": {
+                        "high": round(discovery_price, 10),
+                        "pct": 0.0,
+                        "at": datetime.now(timezone.utc).isoformat(),
+                    }
+                },
+                "best_price": discovery_price,
+                "best_pct": 0.0,
+                "best_day": 0,
+                "is_active": True,
+                "tracking_days": 0,
+                "snapshot_data": {
+                    "price_usd": discovery_price,
+                    "market_cap_usd": coin.get("market_cap_usd"),
+                    "liquidity_usd": coin.get("liquidity_usd"),
+                    "volume_24h_usd": coin.get("volume_24h_usd"),
+                    "score_m": result.score_m,
+                    "score_q": result.score_q,
+                    "score_p": result.score_p,
+                    "recommendation": result.recommendation,
+                    "data_source": coin.get("data_source", ""),
+                    "entered_at": coin.get("entered_at", ""),
+                },
+            }
+            get_db().table("token_performance").upsert(
+                row, on_conflict="source,pick_date,chain,address"
+            ).execute()
+            log.debug(f"[HotCoin] 追踪记录写入: {coin.get('symbol')} price=${discovery_price:.8f}")
+        except Exception as e:
+            log.error(f"[HotCoin] 追踪记录写入失败: {e}")
+
+    # ═══════════════════════════════════════════════════════════
+    # 漏斗统计
+    # ═══════════════════════════════════════════════════════════
+
+    def record_funnel(
+        self, discovered: int, after_hard_filter: int,
+        entered: int, exited: int,
+    ) -> None:
+        """记录每轮扫描的漏斗数据"""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        try:
+            row = {
+                "report_date": today_str,
+                "source": "hot",
+                "discovered": discovered,
+                "after_hard_filter": after_hard_filter,
+                "entered": entered,
+                "exited": exited,
+                "active": len(self._active),
+                "recorded_at": now_iso,
+            }
+            # 追加到漏斗统计（不 upsert，每轮一条）
+            get_db().table("hot_funnel_stats").insert(row).execute()
+        except Exception as e:
+            # 表不存在时静默失败（需要创建迁移）
+            log.debug(f"[HotCoin] 漏斗统计写入失败（表可能不存在）: {e}")
 
     # ═══════════════════════════════════════════════════════════
     # DB 写入（节流）

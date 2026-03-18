@@ -95,13 +95,29 @@ async def run_hot_coin_scan():
             await _enrich_gecko_candidates(merged, len(okx_candidates))
 
         # ── 5. 交给 Manager 处理入榜/退出 ──
+        before_active = hot_coin_manager.get_active_count()
+        before_entries = hot_coin_manager._total_entries
+        before_exits = hot_coin_manager._total_exits
+
         hot_coin_manager.on_discovery_result(merged)
+
+        new_entered = hot_coin_manager._total_entries - before_entries
+        new_exited = hot_coin_manager._total_exits - before_exits
 
         stats = hot_coin_manager.get_stats()
         log.info(
             f"热币榜扫描完成: 活跃={stats['active']} "
+            f"本轮入榜={new_entered} 退出={new_exited} "
             f"累计入榜={stats['total_entries']} 退出={stats['total_exits']} "
             f"链分布={stats['by_chain']}"
+        )
+
+        # 记录漏斗
+        hot_coin_manager.record_funnel(
+            discovered=len(okx_candidates) + len(gecko_candidates_raw),
+            after_hard_filter=len(merged),
+            entered=new_entered,
+            exited=new_exited,
         )
 
     except Exception as e:

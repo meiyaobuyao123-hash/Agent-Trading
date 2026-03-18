@@ -158,7 +158,7 @@ async def run_performance_tracker():
 
 async def _tick_hot(session: aiohttp.ClientSession) -> int:
     """DexScreener 批量获取价格（OKX price-info 需白名单暂不可用）"""
-    hot_rows = [v for v in _cache.values() if v["source"] == "hot" and v.get("is_active")]
+    hot_rows = [v for v in _cache.values() if v["source"] in ("hot", "hot_live") and v.get("is_active")]
     if not hot_rows:
         return 0
 
@@ -347,6 +347,9 @@ def _apply_price_update(row: dict, current_price: float) -> bool:
         row["best_pct"] = round(current_pct, 2)
         row["best_day"] = day_number
         new_high = True
+    # 初始化 best_day 如果还是 None
+    if row.get("best_day") is None:
+        row["best_day"] = day_number
 
     # 标记 dirty
     key = _cache_key(row)

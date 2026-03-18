@@ -285,9 +285,15 @@ class HotCoinManager:
             self._write_performance_entry(coin, today_str, discovery_price, result)
 
         # 异步采集 Top Holders（不阻塞入榜）
-        asyncio.get_event_loop().call_soon(
-            lambda: asyncio.ensure_future(self._collect_top_holders(addr, chain))
-        )
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._collect_top_holders(addr, chain))
+        except RuntimeError:
+            # 如果没有运行中的事件循环，用 ensure_future
+            try:
+                asyncio.ensure_future(self._collect_top_holders(addr, chain))
+            except Exception:
+                log.debug(f"[HotCoin] Top Holders 任务调度失败 {addr[:8]}")
 
     def _exit_token(self, addr: str, reason: str) -> None:
         """代币退出榜单"""

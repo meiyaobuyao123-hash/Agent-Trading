@@ -136,6 +136,18 @@ async def main():
         misfire_grace_time=3600,
     )
 
+    # ── Dune Analytics 聪明钱导入（每周一 UTC 05:00）──────────
+    from dune_wallet_importer import run_dune_wallet_import
+    scheduler.add_job(
+        run_dune_wallet_import,
+        trigger="cron",
+        day_of_week="mon",
+        hour=5, minute=0,
+        id="dune_wallet_import",
+        name="Dune聪明钱导入",
+        misfire_grace_time=7200,
+    )
+
     # ── 热币增量扫描（每10分钟）─────────────────────────────
     # 增量模式：已入库代币复用安全/社交数据，仅新代币走 GoPlus/Helius/DexScreener
     # 多时间帧 OKX toplist 发现，耗时 ~60-90s

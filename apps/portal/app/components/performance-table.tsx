@@ -6,7 +6,7 @@ import { PctCell } from './pct-cell'
 import { fmtDate, fmtUsd, fmtSol } from '../lib/utils'
 
 /** 展示的关键天数列 */
-const DAY_COLS = [1, 2, 3, 5, 7, 14, 30]
+const DAY_COLS = [0, 1, 2, 3, 5, 7, 14, 30]
 
 interface PerformanceTableProps {
   data: TokenPerformance[]
@@ -134,7 +134,7 @@ export function PerformanceTable({ data, showSource }: PerformanceTableProps) {
 
                 {/* 各天涨幅 */}
                 {DAY_COLS.map(d => {
-                  const dayData = highs[String(d)]
+                  const dayData = highs[`D${d}`] ?? highs[String(d)]
                   return (
                     <td key={d} className="px-2 py-3 text-center">
                       <PctCell value={dayData?.pct ?? null} bold={d === 7 || d === 30} />

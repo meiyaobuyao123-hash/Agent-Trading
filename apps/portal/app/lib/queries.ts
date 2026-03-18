@@ -139,7 +139,7 @@ export async function fetchHotDailyPicks(opts: {
 
 export interface TokenPerformance {
   id: number
-  source: 'pump' | 'hot'
+  source: 'pump' | 'hot' | 'hot_live'
   pick_date: string
   chain: string
   address: string
@@ -164,7 +164,7 @@ export interface TokenPerformance {
 }
 
 export async function fetchPerformance(opts: {
-  source?: 'pump' | 'hot'
+  source?: 'pump' | 'hot' | 'hot_live' | 'hot_all'
   chain?: string
   limit?: number
   daysBack?: number
@@ -175,7 +175,12 @@ export async function fetchPerformance(opts: {
   const supabase = createClient()
   let query = supabase.from('token_performance').select('*')
 
-  if (opts.source) query = query.eq('source', opts.source)
+  if (opts.source === 'hot_all') {
+    // hot + hot_live 合并查询
+    query = query.in('source', ['hot', 'hot_live'])
+  } else if (opts.source) {
+    query = query.eq('source', opts.source)
+  }
   if (opts.chain) query = query.eq('chain', opts.chain)
   if (opts.pickDate) {
     query = query.eq('pick_date', opts.pickDate)
@@ -194,12 +199,19 @@ export async function fetchPerformance(opts: {
   return (data ?? []) as TokenPerformance[]
 }
 
-export async function fetchPerformanceDates(source: 'pump' | 'hot'): Promise<string[]> {
+export async function fetchPerformanceDates(source: 'pump' | 'hot' | 'hot_live' | 'hot_all'): Promise<string[]> {
   const supabase = createClient()
-  const { data } = await supabase
+  let query = supabase
     .from('token_performance')
     .select('pick_date')
-    .eq('source', source)
+
+  if (source === 'hot_all') {
+    query = query.in('source', ['hot', 'hot_live'])
+  } else {
+    query = query.eq('source', source)
+  }
+
+  const { data } = await query
     .order('pick_date', { ascending: false })
     .limit(500)
 

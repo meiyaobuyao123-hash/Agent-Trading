@@ -39,9 +39,9 @@ export default function HotPerformancePage() {
   const [dates, setDates] = useState<string[]>([])
   const [showDatePicker, setShowDatePicker] = useState(false)
 
-  // 加载可用日期列表
+  // 加载可用日期列表（hot + hot_live 合并）
   useEffect(() => {
-    fetchPerformanceDates('hot')
+    fetchPerformanceDates('hot_all')
       .then(setDates)
       .catch(() => {})
   }, [])
@@ -58,7 +58,7 @@ export default function HotPerformancePage() {
     try {
       const chain = CHAIN_TABS[chainIdx].key
       const result = await fetchPerformance({
-        source: 'hot',
+        source: 'hot_all',
         chain: chain ?? undefined,
         pickDate: pickDate,
         limit: 200,

@@ -287,15 +287,45 @@ class HotCoinManager:
             sym = coin.get("symbol", addr[:8])
             chain = coin.get("chain", "?")
             score = coin.get("score", 0)
-            log.info(f"[HotCoin] ❌ 退出 {sym} ({chain}) score={score} 原因: {reason}")
+            exit_price = coin.get("price_usd", 0)
+            discovery_price = coin.get("discovery_price", 0)
+            exit_pct = ((exit_price / discovery_price) - 1) * 100 if discovery_price > 0 else 0
+            log.info(
+                f"[HotCoin] ❌ 退出 {sym} ({chain}) score={score} "
+                f"exit_price=${exit_price:.8f} exit_pct={exit_pct:+.1f}% 原因: {reason}"
+            )
 
-            # 从 DB 删除
+            # 从 hot_coins 表删除
             try:
                 get_db().table("hot_coins").delete().eq(
                     "address", coin.get("address", addr)
                 ).execute()
             except Exception as e:
                 log.error(f"[HotCoin] 退出删除 DB 失败: {e}")
+
+            # 更新 token_performance：标记退出 + 记录退出原因和价格
+            discovery_date = coin.get("discovery_date", "")
+            if discovery_date:
+                try:
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    get_db().table("token_performance").update({
+                        "is_active": False,
+                        "updated_at": now_iso,
+                        "snapshot_data": {
+                            **(coin.get("snapshot_data") or {}),
+                            "exit_reason": reason,
+                            "exit_price": exit_price,
+                            "exit_pct": round(exit_pct, 2),
+                            "exit_at": now_iso,
+                            "exit_score": score,
+                        },
+                    }).eq("source", "hot_live").eq(
+                        "pick_date", discovery_date
+                    ).eq("chain", chain).eq(
+                        "address", coin.get("address", addr)
+                    ).execute()
+                except Exception as e:
+                    log.debug(f"[HotCoin] 退出更新 performance 失败: {e}")
 
     # ═══════════════════════════════════════════════════════════
     # 退出判定

@@ -26,11 +26,12 @@ DUNE_API_KEY = os.getenv("DUNE_API_KEY", "")
 DUNE_BASE = "https://api.dune.com/api/v1"
 
 # Dune 查询 ID（在 dune.com 网页上创建并保存）
+# 每个查询返回该链上14天内高频 DEX 交易者（过滤 bot，LIMIT 5000）
 DUNE_QUERY_IDS = {
-    "solana": 6850812,
-    # 后续可添加 EVM 链的查询 ID
-    # "ethereum": xxx,
-    # "bsc": xxx,
+    "solana": int(os.getenv("DUNE_QUERY_SOL", "6850812")),
+    "eth": int(os.getenv("DUNE_QUERY_ETH", "0")),
+    "bsc": int(os.getenv("DUNE_QUERY_BSC", "0")),
+    "base": int(os.getenv("DUNE_QUERY_BASE", "0")),
 }
 
 # Bot 过滤：14 天内超过 5000 笔交易 → 大概率是 bot/MEV
@@ -55,6 +56,8 @@ def run_dune_wallet_import():
     total_new = 0
 
     for chain, query_id in DUNE_QUERY_IDS.items():
+        if query_id <= 0:
+            continue  # 未配置该链的查询
         try:
             wallets = _fetch_dune_results(query_id, chain)
             if not wallets:

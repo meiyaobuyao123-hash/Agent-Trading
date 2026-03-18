@@ -520,6 +520,10 @@ class SmartMoneyTracker:
         self._upsert_signals(list(signals.values()))
         self._upsert_txns(txns)
         self._cleanup_old_txns()
+
+        # 实时 bot 检测：同代币60秒内买卖 → 立即黑名单
+        self._realtime_bot_detect(txns, chain)
+
         logger.info("Smart money [%s]: %d signals, %d txns saved", chain, len(signals), len(txns))
 
     async def _enrich_dexscreener(self, chain: str, sigs: List[Dict[str, Any]]):
@@ -666,6 +670,61 @@ class SmartMoneyTracker:
             self.db.table("smart_money_txns").delete().lt("scan_time", cutoff).execute()
         except Exception as e:
             logger.debug("Cleanup txns: %s", e)
+
+    def _realtime_bot_detect(self, txns: List[Dict[str, Any]], chain: str):
+        """实时检测：同代币60秒内买卖 → 立即黑名单（不等2h评估）"""
+        # 按钱包+代币分组
+        wallet_token_times: Dict[str, Dict[str, List]] = defaultdict(lambda: defaultdict(list))
+        for t in txns:
+            wallet = t.get("wallet_address", "")
+            token = t.get("token_address", "")
+            tx_type = t.get("tx_type", "")
+            tx_time = t.get("tx_time", "")
+            if wallet and token and tx_time:
+                wallet_token_times[wallet][token].append((tx_type, tx_time))
+
+        bot_wallets = set()
+        for wallet, tokens in wallet_token_times.items():
+            for token, entries in tokens.items():
+                buys = [e[1] for e in entries if e[0] == "buy"]
+                sells = [e[1] for e in entries if e[0] == "sell"]
+                if not buys or not sells:
+                    continue
+                for b_time in buys:
+                    for s_time in sells:
+                        try:
+                            bt = datetime.fromisoformat(b_time.replace("Z", "+00:00"))
+                            st = datetime.fromisoformat(s_time.replace("Z", "+00:00"))
+                            if abs((st - bt).total_seconds()) < 60:
+                                bot_wallets.add(wallet)
+                                break
+                        except Exception:
+                            pass
+                    if wallet in bot_wallets:
+                        break
+                if wallet in bot_wallets:
+                    break
+
+        if not bot_wallets:
+            return
+
+        # 立即写入黑名单
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for wallet in bot_wallets:
+            try:
+                self.db.table("smart_wallets").upsert({
+                    "wallet": wallet,
+                    "tier": "blacklisted",
+                    "is_blacklisted": True,
+                    "last_seen": now_iso,
+                    "total_trades": 0,
+                    "win_trades": 0,
+                    "total_sol_in": 0,
+                    "active_weeks": 0,
+                }, on_conflict="wallet").execute()
+            except Exception:
+                pass
+        logger.warning("[实时Bot检测] %s: 黑名单 %d 个钱包", chain, len(bot_wallets))
 
     # ──────────────────────────────────────────────
     # 兼容旧接口（APScheduler 调用）

@@ -1,114 +1,149 @@
 """
-聪明钱识别器 v2 — 多维度分层体系
+聪明钱识别器 v3 — 五维度 100 分评估体系
 
-运行时机：每6小时（APScheduler 调度）
+运行时机：每 2 小时（APScheduler 调度）
 
-━━━━ 分层规则 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-精英(elite)
-  - 加权胜率 ≥ 0.65
-  - ≥ 10 笔有标签代币交易（60天内）
-  - 活跃自然周 ≥ 2（能力稳定，非一周运气）
-  - 平均入场BC < 15%（有数据时，买得早 = 真聪明）
+━━━━ 五维度评分（每项 0-20 分，总分 100）━━━━━━━━━━━
 
-验证(verified)
-  - 加权胜率 ≥ 0.50
-  - ≥ 5 笔有标签代币交易
+1. 胜率维度（0-20）
+   买入后 72h 内最高价 ≥ 买入价 × 1.2（涨 20%+ 才算赢）
+   ≥60%:20  ≥45%:15  ≥30%:10  <30%:5
+   最低样本: ≥5 笔买入（不够=0）
 
-观察(watching)
-  - 加权胜率 ≥ 0.40
-  - ≥ 3 笔有标签代币交易
+2. PNL 维度（0-20）
+   (卖出均价 / 买入均价) 中位数
+   ≥2.0x:20  ≥1.5x:15  ≥1.2x:10  ≥1.0x:5  <1.0x:0
 
-黑名单(blacklisted)
-  - 同代币买入后 60 秒内卖出（疑似 Bot/Sniper）
-  - 或 胜率 < 20% 且 ≥ 10 笔（长期负盈利）
+3. 交易规模维度（0-20）
+   单笔交易 USD 中位数
+   ≥$5K:20  ≥$1K:15  ≥$200:10  <$200:5
 
-━━━━ 时间衰减 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  交易 < 30天前：权重 1.0（全权重）
-  交易 30~60天前：权重 0.5
-  交易 > 60天前：不计入（weight=0）
+4. 活跃度维度（0-20）
+   频率 + 天数分布（检测 bot）
+   10-500笔 且 ≥5天:20   5-1000笔 且 ≥3天:15
+   >2000笔:0(bot黑名单)  仅1天:5  0笔:-10
 
-━━━━ 胜率定义 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  成功 = 买入代币最终 did_graduate=True 或 label_2x=True
-  加权胜率 = Σ(weight × success) / Σ(weight)
+5. 时效性维度（0-20）
+   买入时代币市值（越早=越聪明）
+   <$500K:20  <$2M:15  <$10M:10  ≥$10M:5
+
+━━━━ 分层 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  elite:    总分≥75 且 胜率≥15 且 PNL≥10 且 无bot
+  verified: 总分≥55 且 胜率≥10 且 活跃度≥10
+  watching: 总分 35-54 或 数据不足
+  blacklisted: bot行为 / 总分<30且≥10笔 / 频率>2000
+
+━━━━ 降级 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  14天无交易 → 降一级
+  28天无交易 → 移除
+  同代币60秒买卖 → 立即黑名单
+
+Python 3.9 兼容。
 """
 
 import logging
+import statistics
 from collections import defaultdict
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Set
 
 from database import get_db
 
 log = logging.getLogger(__name__)
 
-# ── 时间衰减窗口 ─────────────────────────────────────────────
-DECAY_FULL_DAYS  = 30    # 30天内：权重 1.0
-DECAY_HALF_DAYS  = 60    # 30-60天：权重 0.5（超过则不计入）
+# ── 配置 ────────────────────────────────────────────────────
+EVAL_WINDOW_DAYS = 14        # 滚动评估窗口
+BOT_HOLD_SECONDS = 60        # 买卖同代币<60秒 = bot
+BOT_MAX_TRADES_14D = 2000    # 14天内>2000笔 = 高频bot
+WIN_PRICE_RATIO = 1.2        # 涨20%才算赢
+MIN_TRADES_FOR_SCORE = 5     # 最少5笔才评分
+INACTIVE_DEMOTE_DAYS = 14    # 14天无交易降级
+INACTIVE_REMOVE_DAYS = 28    # 28天无交易移除
 
-# ── Bot 检测阈值 ─────────────────────────────────────────────
-BOT_HOLD_SECONDS = 60    # 买入后N秒内卖出同一代币 → 疑似Bot/Sniper
+# ── 分层阈值 ──────────────────────────────────────────────
+ELITE_TOTAL = 75
+ELITE_WIN_MIN = 15
+ELITE_PNL_MIN = 10
 
-# ── 分层阈值 ─────────────────────────────────────────────────
-ELITE_WIN_RATE      = 0.65
-ELITE_MIN_TRADES    = 10
-ELITE_MIN_WEEKS     = 2
-ELITE_MAX_ENTRY_BC  = 15.0   # 仅在有 bc_progress_at_buy 数据时约束
+VERIFIED_TOTAL = 55
+VERIFIED_WIN_MIN = 10
+VERIFIED_ACTIVE_MIN = 10
 
-VERIFIED_WIN_RATE   = 0.50
-VERIFIED_MIN_TRADES = 5
+WATCHING_TOTAL = 35
 
-WATCHING_WIN_RATE   = 0.40
-WATCHING_MIN_TRADES = 3
-
-BLACKLIST_WIN_RATE  = 0.20   # 胜率低于此 且 trade_count 足够 → 拉黑
+BLACKLIST_TOTAL = 30
 BLACKLIST_MIN_TRADES = 10
 
-# Supabase 每批处理的 mint 数量
-BATCH_SIZE = 200
-
 
 # ═══════════════════════════════════════════════════════════
-# 工具函数
+# 维度打分函数
 # ═══════════════════════════════════════════════════════════
 
-def _time_weight(traded_at_str: str, now: datetime) -> float:
-    """根据交易时间返回权重（时间衰减）"""
-    try:
-        t = datetime.fromisoformat(traded_at_str.replace("Z", "+00:00"))
-        if t.tzinfo is None:
-            t = t.replace(tzinfo=timezone.utc)
-        age_days = (now - t).total_seconds() / 86400.0
-        if age_days > DECAY_HALF_DAYS:
-            return 0.0
-        elif age_days > DECAY_FULL_DAYS:
-            return 0.5
-        return 1.0
-    except Exception:
-        return 1.0  # 解析失败给全权重，保守处理
+def _score_win_rate(win_rate: float, trade_count: int) -> int:
+    """维度1: 胜率（0-20）"""
+    if trade_count < MIN_TRADES_FOR_SCORE:
+        return 0
+    if win_rate >= 0.60:
+        return 20
+    if win_rate >= 0.45:
+        return 15
+    if win_rate >= 0.30:
+        return 10
+    return 5
 
 
-def _iso_week_key(traded_at_str: str) -> Optional[str]:
-    """提取 'YYYY-WW' 用于统计活跃周数"""
-    try:
-        t = datetime.fromisoformat(traded_at_str.replace("Z", "+00:00"))
-        iso = t.isocalendar()
-        return f"{iso.year}-{iso.week:02d}"
-    except Exception:
-        return None
+def _score_pnl(pnl_median: float) -> int:
+    """维度2: PNL中位数（0-20）"""
+    if pnl_median <= 0:
+        return 0  # 无数据
+    if pnl_median >= 2.0:
+        return 20
+    if pnl_median >= 1.5:
+        return 15
+    if pnl_median >= 1.2:
+        return 10
+    if pnl_median >= 1.0:
+        return 5
+    return 0  # 亏钱
 
 
-def _new_wallet_stats() -> dict:
-    return {
-        "weighted_wins":  0.0,
-        "weighted_total": 0.0,
-        "trade_count":    0,
-        "win_count":      0,
-        "entry_bc_list":  [],    # bc_progress_at_buy 值列表（非 None）
-        "week_set":       set(), # 有效交易分布的自然周
-        "last_active":    "",
-        "mint_buy_times": defaultdict(list),  # mint → [buy_datetime, ...]
-        "total_sol":      0.0,
-    }
+def _score_trade_size(median_usd: float) -> int:
+    """维度3: 交易规模（0-20）"""
+    if median_usd >= 5000:
+        return 20
+    if median_usd >= 1000:
+        return 15
+    if median_usd >= 200:
+        return 10
+    return 5
+
+
+def _score_activity(trade_count: int, active_days: int) -> int:
+    """维度4: 活跃度（0-20），同时检测bot"""
+    if trade_count > BOT_MAX_TRADES_14D:
+        return 0  # bot
+    if trade_count == 0:
+        return -10  # 不活跃惩罚
+    if 10 <= trade_count <= 500 and active_days >= 5:
+        return 20
+    if 5 <= trade_count <= 1000 and active_days >= 3:
+        return 15
+    if active_days <= 1:
+        return 5
+    return 10
+
+
+def _score_timing(avg_mc_at_buy: float) -> int:
+    """维度5: 时效性/早期发现（0-20）"""
+    if avg_mc_at_buy <= 0:
+        return 10  # 无数据，给中间分
+    if avg_mc_at_buy < 500_000:
+        return 20
+    if avg_mc_at_buy < 2_000_000:
+        return 15
+    if avg_mc_at_buy < 10_000_000:
+        return 10
+    return 5
 
 
 # ═══════════════════════════════════════════════════════════
@@ -116,214 +151,224 @@ def _new_wallet_stats() -> dict:
 # ═══════════════════════════════════════════════════════════
 
 def run_smart_wallet_updater():
-    log.info("⚙️  聪明钱多维度更新开始...")
-    db  = get_db()
+    log.info("⚙️  聪明钱 v3 评估开始（5维度100分）...")
+    db = get_db()
     now = datetime.now(timezone.utc)
-    cutoff_60d = (now - timedelta(days=DECAY_HALF_DAYS)).isoformat()
+    cutoff = (now - timedelta(days=EVAL_WINDOW_DAYS)).isoformat()
 
-    # ── Step 1: 拿所有已标签代币的结果 ──────────────────────
-    outcomes_res = (
-        db.table("token_outcomes")
-        .select("mint, label_2x, did_graduate")
-        .execute()
-    )
-    if not outcomes_res.data:
-        log.info("暂无标签数据，跳过")
+    # ── Step 1: 从 smart_money_txns 拉取14天内交易 ──────────
+    try:
+        txns_res = db.table("smart_money_txns").select(
+            "wallet_address, token_address, chain, tx_type, volume_usd, "
+            "market_cap_at_tx, price_at_tx, tx_time, wallet_tier"
+        ).gte("tx_time", cutoff).execute()
+    except Exception as e:
+        log.error(f"查询 smart_money_txns 失败: {e}")
         return
 
-    outcome_map: Dict[str, bool] = {}
-    for r in outcomes_res.data:
-        outcome_map[r["mint"]] = bool(r.get("label_2x")) or bool(r.get("did_graduate"))
+    txns = txns_res.data or []
+    log.info(f"14天内交易记录: {len(txns)} 条")
 
-    labeled_mints = list(outcome_map.keys())
-    log.info(f"已标签代币: {len(labeled_mints)} 个  "
-             f"（成功: {sum(outcome_map.values())} | 失败: {len(labeled_mints) - sum(outcome_map.values())}）")
+    if not txns:
+        log.info("无交易记录，执行降级检查后退出")
+        _handle_inactive(db, now)
+        _evaluate_top_holders(db)
+        return
 
-    # ── Step 2: 分批拉取最近60天的买单 ──────────────────────
-    wallet_stats: Dict[str, dict] = defaultdict(_new_wallet_stats)
+    # ── Step 2: 按钱包聚合统计 ──────────────────────────────
+    wallet_data = defaultdict(lambda: {
+        "buys": [],           # [{token, price, volume_usd, mc, time}]
+        "sells": [],          # [{token, price, volume_usd, time}]
+        "buy_tokens": set(),  # 买过的代币
+        "sell_tokens": {},    # {token: [sell_price]}
+        "volumes": [],        # 所有交易的 volume_usd
+        "active_dates": set(),
+        "last_seen": "",
+        "mint_buy_times": defaultdict(list),  # bot检测
+    })
 
-    for i in range(0, len(labeled_mints), BATCH_SIZE):
-        batch = labeled_mints[i:i + BATCH_SIZE]
-        res = (
-            db.table("token_trades")
-            .select("mint, trader, sol_amount, traded_at, bc_progress")
-            .in_("mint", batch)
-            .eq("tx_type", "buy")
-            .gte("traded_at", cutoff_60d)
-            .execute()
-        )
-        for t in (res.data or []):
-            wallet    = t.get("trader", "")
-            if not wallet:
-                continue
-            mint      = t["mint"]
-            traded_at = t.get("traded_at", "")
-            weight    = _time_weight(traded_at, now)
-            if weight == 0.0:
-                continue  # 超出时间窗口，跳过
+    for t in txns:
+        wallet = t.get("wallet_address", "")
+        if not wallet:
+            continue
+        wd = wallet_data[wallet]
+        tx_type = t.get("tx_type", "")
+        token = t.get("token_address", "")
+        volume = float(t.get("volume_usd") or 0)
+        mc = float(t.get("market_cap_at_tx") or 0)
+        price = float(t.get("price_at_tx") or 0)
+        tx_time = t.get("tx_time", "")
 
-            ws      = wallet_stats[wallet]
-            success = outcome_map.get(mint, False)
+        if volume > 0:
+            wd["volumes"].append(volume)
 
-            ws["weighted_total"] += weight
-            ws["weighted_wins"]  += weight * (1.0 if success else 0.0)
-            ws["trade_count"]    += 1
-            ws["win_count"]      += 1 if success else 0
-            ws["total_sol"]      += float(t.get("sol_amount") or 0)
+        # 提取日期
+        try:
+            dt = datetime.fromisoformat(tx_time.replace("Z", "+00:00"))
+            wd["active_dates"].add(dt.strftime("%Y-%m-%d"))
+            if tx_time > wd["last_seen"]:
+                wd["last_seen"] = tx_time
+        except Exception:
+            pass
 
-            # bc_progress 列：买入时的BC进度（自本次 migration 后开始有数据）
-            bc_at_buy = t.get("bc_progress")
-            if bc_at_buy is not None:
-                ws["entry_bc_list"].append(float(bc_at_buy))
-
-            week_key = _iso_week_key(traded_at)
-            if week_key:
-                ws["week_set"].add(week_key)
-
-            if traded_at > ws["last_active"]:
-                ws["last_active"] = traded_at
-
-            # 记录买入时间戳（Bot检测用）
+        if tx_type == "buy":
+            wd["buys"].append({
+                "token": token, "price": price,
+                "volume_usd": volume, "mc": mc, "time": tx_time,
+            })
+            wd["buy_tokens"].add(token)
             try:
-                bt = datetime.fromisoformat(traded_at.replace("Z", "+00:00"))
-                if bt.tzinfo is None:
-                    bt = bt.replace(tzinfo=timezone.utc)
-                ws["mint_buy_times"][mint].append(bt)
+                bt = datetime.fromisoformat(tx_time.replace("Z", "+00:00"))
+                wd["mint_buy_times"][token].append(bt)
             except Exception:
                 pass
+        elif tx_type == "sell":
+            wd["sells"].append({
+                "token": token, "price": price,
+                "volume_usd": volume, "time": tx_time,
+            })
+            if token not in wd["sell_tokens"]:
+                wd["sell_tokens"][token] = []
+            if price > 0:
+                wd["sell_tokens"][token].append(price)
 
-    log.info(f"统计到 {len(wallet_stats)} 个有效买入钱包")
+    log.info(f"活跃钱包: {len(wallet_data)} 个")
 
-    # ── Step 3: Bot 检测 ─────────────────────────────────────
-    # 找出"买入后 BOT_HOLD_SECONDS 秒内卖出同一代币"的钱包
-    bot_wallets: set = set()
+    # ── Step 3: Bot 检测（60秒买卖同代币）────────────────────
+    bot_wallets: Set[str] = set()
+    for wallet, wd in wallet_data.items():
+        # 高频 bot
+        total_trades = len(wd["buys"]) + len(wd["sells"])
+        if total_trades > BOT_MAX_TRADES_14D:
+            bot_wallets.add(wallet)
+            continue
 
-    for i in range(0, len(labeled_mints), BATCH_SIZE):
-        batch = labeled_mints[i:i + BATCH_SIZE]
-        sell_res = (
-            db.table("token_trades")
-            .select("mint, trader, traded_at")
-            .in_("mint", batch)
-            .eq("tx_type", "sell")
-            .gte("traded_at", cutoff_60d)
-            .execute()
-        )
-        for s in (sell_res.data or []):
-            wallet = s.get("trader", "")
-            mint   = s["mint"]
-            if not wallet or wallet not in wallet_stats:
-                continue
-            buy_times = wallet_stats[wallet]["mint_buy_times"].get(mint, [])
+        # 60秒买卖检测
+        for sell in wd["sells"]:
+            token = sell["token"]
+            buy_times = wd["mint_buy_times"].get(token, [])
             if not buy_times:
                 continue
             try:
-                sell_time = datetime.fromisoformat(
-                    s["traded_at"].replace("Z", "+00:00")
-                )
-                if sell_time.tzinfo is None:
-                    sell_time = sell_time.replace(tzinfo=timezone.utc)
+                st = datetime.fromisoformat(sell["time"].replace("Z", "+00:00"))
                 for bt in buy_times:
-                    diff = (sell_time - bt).total_seconds()
-                    if 0 <= diff < BOT_HOLD_SECONDS:
+                    diff = abs((st - bt).total_seconds())
+                    if diff < BOT_HOLD_SECONDS:
                         bot_wallets.add(wallet)
                         break
             except Exception:
                 pass
+            if wallet in bot_wallets:
+                break
 
-    log.info(f"疑似 Bot 钱包: {len(bot_wallets)} 个")
+    log.info(f"Bot 检测: {len(bot_wallets)} 个")
 
-    # ── Step 4: 分层 & 构建 upsert 数据 ─────────────────────
+    # ── Step 4: 五维度评分 ──────────────────────────────────
     now_str = now.isoformat()
     upsert_rows: List[dict] = []
     tier_counts: Dict[str, int] = defaultdict(int)
 
-    for wallet, ws in wallet_stats.items():
-        total = ws["weighted_total"]
-        if total <= 0:
-            continue
+    for wallet, wd in wallet_data.items():
+        total_trades = len(wd["buys"]) + len(wd["sells"])
+        active_days = len(wd["active_dates"])
 
-        w_win_rate   = ws["weighted_wins"] / total
-        trade_count  = ws["trade_count"]
-        win_count    = ws["win_count"]
-        active_weeks = len(ws["week_set"])
-        last_active  = ws["last_active"] or now_str
-        total_sol    = round(ws["total_sol"], 4)
-        avg_entry_bc = (
-            round(sum(ws["entry_bc_list"]) / len(ws["entry_bc_list"]), 2)
-            if ws["entry_bc_list"] else None
-        )
+        # --- 维度1: 胜率 ---
+        # 用 DexScreener enrich 后的 price_at_tx 计算
+        # 简化：检查同代币是否有卖出且卖出价 > 买入价 × 1.2
+        win_count = 0
+        loss_count = 0
+        pnl_ratios = []
+        mc_at_buys = []
 
-        # 匹配 smart_wallets 真实列名（003 migration schema）
-        # total_trades / win_trades / last_seen + 新增列
-        row_base = {
-            "wallet":        wallet,
-            "total_trades":  trade_count,   # 原列名
-            "win_trades":    win_count,     # 原列名
-            "total_sol_in":  total_sol,     # 004 新增
-            "avg_entry_bc":  avg_entry_bc,  # 004 新增
-            "active_weeks":  active_weeks,  # 004 新增
-            "last_seen":     last_active,   # 原列名（替代 last_active_at）
-            # win_rate 是 GENERATED 列，不能 INSERT
+        for buy in wd["buys"]:
+            token = buy["token"]
+            buy_price = buy["price"]
+            mc = buy["mc"]
+            if mc > 0:
+                mc_at_buys.append(mc)
+
+            if buy_price <= 0:
+                continue
+
+            # 检查该代币是否有卖出
+            sell_prices = wd["sell_tokens"].get(token, [])
+            if sell_prices:
+                best_sell = max(sell_prices)
+                ratio = best_sell / buy_price
+                pnl_ratios.append(ratio)
+                if ratio >= WIN_PRICE_RATIO:
+                    win_count += 1
+                else:
+                    loss_count += 1
+            else:
+                # 没卖出的不计入胜率（可能还在持有）
+                pass
+
+        evaluated_trades = win_count + loss_count
+        win_rate = win_count / evaluated_trades if evaluated_trades > 0 else 0
+        pnl_median = statistics.median(pnl_ratios) if pnl_ratios else 0
+        avg_mc = statistics.mean(mc_at_buys) if mc_at_buys else 0
+        median_volume = statistics.median(wd["volumes"]) if wd["volumes"] else 0
+
+        # 打分
+        s_win = _score_win_rate(win_rate, len(wd["buys"]))
+        s_pnl = _score_pnl(pnl_median)
+        s_size = _score_trade_size(median_volume)
+        s_act = _score_activity(total_trades, active_days)
+        s_time = _score_timing(avg_mc)
+        total_score = s_win + s_pnl + s_size + s_act + s_time
+
+        # 构建 row
+        row = {
+            "wallet": wallet,
+            "total_trades": total_trades,
+            "win_trades": win_count,
+            "total_sol_in": round(sum(b["volume_usd"] for b in wd["buys"]), 2),
+            "avg_entry_bc": round(avg_mc, 0) if avg_mc > 0 else None,
+            "active_weeks": active_days,  # 复用字段存活跃天数
+            "last_seen": wd["last_seen"] or now_str,
         }
 
-        # ── 黑名单优先判断 ──────────────────────────────────
-        # 1. Bot 行为
+        # --- 分层 ---
         if wallet in bot_wallets:
-            upsert_rows.append({
-                **row_base,
-                "tier":           "blacklisted",
-                "is_blacklisted": True,
-            })
-            tier_counts["blacklisted"] += 1
-            continue
-
-        # 2. 长期负盈利
-        if trade_count >= BLACKLIST_MIN_TRADES and w_win_rate < BLACKLIST_WIN_RATE:
-            upsert_rows.append({
-                **row_base,
-                "tier":           "blacklisted",
-                "is_blacklisted": True,
-            })
-            tier_counts["blacklisted"] += 1
-            continue
-
-        # ── 正向分层 ──────────────────────────────────────
-        # 精英：最严格，要求胜率高 + 样本多 + 跨周稳定 + 早期入场
-        entry_ok = (avg_entry_bc is None or avg_entry_bc < ELITE_MAX_ENTRY_BC)
-        if (w_win_rate >= ELITE_WIN_RATE
-                and trade_count  >= ELITE_MIN_TRADES
-                and active_weeks >= ELITE_MIN_WEEKS
-                and entry_ok):
+            tier = "blacklisted"
+            row["is_blacklisted"] = True
+        elif total_score < BLACKLIST_TOTAL and total_trades >= BLACKLIST_MIN_TRADES:
+            tier = "blacklisted"
+            row["is_blacklisted"] = True
+        elif (total_score >= ELITE_TOTAL
+              and s_win >= ELITE_WIN_MIN
+              and s_pnl >= ELITE_PNL_MIN
+              and wallet not in bot_wallets):
             tier = "elite"
-
-        elif w_win_rate >= VERIFIED_WIN_RATE and trade_count >= VERIFIED_MIN_TRADES:
+            row["is_blacklisted"] = False
+        elif (total_score >= VERIFIED_TOTAL
+              and s_win >= VERIFIED_WIN_MIN
+              and s_act >= VERIFIED_ACTIVE_MIN):
             tier = "verified"
-
-        elif w_win_rate >= WATCHING_WIN_RATE and trade_count >= WATCHING_MIN_TRADES:
+            row["is_blacklisted"] = False
+        elif total_score >= WATCHING_TOTAL:
             tier = "watching"
-
+            row["is_blacklisted"] = False
+        elif len(wd["buys"]) < MIN_TRADES_FOR_SCORE:
+            tier = "watching"  # 数据不足，保留观察
+            row["is_blacklisted"] = False
         else:
-            continue  # 不符合任何正向阈值，不写入
+            continue  # 分数太低且数据充足，不写入
 
-        upsert_rows.append({
-            **row_base,
-            "tier":           tier,
-            "is_blacklisted": False,
-        })
+        row["tier"] = tier
+        upsert_rows.append(row)
         tier_counts[tier] += 1
 
     log.info(
-        f"分层结果 → 精英:{tier_counts['elite']}  "
+        f"v3 评估结果 → "
+        f"精英:{tier_counts['elite']}  "
         f"验证:{tier_counts['verified']}  "
         f"观察:{tier_counts['watching']}  "
         f"黑名单:{tier_counts['blacklisted']}"
     )
 
-    # ── Step 5: 分批 upsert ──────────────────────────────────
-    if not upsert_rows:
-        log.info("暂无符合条件的钱包，本次跳过")
-        return
-
+    # ── Step 5: 批量 upsert ──────────────────────────────────
     success_count = 0
     for i in range(0, len(upsert_rows), 100):
         batch = upsert_rows[i:i + 100]
@@ -333,18 +378,76 @@ def run_smart_wallet_updater():
             ).execute()
             success_count += len(batch)
         except Exception as e:
-            log.error(f"upsert smart_wallets 失败 (batch {i//100}): {e}")
+            log.error(f"upsert batch {i // 100}: {e}")
 
-    log.info(f"✅ 聪明钱多维度更新完成，共写入 {success_count} 个钱包")
+    log.info(f"✅ 聪明钱 v3 更新完成: {success_count} 个钱包")
 
-    # ── Step 6: Top Holder 自动晋升 ────────────────────────────
+    # ── Step 6: 降级/移除不活跃钱包 ──────────────────────────
+    _handle_inactive(db, now)
+
+    # ── Step 7: Top Holder 自动晋升 ──────────────────────────
     _evaluate_top_holders(db)
 
+
+# ═══════════════════════════════════════════════════════════
+# 降级/移除不活跃钱包
+# ═══════════════════════════════════════════════════════════
+
+def _handle_inactive(db, now: datetime):
+    """14天无交易降级，28天无交易移除"""
+    demote_cutoff = (now - timedelta(days=INACTIVE_DEMOTE_DAYS)).isoformat()
+    remove_cutoff = (now - timedelta(days=INACTIVE_REMOVE_DAYS)).isoformat()
+
+    try:
+        # 28天无交易 → 移除
+        remove_res = db.table("smart_wallets").select(
+            "wallet"
+        ).lt("last_seen", remove_cutoff).neq(
+            "tier", "blacklisted"
+        ).execute()
+        removed = 0
+        for r in (remove_res.data or []):
+            try:
+                db.table("smart_wallets").delete().eq(
+                    "wallet", r["wallet"]
+                ).execute()
+                removed += 1
+            except Exception:
+                pass
+        if removed:
+            log.info(f"[降级] 移除 {removed} 个 28天无交易钱包")
+
+        # 14天无交易 → 降一级
+        demote_map = {"elite": "verified", "verified": "watching"}
+        for old_tier, new_tier in demote_map.items():
+            demote_res = db.table("smart_wallets").select(
+                "wallet"
+            ).eq("tier", old_tier).lt(
+                "last_seen", demote_cutoff
+            ).execute()
+            demoted = 0
+            for r in (demote_res.data or []):
+                try:
+                    db.table("smart_wallets").update(
+                        {"tier": new_tier}
+                    ).eq("wallet", r["wallet"]).execute()
+                    demoted += 1
+                except Exception:
+                    pass
+            if demoted:
+                log.info(f"[降级] {old_tier}→{new_tier}: {demoted} 个")
+
+    except Exception as e:
+        log.warning(f"[降级] 失败: {e}")
+
+
+# ═══════════════════════════════════════════════════════════
+# Top Holder 自动晋升
+# ═══════════════════════════════════════════════════════════
 
 def _evaluate_top_holders(db):
     """评估 hot_coin_top_holders，表现好的自动晋升为聪明钱"""
     try:
-        # 查 D3 涨幅 >= 20% 的热币
         perf_res = db.table("token_performance").select(
             "chain, address, daily_highs, best_pct"
         ).eq("source", "hot_live").eq("is_active", False).execute()
@@ -361,9 +464,7 @@ def _evaluate_top_holders(db):
             log.info("[TopHolder晋升] 暂无 D3>=20% 的热币")
             return
 
-        # 查这些热币的 top holders
-        holder_counts = defaultdict(int)  # {wallet: count}
-        promoted = 0
+        holder_counts = defaultdict(int)
         for chain, addr in good_tokens:
             try:
                 holders_res = db.table("hot_coin_top_holders").select(
@@ -374,19 +475,17 @@ def _evaluate_top_holders(db):
             except Exception:
                 pass
 
-        # 查现有 smart_wallets
         existing_res = db.table("smart_wallets").select("wallet, tier").execute()
         existing = {r["wallet"].lower(): r["tier"] for r in (existing_res.data or [])}
 
         now_iso = datetime.now(timezone.utc).isoformat()
+        promoted = 0
         for wallet, count in holder_counts.items():
             wallet_lower = wallet.lower()
             current_tier = existing.get(wallet_lower)
 
-            # 跨 3+ 个好代币 → verified
             if count >= 3 and current_tier != "elite":
                 new_tier = "verified"
-            # 至少 1 个好代币 → watching（如果还不在库里）
             elif count >= 1 and current_tier is None:
                 new_tier = "watching"
             else:
@@ -408,7 +507,7 @@ def _evaluate_top_holders(db):
             except Exception:
                 pass
 
-        log.info(f"[TopHolder晋升] 好代币 {len(good_tokens)} 个，新增/升级 {promoted} 个聪明钱地址")
+        log.info(f"[TopHolder晋升] 好代币 {len(good_tokens)} 个，新增/升级 {promoted} 个聪明钱")
 
     except Exception as e:
         log.warning(f"[TopHolder晋升] 失败: {e}")

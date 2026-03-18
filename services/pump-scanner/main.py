@@ -119,9 +119,9 @@ async def main():
     scheduler.add_job(
         run_smart_wallet_updater,
         trigger="interval",
-        hours=6,
+        hours=2,
         id="smart_wallet",
-        name="聪明钱更新",
+        name="聪明钱v3评估",
         misfire_grace_time=600,
     )
 

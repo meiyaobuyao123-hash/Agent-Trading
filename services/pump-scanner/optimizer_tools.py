@@ -480,8 +480,11 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
         return {"period_days": days, "total_picks": 0, "message": "无数据"}
 
     d1_positive = 0
+    d3_above_20 = 0
     d7_above_20 = 0
     d0_negative = 0
+    entry_1h_positive = 0
+    entry_1h_count = 0
     best_pcts = []
     by_chain = {}  # type: dict
     by_score_bucket = {}  # type: dict
@@ -491,19 +494,30 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
         best_pcts.append(bp)
         chain = p.get("chain", "?")
         score = p.get("score") or 0
+        snap = p.get("snapshot_data") or {}
 
-        # D0/D1 涨幅
+        # D0/D1/D3 涨幅
         dh = p.get("daily_highs") or {}
         d0_pct = (dh.get("D0") or {}).get("pct", 0)
         d1_pct = (dh.get("D1") or {}).get("pct", 0)
+        d3_pct = (dh.get("D3") or {}).get("pct", 0)
         d7_pct = (dh.get("D7") or {}).get("pct", 0)
 
         if d1_pct > 0:
             d1_positive += 1
+        if d3_pct >= 20:
+            d3_above_20 += 1
         if d7_pct >= 20:
             d7_above_20 += 1
         if d0_pct < 0:
             d0_negative += 1
+
+        # 入榜后 1h 涨幅
+        entry_1h = snap.get("entry_1h_pct")
+        if entry_1h is not None:
+            entry_1h_count += 1
+            if entry_1h > 0:
+                entry_1h_positive += 1
 
         # 链分布
         if chain not in by_chain:
@@ -523,6 +537,7 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
             by_score_bucket[bucket]["hits_50"] += 1
 
     avg_best = sum(best_pcts) / len(best_pcts) if best_pcts else 0
+    hit_d3_20 = d3_above_20  # 热币专用命中指标
     hit_50 = sum(1 for p in best_pcts if p >= 50)
     hit_100 = sum(1 for p in best_pcts if p >= 100)
 
@@ -566,17 +581,22 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
         "total_picks": total,
         "metrics": {
             "d1_positive_rate": round(d1_positive / total, 4),
+            "d3_above_20_rate": round(d3_above_20 / total, 4),
             "d7_above_20_rate": round(d7_above_20 / total, 4),
             "d0_negative_rate": round(d0_negative / total, 4),
             "avg_best_pct": round(avg_best, 2),
+            "hit_rate_d3_20": round(hit_d3_20 / total, 4),
             "hit_rate_50": round(hit_50 / total, 4),
             "hit_rate_100": round(hit_100 / total, 4),
+            "entry_1h_positive_rate": round(entry_1h_positive / entry_1h_count, 4) if entry_1h_count > 0 else None,
+            "entry_1h_sample_count": entry_1h_count,
         },
         "targets": {
             "d1_positive_rate": ">= 0.70",
-            "d7_above_20_rate": ">= 0.40",
+            "d3_above_20_rate": ">= 0.40 (热币专用命中指标)",
             "d0_negative_rate": "< 0.20",
             "avg_best_pct": ">= 30",
+            "entry_1h_positive_rate": ">= 0.60 (入榜后1h还在涨)",
         },
         "by_chain": chain_summary,
         "by_score_bucket": score_summary,

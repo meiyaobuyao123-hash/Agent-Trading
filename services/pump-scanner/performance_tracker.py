@@ -39,6 +39,7 @@ from config import PUMP_REST
 log = logging.getLogger(__name__)
 
 TRACK_DAYS = 30
+TRACK_DAYS_HOT = 7  # 热币追踪窗口更短
 
 # ── 内存缓存 ──────────────────────────────────────────────
 # key = "source|pick_date|chain|address"
@@ -326,8 +327,11 @@ def _apply_price_update(row: dict, current_price: float) -> bool:
         except Exception:
             daily_highs = {}
 
+    # 热币用短窗口，pump 用长窗口
+    max_days = TRACK_DAYS_HOT if row.get("source") == "hot_live" else TRACK_DAYS
+
     new_high = False
-    if 0 <= day_number <= TRACK_DAYS:
+    if 0 <= day_number <= max_days:
         day_key = f"D{day_number}"
         existing = daily_highs.get(day_key)
         if existing is None or current_price > float(existing.get("high", 0)):
@@ -579,19 +583,63 @@ def _get_existing_keys(source: str) -> set:
 
 def _deactivate_old() -> int:
     db = get_db()
-    cutoff = (date.today() - timedelta(days=TRACK_DAYS)).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    deactivated = 0
+
+    # pump: 30 天窗口
+    cutoff_pump = (date.today() - timedelta(days=TRACK_DAYS)).isoformat()
     try:
         res = (
             db.table("token_performance")
-            .update({"is_active": False, "updated_at": datetime.now(timezone.utc).isoformat()})
+            .update({"is_active": False, "updated_at": now_iso})
             .eq("is_active", True)
-            .lt("pick_date", cutoff)
+            .eq("source", "pump")
+            .lt("pick_date", cutoff_pump)
             .execute()
         )
-        return len(res.data) if res.data else 0
+        deactivated += len(res.data) if res.data else 0
     except Exception as e:
-        log.error(f"停用过期追踪失败: {e}")
-        return 0
+        log.error(f"停用过期 pump 追踪失败: {e}")
+
+    # hot (旧日榜): 30 天窗口
+    try:
+        res = (
+            db.table("token_performance")
+            .update({"is_active": False, "updated_at": now_iso})
+            .eq("is_active", True)
+            .eq("source", "hot")
+            .lt("pick_date", cutoff_pump)
+            .execute()
+        )
+        deactivated += len(res.data) if res.data else 0
+    except Exception as e:
+        log.error(f"停用过期 hot 追踪失败: {e}")
+
+    # hot_live: 7 天窗口（不含退出后继续追踪的，那些由 HotCoinManager 管理）
+    cutoff_hot = (date.today() - timedelta(days=TRACK_DAYS_HOT)).isoformat()
+    try:
+        res = (
+            db.table("token_performance")
+            .select("id, snapshot_data")
+            .eq("is_active", True)
+            .eq("source", "hot_live")
+            .lt("pick_date", cutoff_hot)
+            .execute()
+        )
+        for row in (res.data or []):
+            snap = row.get("snapshot_data") or {}
+            # 如果有 exit_track_until 且未过期，跳过（让 HotCoinManager 管）
+            exit_until = snap.get("exit_track_until")
+            if exit_until and exit_until > now_iso:
+                continue
+            db.table("token_performance").update({
+                "is_active": False, "updated_at": now_iso,
+            }).eq("id", row["id"]).execute()
+            deactivated += 1
+    except Exception as e:
+        log.error(f"停用过期 hot_live 追踪失败: {e}")
+
+    return deactivated
 
 
 if __name__ == "__main__":

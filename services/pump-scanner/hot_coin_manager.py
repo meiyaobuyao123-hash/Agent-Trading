@@ -47,6 +47,9 @@ EXIT_VOL_RATIO = 0.10         # 1h量 < 24h均值的 10% → 枯竭
 EXIT_BUY_RATIO = 0.35         # 买压 < 35% → 卖压碾压
 EXIT_MISS_COUNT = 5           # 连续 N 轮不出现在发现源
 DB_THROTTLE_INTERVAL = 5.0    # DB 写入节流间隔（秒）
+HOT_TRACK_DAYS = 7            # 热币追踪窗口（天），pump 保持 30 天
+EXIT_CONTINUE_TRACK_DAYS = 3  # 退出后继续追踪天数（评估退出时机）
+ENTRY_1H_CHECK_DELAY = 3600   # 入榜后 1h 检查延迟（秒）
 
 
 class HotCoinManager:
@@ -66,6 +69,9 @@ class HotCoinManager:
         self._last_db_write: Dict[str, float] = {}
         self._pending_writes: Dict[str, dict] = {}
         self._flush_task: Optional[asyncio.Task] = None
+
+        # 入榜后 1h 涨幅检查队列 {address_lower: (entry_time_epoch, entry_price)}
+        self._entry_1h_queue: Dict[str, tuple] = {}
 
         # 统计
         self._total_entries = 0
@@ -268,10 +274,13 @@ class HotCoinManager:
             f"price=${discovery_price:.8f}"
         )
 
+        # 入榜后 1h 涨幅检查队列
+        self._entry_1h_queue[addr] = (time.time(), discovery_price)
+
         # 立即写 hot_coins DB
         self._write_to_db(addr, coin)
 
-        # 写入 token_performance 追踪（发现瞬间价格）
+        # 写入 token_performance 追踪（发现瞬间价格，热币窗口 7 天）
         if discovery_price > 0:
             self._write_performance_entry(coin, today_str, discovery_price, result)
 
@@ -303,13 +312,15 @@ class HotCoinManager:
             except Exception as e:
                 log.error(f"[HotCoin] 退出删除 DB 失败: {e}")
 
-            # 更新 token_performance：标记退出 + 记录退出原因和价格
+            # 更新 token_performance：记录退出原因和价格
+            # 不立即标记 is_active=False，继续追踪 3 天评估退出时机
             discovery_date = coin.get("discovery_date", "")
             if discovery_date:
                 try:
                     now_iso = datetime.now(timezone.utc).isoformat()
+                    from datetime import timedelta
+                    exit_track_until = (datetime.now(timezone.utc) + timedelta(days=EXIT_CONTINUE_TRACK_DAYS)).isoformat()
                     get_db().table("token_performance").update({
-                        "is_active": False,
                         "updated_at": now_iso,
                         "snapshot_data": {
                             **(coin.get("snapshot_data") or {}),
@@ -318,6 +329,7 @@ class HotCoinManager:
                             "exit_pct": round(exit_pct, 2),
                             "exit_at": now_iso,
                             "exit_score": score,
+                            "exit_track_until": exit_track_until,
                         },
                     }).eq("source", "hot_live").eq(
                         "pick_date", discovery_date
@@ -522,14 +534,91 @@ class HotCoinManager:
             log.debug(f"[HotCoin] DB write {addr[:8]}: {e}")
 
     async def flush_pending(self) -> None:
-        """定期刷新 pending 写入（由 main 调度）"""
+        """定期刷新 pending 写入 + 1h 涨幅检查 + 退出后追踪清理"""
         while True:
             await asyncio.sleep(DB_THROTTLE_INTERVAL)
+
+            # 1. flush pending DB writes
             if self._pending_writes:
                 batch = dict(self._pending_writes)
                 self._pending_writes.clear()
                 for addr, coin in batch.items():
                     self._write_to_db(addr, coin)
+
+            # 2. 入榜后 1h 涨幅检查
+            self._check_entry_1h()
+
+            # 3. 退出后追踪清理（超过 exit_track_until 的标记 inactive）
+            self._cleanup_exit_tracking()
+
+    def _check_entry_1h(self) -> None:
+        """检查入榜 1h 后的涨幅，写入 snapshot_data.entry_1h_pct"""
+        now = time.time()
+        done = []
+        for addr, (entry_time, entry_price) in self._entry_1h_queue.items():
+            if now - entry_time < ENTRY_1H_CHECK_DELAY:
+                continue
+            done.append(addr)
+
+            # 获取当前价格
+            current_price = 0.0
+            if addr in self._active:
+                current_price = self._active[addr].get("price_usd", 0)
+            else:
+                # 已退出，从 PriceFeed 获取
+                from price_feed import price_feed
+                current_price = price_feed.get_token_price(addr) or 0
+
+            if entry_price > 0 and current_price > 0:
+                pct_1h = (current_price / entry_price - 1) * 100
+                coin = self._active.get(addr)
+                discovery_date = (coin or {}).get("discovery_date", "")
+                chain = (coin or {}).get("chain", "")
+                address = (coin or {}).get("address", addr)
+
+                if discovery_date:
+                    try:
+                        get_db().table("token_performance").update({
+                            "snapshot_data": get_db().table("token_performance")
+                                .select("snapshot_data")
+                                .eq("source", "hot_live")
+                                .eq("pick_date", discovery_date)
+                                .eq("chain", chain)
+                                .eq("address", address)
+                                .single()
+                                .execute().data.get("snapshot_data", {})
+                                | {"entry_1h_pct": round(pct_1h, 2), "entry_1h_price": current_price},
+                        }).eq("source", "hot_live").eq(
+                            "pick_date", discovery_date
+                        ).eq("chain", chain).eq("address", address).execute()
+                        log.info(f"[HotCoin] 1h涨幅: {(coin or {}).get('symbol', addr[:8])} = {pct_1h:+.1f}%")
+                    except Exception as e:
+                        log.debug(f"[HotCoin] 1h涨幅写入失败: {e}")
+
+        for addr in done:
+            self._entry_1h_queue.pop(addr, None)
+
+    def _cleanup_exit_tracking(self) -> None:
+        """清理退出后超过追踪期限的代币（标记 is_active=False）"""
+        try:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            # 查找 snapshot_data 中有 exit_track_until 且已过期的
+            res = get_db().table("token_performance") \
+                .select("id, snapshot_data") \
+                .eq("source", "hot_live") \
+                .eq("is_active", True) \
+                .execute()
+
+            for row in (res.data or []):
+                snap = row.get("snapshot_data") or {}
+                exit_until = snap.get("exit_track_until")
+                if exit_until and exit_until < now_iso:
+                    get_db().table("token_performance").update({
+                        "is_active": False,
+                        "updated_at": now_iso,
+                    }).eq("id", row["id"]).execute()
+        except Exception:
+            pass  # 静默失败，下次循环再试
 
     # ═══════════════════════════════════════════════════════════
     # 对外查询

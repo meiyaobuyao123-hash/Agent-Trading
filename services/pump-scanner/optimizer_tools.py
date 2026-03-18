@@ -450,6 +450,370 @@ TOOL_DEFINITIONS = [
     },
 ]
 
+# ══════════════════════════════════════════════════════
+# Hot Coin Optimizer Tools
+# ══════════════════════════════════════════════════════
+
+def tool_hot_read_metrics(days: int = 7) -> dict:
+    """读取热币推荐的表现指标"""
+    db = get_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    # 1. token_performance (hot_live)
+    perf = db.table("token_performance") \
+        .select("*") \
+        .in_("source", ["hot_live", "hot"]) \
+        .gte("pick_date", cutoff) \
+        .execute().data
+
+    # 2. 漏斗
+    funnel = db.table("hot_funnel_stats") \
+        .select("*") \
+        .gte("report_date", cutoff) \
+        .order("recorded_at", desc=True) \
+        .limit(50) \
+        .execute().data
+
+    # 3. 计算指标
+    total = len(perf)
+    if total == 0:
+        return {"period_days": days, "total_picks": 0, "message": "无数据"}
+
+    d1_positive = 0
+    d7_above_20 = 0
+    d0_negative = 0
+    best_pcts = []
+    by_chain = {}  # type: dict
+    by_score_bucket = {}  # type: dict
+
+    for p in perf:
+        bp = p.get("best_pct") or 0
+        best_pcts.append(bp)
+        chain = p.get("chain", "?")
+        score = p.get("score") or 0
+
+        # D0/D1 涨幅
+        dh = p.get("daily_highs") or {}
+        d0_pct = (dh.get("D0") or {}).get("pct", 0)
+        d1_pct = (dh.get("D1") or {}).get("pct", 0)
+        d7_pct = (dh.get("D7") or {}).get("pct", 0)
+
+        if d1_pct > 0:
+            d1_positive += 1
+        if d7_pct >= 20:
+            d7_above_20 += 1
+        if d0_pct < 0:
+            d0_negative += 1
+
+        # 链分布
+        if chain not in by_chain:
+            by_chain[chain] = {"count": 0, "sum_best": 0, "hits_50": 0}
+        by_chain[chain]["count"] += 1
+        by_chain[chain]["sum_best"] += bp
+        if bp >= 50:
+            by_chain[chain]["hits_50"] += 1
+
+        # score 分桶
+        bucket = f"{int(score // 10) * 10}-{int(score // 10) * 10 + 9}"
+        if bucket not in by_score_bucket:
+            by_score_bucket[bucket] = {"count": 0, "sum_best": 0, "hits_50": 0}
+        by_score_bucket[bucket]["count"] += 1
+        by_score_bucket[bucket]["sum_best"] += bp
+        if bp >= 50:
+            by_score_bucket[bucket]["hits_50"] += 1
+
+    avg_best = sum(best_pcts) / len(best_pcts) if best_pcts else 0
+    hit_50 = sum(1 for p in best_pcts if p >= 50)
+    hit_100 = sum(1 for p in best_pcts if p >= 100)
+
+    # 链级汇总
+    chain_summary = {}
+    for c, v in by_chain.items():
+        chain_summary[c] = {
+            "count": v["count"],
+            "avg_best_pct": round(v["sum_best"] / v["count"], 2) if v["count"] > 0 else 0,
+            "hit_rate_50": round(v["hits_50"] / v["count"], 4) if v["count"] > 0 else 0,
+        }
+
+    # score 分桶汇总
+    score_summary = {}
+    for b, v in sorted(by_score_bucket.items()):
+        score_summary[b] = {
+            "count": v["count"],
+            "avg_best_pct": round(v["sum_best"] / v["count"], 2) if v["count"] > 0 else 0,
+            "hit_rate_50": round(v["hits_50"] / v["count"], 4) if v["count"] > 0 else 0,
+        }
+
+    # 代币明细（限50个）
+    token_details = []
+    for p in perf[:50]:
+        dh = p.get("daily_highs") or {}
+        token_details.append({
+            "symbol": p.get("symbol"),
+            "chain": p.get("chain"),
+            "score": p.get("score"),
+            "pick_date": p.get("pick_date"),
+            "best_pct": p.get("best_pct"),
+            "D0": (dh.get("D0") or {}).get("pct"),
+            "D1": (dh.get("D1") or {}).get("pct"),
+            "D3": (dh.get("D3") or {}).get("pct"),
+            "D7": (dh.get("D7") or {}).get("pct"),
+            "exit_reason": (p.get("snapshot_data") or {}).get("exit_reason"),
+        })
+
+    return {
+        "period_days": days,
+        "total_picks": total,
+        "metrics": {
+            "d1_positive_rate": round(d1_positive / total, 4),
+            "d7_above_20_rate": round(d7_above_20 / total, 4),
+            "d0_negative_rate": round(d0_negative / total, 4),
+            "avg_best_pct": round(avg_best, 2),
+            "hit_rate_50": round(hit_50 / total, 4),
+            "hit_rate_100": round(hit_100 / total, 4),
+        },
+        "targets": {
+            "d1_positive_rate": ">= 0.70",
+            "d7_above_20_rate": ">= 0.40",
+            "d0_negative_rate": "< 0.20",
+            "avg_best_pct": ">= 30",
+        },
+        "by_chain": chain_summary,
+        "by_score_bucket": score_summary,
+        "funnel": [{
+            "date": f.get("report_date"),
+            "discovered": f.get("discovered"),
+            "after_filter": f.get("after_hard_filter"),
+            "entered": f.get("entered"),
+            "exited": f.get("exited"),
+            "active": f.get("active"),
+        } for f in funnel[:14]],
+        "token_details": token_details,
+    }
+
+
+def tool_hot_read_scorer_code() -> dict:
+    """读取 hot_scorer.py 源码"""
+    base = os.path.dirname(os.path.abspath(__file__))
+    scorer_path = os.path.join(base, "hot_scorer.py")
+    with open(scorer_path, "r") as f:
+        code = f.read()
+    return {"file": "hot_scorer.py", "code": code, "lines": len(code.splitlines())}
+
+
+def tool_hot_read_config() -> dict:
+    """读取热币相关的全部配置参数"""
+    from config import (
+        HOT_MIN_AGE_DAYS, HOT_MAX_AGE_DAYS,
+        HOT_MIN_LIQ_USD, HOT_MAX_LIQ_USD,
+        HOT_MIN_MC_USD, HOT_MAX_MC_USD,
+        HOT_MIN_VOL_24H_USD, HOT_MIN_LIQ_MC_RATIO,
+        HOT_MAX_TAX, HOT_MAX_TOP10_PCT,
+    )
+    from hot_coin_manager import (
+        ENTRY_SCORE_MIN, EXIT_SCORE_THRESHOLD, EXIT_LOW_SCORE_COUNT,
+        EXIT_PUMP_DUMP_24H, EXIT_PUMP_DUMP_1H,
+        EXIT_VOL_RATIO, EXIT_BUY_RATIO, EXIT_MISS_COUNT,
+    )
+
+    base = os.path.dirname(os.path.abspath(__file__))
+    scorer_path = os.path.join(base, "hot_scorer.py")
+    manager_path = os.path.join(base, "hot_coin_manager.py")
+
+    return {
+        "hard_filters": {
+            "HOT_MIN_AGE_DAYS": HOT_MIN_AGE_DAYS,
+            "HOT_MAX_AGE_DAYS": HOT_MAX_AGE_DAYS,
+            "HOT_MIN_LIQ_USD": HOT_MIN_LIQ_USD,
+            "HOT_MAX_LIQ_USD": HOT_MAX_LIQ_USD,
+            "HOT_MIN_MC_USD": HOT_MIN_MC_USD,
+            "HOT_MAX_MC_USD": HOT_MAX_MC_USD,
+            "HOT_MIN_VOL_24H_USD": HOT_MIN_VOL_24H_USD,
+            "HOT_MIN_LIQ_MC_RATIO": HOT_MIN_LIQ_MC_RATIO,
+            "HOT_MAX_TAX": HOT_MAX_TAX,
+            "HOT_MAX_TOP10_PCT": HOT_MAX_TOP10_PCT,
+        },
+        "entry_exit": {
+            "ENTRY_SCORE_MIN": ENTRY_SCORE_MIN,
+            "EXIT_SCORE_THRESHOLD": EXIT_SCORE_THRESHOLD,
+            "EXIT_LOW_SCORE_COUNT": EXIT_LOW_SCORE_COUNT,
+            "EXIT_PUMP_DUMP_24H": EXIT_PUMP_DUMP_24H,
+            "EXIT_PUMP_DUMP_1H": EXIT_PUMP_DUMP_1H,
+            "EXIT_VOL_RATIO": EXIT_VOL_RATIO,
+            "EXIT_BUY_RATIO": EXIT_BUY_RATIO,
+            "EXIT_MISS_COUNT": EXIT_MISS_COUNT,
+        },
+        "scorer_weights": {
+            "M1_price_1h": {"max_points": 10},
+            "M2_price_24h": {"max_points": 10},
+            "M3_vol_accel": {"max_points": 12},
+            "M4_buy_pressure": {"max_points": 10},
+            "M5_momentum_fresh": {"max_points": 8},
+            "Q1_holders": {"max_points": 10},
+            "Q2_social": {"max_points": 6},
+            "Q3_security": {"max_points": 8},
+            "Q4_concentration": {"max_points": 6},
+            "P1_mc_potential": {"max_points": 10},
+            "P2_age": {"max_points": 4},
+            "P3_tf_resonance": {"max_points": 6},
+        },
+        "recommendation_thresholds": {
+            "strong": 72,
+            "normal": 50,
+            "skip_below": 50,
+        },
+    }
+
+
+def tool_hot_backtest(param_changes: list, days: int = 7) -> dict:
+    """用新参数对热币历史数据回测"""
+    from backtest import run_hot_backtest
+    return run_hot_backtest(param_changes=param_changes, days=days)
+
+
+def tool_hot_propose_change(
+    run_id: int,
+    title: str,
+    rationale: str,
+    changes: list,
+    backtest_before: dict,
+    backtest_after: dict,
+) -> dict:
+    """提交热币优化方案"""
+    db = get_db()
+
+    d1_before = backtest_before.get("d1_positive_rate", 0)
+    d1_after = backtest_after.get("d1_positive_rate", 0)
+    improvement = ((d1_after - d1_before) / max(d1_before, 0.01)) * 100
+
+    params_before = tool_hot_read_config()
+
+    proposal = {
+        "run_id": run_id,
+        "status": "pending",
+        "title": f"[热币] {title}",
+        "rationale": rationale,
+        "changes": changes,
+        "backtest_before": backtest_before,
+        "backtest_after": backtest_after,
+        "improvement_pct": round(improvement, 2),
+        "params_before": params_before,
+    }
+
+    res = db.table("optimization_proposals").insert(proposal).execute()
+    proposal_id = res.data[0]["id"] if res.data else None
+
+    return {
+        "proposal_id": proposal_id,
+        "status": "pending",
+        "message": f"热币优化方案已提交，等待 Portal 审批。D1正收益率改善: {improvement:.1f}%",
+    }
+
+
+# ══════════════════════════════════════════════════════
+# Hot Tool Definitions (JSON Schema for Claude API)
+# ══════════════════════════════════════════════════════
+
+HOT_TOOL_DEFINITIONS = [
+    {
+        "name": "read_hot_metrics",
+        "description": "读取热币推荐表现指标：D0/D1/D7涨幅、命中率、链分布、score分桶分析、漏斗数据。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "read_hot_scorer_code",
+        "description": "读取 hot_scorer.py 评分引擎源码。理解 M(动量50分)/Q(品质30分)/P(潜力20分) 三维打分逻辑。",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "read_hot_config",
+        "description": "读取热币相关配置：硬过滤阈值、入榜/退出条件、评分权重分布。",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "backtest_hot",
+        "description": "用修改后的参数对热币历史数据回测。验证优化方案是否提升D1正收益率和命中率。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "param_changes": {
+                    "type": "array",
+                    "description": "参数变更列表",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "param": {"type": "string"},
+                            "old": {"type": "number"},
+                            "new": {"type": "number"},
+                        },
+                        "required": ["param", "new"],
+                    },
+                },
+                "days": {"type": "integer", "default": 7},
+            },
+            "required": ["param_changes"],
+        },
+    },
+    {
+        "name": "propose_hot_change",
+        "description": "提交热币优化方案到数据库，等待 Portal 审批。必须在回测验证通过后调用。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "integer"},
+                "title": {"type": "string", "description": "方案标题（中文）"},
+                "rationale": {"type": "string", "description": "分析推理过程（中文）"},
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string"},
+                            "type": {"type": "string", "enum": ["weight", "threshold", "logic"]},
+                            "param": {"type": "string"},
+                            "old": {"type": "number"},
+                            "new": {"type": "number"},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["file", "type", "param", "new", "reason"],
+                    },
+                },
+                "backtest_before": {"type": "object"},
+                "backtest_after": {"type": "object"},
+            },
+            "required": ["run_id", "title", "rationale", "changes", "backtest_before", "backtest_after"],
+        },
+    },
+]
+
+HOT_TOOL_MAP = {
+    "read_hot_metrics": lambda args: tool_hot_read_metrics(days=args.get("days", 7)),
+    "read_hot_scorer_code": lambda args: tool_hot_read_scorer_code(),
+    "read_hot_config": lambda args: tool_hot_read_config(),
+    "backtest_hot": lambda args: tool_hot_backtest(
+        param_changes=args.get("param_changes", []),
+        days=args.get("days", 7),
+    ),
+    "propose_hot_change": lambda args: tool_hot_propose_change(
+        run_id=args["run_id"],
+        title=args["title"],
+        rationale=args["rationale"],
+        changes=args["changes"],
+        backtest_before=args["backtest_before"],
+        backtest_after=args["backtest_after"],
+    ),
+}
+
+
+# ══════════════════════════════════════════════════════
+# Pump Tool Map (original)
+# ══════════════════════════════════════════════════════
+
 # 工具调用分发器
 TOOL_MAP = {
     "read_metrics": lambda args: tool_read_metrics(days=args.get("days", 7)),

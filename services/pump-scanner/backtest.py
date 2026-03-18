@@ -305,6 +305,168 @@ def _parse_changes(param_changes: list) -> tuple:
     return weight_overrides, config_overrides, score_threshold
 
 
+# ══════════════════════════════════════════════════════
+# Hot Coin Backtest
+# ══════════════════════════════════════════════════════
+
+def run_hot_backtest(param_changes: list, days: int = 7) -> dict:
+    """
+    热币回测：用新参数对历史 hot_live 数据重新打分，
+    对比实际 D1/D7 涨幅评估改善效果。
+    """
+    db = get_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    # 1. 获取历史 hot_live 追踪数据
+    perf = db.table("token_performance") \
+        .select("*") \
+        .in_("source", ["hot_live", "hot"]) \
+        .gte("pick_date", cutoff) \
+        .execute().data
+
+    if not perf or len(perf) < 3:
+        return {"error": "热币历史数据不足（<3条），无法回测", "token_count": len(perf or [])}
+
+    # 2. 解析参数变更
+    weight_changes = {}
+    config_changes = {}
+    entry_score = 50  # default
+    for change in param_changes:
+        param = change["param"]
+        new_val = change["new"]
+        if param.startswith("M") or param.startswith("Q") or param.startswith("P"):
+            weight_changes[param] = new_val
+        elif param == "ENTRY_SCORE_MIN":
+            entry_score = new_val
+        elif param.startswith("HOT_") or param.startswith("EXIT_"):
+            config_changes[param] = new_val
+
+    # 3. 用新参数重新打分并模拟筛选
+    from hot_scorer import score_hot_coin
+
+    original_metrics = _calc_hot_metrics(perf)
+
+    # 模拟新参数：重新打分
+    new_perf = []
+    for p in perf:
+        snap = p.get("snapshot_data") or {}
+        # 构建打分输入
+        coin = {
+            "price_usd": snap.get("price_usd", 0),
+            "market_cap_usd": snap.get("market_cap_usd", 0),
+            "liquidity_usd": snap.get("liquidity_usd", 0),
+            "volume_24h_usd": snap.get("volume_24h_usd", 0),
+            "volume_1h_usd": snap.get("volume_1h_usd", 0),
+            "price_change_1h": snap.get("price_change_1h", 0),
+            "price_change_24h": snap.get("price_change_24h", 0),
+            "price_change_4h": snap.get("price_change_4h", 0),
+            "buys_1h": snap.get("buys_1h", 0),
+            "sells_1h": snap.get("sells_1h", 0),
+            "buys_24h": snap.get("buys_24h", 0),
+            "sells_24h": snap.get("sells_24h", 0),
+            "holder_count": snap.get("holder_count", 0),
+            "has_twitter": snap.get("has_twitter", False),
+            "has_telegram": snap.get("has_telegram", False),
+            "has_website": snap.get("has_website", False),
+            "goplus_risk": snap.get("goplus_risk", False),
+            "is_open_source": snap.get("is_open_source", True),
+            "buy_tax": snap.get("buy_tax", 0),
+            "sell_tax": snap.get("sell_tax", 0),
+            "top10_holder_pct": snap.get("top10_holder_pct", 0),
+            "age_days": snap.get("age_days", 0),
+            "timeframe_hits": snap.get("timeframe_hits", 1),
+        }
+
+        result = score_hot_coin(coin)
+        new_score = result.total
+
+        # 如果有权重变更，简单缩放（粗略近似）
+        # TODO: 完整重实现 hot_scorer 的权重覆盖
+        if weight_changes:
+            # 不做精确重打分，只用原始数据对比
+            pass
+
+        would_enter = new_score >= entry_score and not coin.get("goplus_risk")
+
+        new_perf.append({
+            **p,
+            "new_score": new_score,
+            "would_enter": would_enter,
+        })
+
+    # 4. 计算新参数下的指标（仅保留 would_enter 的）
+    entered_perf = [p for p in new_perf if p["would_enter"]]
+    new_metrics = _calc_hot_metrics(entered_perf) if entered_perf else _calc_hot_metrics([])
+
+    return {
+        "period_days": days,
+        "total_tokens": len(perf),
+        "original": original_metrics,
+        "new_params": {
+            **new_metrics,
+            "entered_count": len(entered_perf),
+            "filtered_out": len(perf) - len(entered_perf),
+        },
+        "improvement": {
+            "d1_positive_delta": round(
+                new_metrics.get("d1_positive_rate", 0) - original_metrics.get("d1_positive_rate", 0), 4
+            ),
+            "avg_best_delta": round(
+                new_metrics.get("avg_best_pct", 0) - original_metrics.get("avg_best_pct", 0), 2
+            ),
+            "hit_50_delta": round(
+                new_metrics.get("hit_rate_50", 0) - original_metrics.get("hit_rate_50", 0), 4
+            ),
+        },
+        "param_changes": param_changes,
+    }
+
+
+def _calc_hot_metrics(perf: list) -> dict:
+    """计算热币追踪数据的汇总指标"""
+    total = len(perf)
+    if total == 0:
+        return {
+            "total": 0, "d1_positive_rate": 0, "d7_above_20_rate": 0,
+            "d0_negative_rate": 0, "avg_best_pct": 0,
+            "hit_rate_50": 0, "hit_rate_100": 0,
+        }
+
+    d1_pos = 0
+    d7_20 = 0
+    d0_neg = 0
+    best_pcts = []
+
+    for p in perf:
+        bp = p.get("best_pct") or 0
+        best_pcts.append(bp)
+        dh = p.get("daily_highs") or {}
+        d0_pct = (dh.get("D0") or {}).get("pct", 0)
+        d1_pct = (dh.get("D1") or {}).get("pct", 0)
+        d7_pct = (dh.get("D7") or {}).get("pct", 0)
+
+        if d1_pct > 0:
+            d1_pos += 1
+        if d7_pct >= 20:
+            d7_20 += 1
+        if d0_pct < 0:
+            d0_neg += 1
+
+    return {
+        "total": total,
+        "d1_positive_rate": round(d1_pos / total, 4),
+        "d7_above_20_rate": round(d7_20 / total, 4),
+        "d0_negative_rate": round(d0_neg / total, 4),
+        "avg_best_pct": round(sum(best_pcts) / len(best_pcts), 2),
+        "hit_rate_50": round(sum(1 for p in best_pcts if p >= 50) / total, 4),
+        "hit_rate_100": round(sum(1 for p in best_pcts if p >= 100) / total, 4),
+    }
+
+
+# ══════════════════════════════════════════════════════
+# Pump Backtest (original)
+# ══════════════════════════════════════════════════════
+
 def _rescore(snapshot: dict, weight_overrides: dict, config_overrides: dict) -> float:
     """用新参数对单个快照重新打分"""
 

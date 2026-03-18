@@ -171,15 +171,23 @@ async def get_metrics(days: int = 30):
 # ── 手动触发 ───────────────────────────────────────
 
 @router.post("/trigger")
-async def trigger_optimization():
-    """手动触发一次优化（异步执行）"""
-    from governor import run_governor
-
-    # 在后台运行，避免 HTTP 超时
+async def trigger_optimization(mode: str = "auto"):
+    """
+    手动触发一次优化（异步执行）。
+    mode: "auto"（Governor 自动选择）| "pump" | "hot"
+    """
     async def _run():
         try:
-            result = await run_governor()
-            log.info(f"手动触发优化完成: {result}")
+            if mode == "hot":
+                from optimizer_agent import run_hot_optimization
+                result = await asyncio.to_thread(run_hot_optimization)
+            elif mode == "pump":
+                from optimizer_agent import run_optimization
+                result = await asyncio.to_thread(run_optimization)
+            else:
+                from governor import run_governor
+                result = await run_governor()
+            log.info(f"手动触发优化完成 (mode={mode}): {result}")
         except Exception as e:
             log.error(f"手动触发优化失败: {e}")
 
@@ -187,5 +195,6 @@ async def trigger_optimization():
 
     return {
         "status": "triggered",
-        "message": "优化已在后台启动，请在运行列表查看进度",
+        "mode": mode,
+        "message": f"{'热币' if mode == 'hot' else 'Pump' if mode == 'pump' else '自动'}优化已在后台启动",
     }

@@ -94,3 +94,6 @@ HOT_MIN_LIQ_MC_RATIO = 0.08        # 流动性/市值比 >= 8%（防流动性陷
 # GoPlus 安全阈值
 HOT_MAX_TAX          = 10.0        # 买/卖税 > 10% 标记为风险
 HOT_MAX_TOP10_PCT    = 0.80        # Top10 持仓 > 80% 标记为风险
+
+# ── Hot Coin Optimizer Agent ─────────────────────────────────────
+HOT_OPTIMIZER_API_KEY = os.getenv("HOT_OPTIMIZER_API_KEY", "")

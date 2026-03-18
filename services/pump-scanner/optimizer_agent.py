@@ -310,6 +310,236 @@ def _now() -> str:
 
 
 # ══════════════════════════════════════════════════════
+# Hot Coin Optimizer Agent
+# ══════════════════════════════════════════════════════
+
+HOT_SYSTEM_PROMPT = """你是多链热币推荐算法的量化优化 Agent。
+
+## 你的目标
+及时发现热币，让用户看到后买入还有涨幅空间。优化打分引擎和进出榜参数。
+
+## 量化目标
+- **D1 正收益率** >= 70%（推荐后次日最高价 > 发现价的比例）
+- **D7 涨幅 >= 20% 的比例** >= 40%
+- **D0 负收益率** < 20%（发现时已涨完的比例，越低越好）
+- **平均最佳涨幅** >= 30%
+
+## 热币评分系统（总分100）
+**M 动量（50分）**: 1h涨幅(10) + 24h涨幅(10) + 成交量加速(12) + 买压(10) + 动量新鲜度(8)
+**Q 品质（30分）**: 持有者(10) + 社交(6) + 安全(8) + 分散度(6)
+**P 潜力（20分）**: 市值位置(10) + 年龄(4) + 多时间帧共振(6)
+
+入榜门槛: score >= 50
+退出条件: 低分3次 / 冲高回落 / 成交量枯竭 / 卖压碾压 / 发现源消失
+
+## 覆盖链
+SOL / BSC / Base / ETH，数据源: OKX toplist + GeckoTerminal trending/new_pools
+
+## 你可以做什么
+1. read_hot_metrics: 分析历史推荐表现（D0-D7涨幅、命中率、链分布、score相关性）
+2. read_hot_scorer_code: 理解打分逻辑
+3. read_hot_config: 查看所有可调参数
+4. backtest_hot: 用新参数回测验证
+5. propose_hot_change: 提交优化方案
+
+## 工作流程
+1. 先用 read_hot_metrics 了解当前 D1/D7/命中率
+2. 分析 score vs 实际涨幅的相关性（哪个分桶表现最好？）
+3. 分析 by_chain 差异（是否某条链系统性差？）
+4. 读取评分代码，找出可能的改进点
+5. 用 backtest_hot 验证改动
+6. 提交方案
+
+## 关键洞察方向
+- "动量新鲜度 M5" 是否有效区分了"正在启动"vs"已涨完"？
+- 入榜门槛 50 分是否太低？提高到 55 或 60 是否减少误报？
+- 退出条件是否太松？"冲高回落"阈值 24h>200% 是否应该更严格？
+- 多时间帧共振 P3 是否真的与涨幅相关？
+
+## 规则
+- 必须先分析数据再提方案
+- 必须用 backtest_hot 验证
+- 回测后 D1 正收益率或命中率必须改善才能提交
+- 每次参数变动不超过原值的 30%
+- 用中文输出
+- 如果数据不足（<10条追踪记录），说明冷启动，允许提交逻辑合理的方案"""
+
+
+def run_hot_optimization() -> dict:
+    """运行一次热币优化 Agent"""
+    from config import HOT_OPTIMIZER_API_KEY
+    from optimizer_tools import HOT_TOOL_DEFINITIONS, HOT_TOOL_MAP
+
+    api_key = HOT_OPTIMIZER_API_KEY
+    if not api_key:
+        log.warning("HOT_OPTIMIZER_API_KEY 未配置，跳过热币优化")
+        return {"status": "skipped", "reason": "no_api_key"}
+
+    db = get_db()
+
+    # 1. 创建运行记录
+    run = db.table("optimization_runs").insert({
+        "status": "running",
+        "metrics_snapshot": {},
+        "conversation": [],
+        "analysis": "hot_coin_optimizer",
+    }).execute()
+    run_id = run.data[0]["id"]
+    log.info(f"🤖 Hot Optimizer Agent 启动 — run_id={run_id}")
+
+    client = anthropic.Anthropic(api_key=api_key)
+
+    initial_msg = (
+        f"当前是 {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}。\n"
+        f"热币优化运行 ID: {run_id}\n\n"
+        f"量化目标:\n"
+        f"- D1 正收益率 >= 70%\n"
+        f"- D7 涨幅>=20% 的比例 >= 40%\n"
+        f"- D0 负收益率 < 20%\n"
+        f"- 平均最佳涨幅 >= 30%\n\n"
+        f"请开始分析：先用 read_hot_metrics 查看最近7天和14天的表现。"
+    )
+
+    messages = [{"role": "user", "content": initial_msg}]
+    conversation_log = [{"role": "user", "content": initial_msg, "timestamp": _now()}]
+
+    total_input_tokens = 0
+    total_output_tokens = 0
+    max_turns = 20
+    proposals_count = 0
+
+    try:
+        for turn in range(max_turns):
+            log.info(f"🤖 Hot Optimizer turn {turn+1}/{max_turns}")
+
+            for attempt in range(3):
+                try:
+                    response = client.messages.create(
+                        model=OPTIMIZER_MODEL,
+                        max_tokens=4096,
+                        system=HOT_SYSTEM_PROMPT,
+                        tools=HOT_TOOL_DEFINITIONS,
+                        messages=messages,
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    if attempt < 2:
+                        wait = 30 * (attempt + 1)
+                        log.warning(f"🤖 API 429，等待 {wait}s...")
+                        time.sleep(wait)
+                    else:
+                        raise
+                except anthropic.InternalServerError:
+                    if attempt < 2:
+                        time.sleep(10 * (attempt + 1))
+                    else:
+                        raise
+
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+
+            assistant_content = []
+            for block in response.content:
+                if block.type == "text":
+                    assistant_content.append({"type": "text", "text": block.text})
+                    conversation_log.append({
+                        "role": "assistant", "content": block.text, "timestamp": _now(),
+                    })
+                elif block.type == "tool_use":
+                    assistant_content.append({
+                        "type": "tool_use", "id": block.id,
+                        "name": block.name, "input": block.input,
+                    })
+                    conversation_log.append({
+                        "role": "assistant", "tool_call": block.name,
+                        "input": block.input, "timestamp": _now(),
+                    })
+
+            messages.append({"role": "assistant", "content": response.content})
+
+            if response.stop_reason == "end_turn":
+                log.info("🤖 Hot Optimizer 完成分析")
+                break
+
+            if response.stop_reason == "tool_use":
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+                        log.info(f"🔧 Hot工具: {tool_name}({json.dumps(tool_input, ensure_ascii=False)[:100]})")
+
+                        try:
+                            if tool_name == "propose_hot_change":
+                                tool_input["run_id"] = run_id
+
+                            handler = HOT_TOOL_MAP.get(tool_name)
+                            if handler:
+                                result = handler(tool_input)
+                                proposals_count += 1 if tool_name == "propose_hot_change" else 0
+                            else:
+                                result = {"error": f"未知工具: {tool_name}"}
+
+                            result_json = json.dumps(result, ensure_ascii=False, default=str)
+                            if len(result_json) > 15000:
+                                result_json = result_json[:15000] + "...(truncated)"
+                        except Exception as e:
+                            log.error(f"Hot工具 {tool_name} 失败: {e}")
+                            result_json = json.dumps({"error": str(e)})
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result_json,
+                        })
+                        conversation_log.append({
+                            "role": "tool", "tool": tool_name,
+                            "result_preview": result_json[:500], "timestamp": _now(),
+                        })
+
+                messages.append({"role": "user", "content": tool_results})
+
+        cost = (total_input_tokens / 1_000_000) * 15 + (total_output_tokens / 1_000_000) * 75
+
+        analysis_text = ""
+        for entry in reversed(conversation_log):
+            if entry["role"] == "assistant" and "content" in entry:
+                analysis_text = entry["content"]
+                break
+
+        db.table("optimization_runs").update({
+            "status": "completed",
+            "conversation": conversation_log,
+            "analysis": analysis_text,
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "cost_usd": round(cost, 4),
+            "completed_at": _now(),
+        }).eq("id", run_id).execute()
+
+        log.info(
+            f"🤖 Hot Optimizer 完成 — run_id={run_id}, "
+            f"turns={turn+1}, proposals={proposals_count}, cost=${cost:.4f}"
+        )
+
+        return {
+            "run_id": run_id, "status": "completed", "mode": "hot",
+            "turns": turn + 1, "proposals_count": proposals_count,
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "cost_usd": round(cost, 4),
+        }
+
+    except Exception as e:
+        log.error(f"🤖 Hot Optimizer 异常: {e}", exc_info=True)
+        db.table("optimization_runs").update({
+            "status": "failed", "conversation": conversation_log,
+            "analysis": f"热币优化失败: {str(e)}",
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "completed_at": _now(),
+        }).eq("id", run_id).execute()
+        return {"run_id": run_id, "status": "failed", "mode": "hot", "error": str(e)}
+
+
+# ══════════════════════════════════════════════════════
 # 审批执行：用户在 Portal approve 后调用
 # ══════════════════════════════════════════════════════
 

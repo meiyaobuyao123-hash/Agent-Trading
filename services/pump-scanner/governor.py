@@ -12,7 +12,7 @@ import logging
 from datetime import date, timedelta, datetime, timezone
 
 from database import get_db
-from optimizer_agent import run_optimization, apply_proposal, TARGETS
+from optimizer_agent import run_optimization, run_hot_optimization, apply_proposal, TARGETS
 from optimizer_tools import tool_read_metrics, tool_read_config
 
 log = logging.getLogger(__name__)
@@ -72,13 +72,22 @@ async def run_governor():
             _auto_rollback()
             return {"status": "rolled_back"}
 
-        # 6. 启动 Optimizer Agent（在线程池中运行，避免阻塞事件循环）
+        # 6. 交替运行 pump / hot optimizer
+        # 用 day_of_year 奇偶交替：偶数天跑 pump，奇数天跑 hot
         import asyncio
-        log.info("🏛️ 🚀 指标未达标，启动 Optimizer Agent...")
-        result = await asyncio.to_thread(run_optimization)
-        log.info(f"🏛️ Optimizer 完成: {result}")
+        day_of_year = date.today().timetuple().tm_yday
+        mode = "hot" if day_of_year % 2 == 1 else "pump"
 
-        return {"status": "optimization_run", "result": result}
+        if mode == "hot":
+            log.info("🏛️ 🚀 启动 Hot Coin Optimizer Agent...")
+            result = await asyncio.to_thread(run_hot_optimization)
+        else:
+            log.info("🏛️ 🚀 指标未达标，启动 Pump Optimizer Agent...")
+            result = await asyncio.to_thread(run_optimization)
+
+        log.info(f"🏛️ {mode} Optimizer 完成: {result}")
+
+        return {"status": "optimization_run", "mode": mode, "result": result}
 
     except Exception as e:
         log.error(f"🏛️ Governor 异常: {e}", exc_info=True)

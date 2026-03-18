@@ -99,7 +99,7 @@ class PumpScanner:
             signals.append({
                 **sig,
                 "entered_at": sig["entered_at"].isoformat(),
-                "last_trade_at": sig.get("last_trade_at", sig["entered_at"]).isoformat(),
+                "last_trade_at": (sig.get("last_trade_at") or sig["entered_at"]).isoformat(),
                 "age_minutes": round((now - entered).total_seconds() / 60, 1),
             })
         signals.sort(key=lambda x: x.get("score", 0), reverse=True)
@@ -346,9 +346,9 @@ class PumpScanner:
                 pump_stats.incr("enrich_success")
                 self._enriched.add(mint)
 
-                # 合并 REST 详情到内存
-                if mint in self._tokens:
-                    token = self._tokens[mint]
+                # 合并 REST 详情到内存（代币可能已被淘汰，但 DB 更新仍有价值）
+                token = self._tokens.get(mint)
+                if token:
                     token["name"] = detail.get("name") or token.get("name", "")
                     token["symbol"] = detail.get("symbol") or token.get("symbol", "")
                     token["twitter"] = detail.get("twitter")
@@ -420,14 +420,21 @@ class PumpScanner:
                 evicted += 1
                 continue
 
-            # ── 淘汰：超过 N 小时且30min无交易 → 死币 ──
-            if age_hours > TRADE_DEAD_AGE_H and trades:
-                last_trade_time = max(
-                    t.get("traded_at", created_at) if isinstance(t.get("traded_at"), datetime)
-                    else created_at
-                    for t in trades
-                )
-                if (now - last_trade_time).total_seconds() > 1800:
+            # ── 淘汰：超过 N 小时且30min无交易或零交易 → 死币 ──
+            if age_hours > TRADE_DEAD_AGE_H:
+                should_evict = False
+                if not trades:
+                    # 无任何交易，超时直接淘汰
+                    should_evict = True
+                else:
+                    last_trade_time = max(
+                        t.get("traded_at", created_at) if isinstance(t.get("traded_at"), datetime)
+                        else created_at
+                        for t in trades
+                    )
+                    if (now - last_trade_time).total_seconds() > 1800:
+                        should_evict = True
+                if should_evict:
                     self._tokens.pop(mint, None)
                     self._trades.pop(mint, None)
                     if mint in self._signal_pool:

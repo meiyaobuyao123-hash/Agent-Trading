@@ -217,16 +217,41 @@ class SmartMoneyTracker:
                     if sig in self._seen_txids:
                         continue
                     self._seen_txids.add(sig)
+                    # Helius swap events: tokenOutputs = buy, tokenInputs = sell
+                    # tokenAmount = raw amount, 需要除以 decimals 再乘价格（enrich 阶段）
+                    # nativeTransfers 里有 SOL 金额可以近似 USD
+                    native_sol = 0.0
+                    for nt in tx.get("nativeTransfers", []):
+                        if nt.get("fromUserAccount", "").lower() == address.lower():
+                            native_sol += abs(float(nt.get("amount", 0))) / 1e9
                     for event in tx.get("events", {}).get("swap", {}).get("tokenOutputs", []):
+                        mint = event.get("mint", "")
+                        if not mint or mint == "So11111111111111111111111111111111111111112":
+                            continue
+                        token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
+                        decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
+                        qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
                         parsed.append({
-                            "token_address": event.get("mint", ""),
-                            "type": "buy", "volume_usd": 0.0,
+                            "token_address": mint,
+                            "type": "buy",
+                            "volume_usd": native_sol * 150,  # 近似: SOL 花费 × $150 估价
+                            "_token_qty": qty,
+                            "_is_token_qty": True,
                             "timestamp": tx_time.isoformat(),
                         })
                     for event in tx.get("events", {}).get("swap", {}).get("tokenInputs", []):
+                        mint = event.get("mint", "")
+                        if not mint or mint == "So11111111111111111111111111111111111111112":
+                            continue
+                        token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
+                        decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
+                        qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
                         parsed.append({
-                            "token_address": event.get("mint", ""),
-                            "type": "sell", "volume_usd": 0.0,
+                            "token_address": mint,
+                            "type": "sell",
+                            "volume_usd": 0.0,
+                            "_token_qty": qty,
+                            "_is_token_qty": True,
                             "timestamp": tx_time.isoformat(),
                         })
                 if parsed:
@@ -345,12 +370,14 @@ class SmartMoneyTracker:
                         addr_lower = address.lower()
                         to_addrs = [t.get("address", "").lower() for t in tx.get("to", [])]
                         is_buy = addr_lower in to_addrs
+                        # OKX 返回 amount（原始代币数量）和 tokenAmount（可能有 USD）
+                        raw_amount = float(tx.get("amount") or tx.get("tokenAmount") or 0)
                         results.append({
                             "token_address": token_addr.lower(),
                             "token_name": tx.get("symbol", ""),
                             "token_symbol": tx.get("symbol", ""),
                             "type": "buy" if is_buy else "sell",
-                            "volume_usd": 0.0,     # 原始数量未知价格，enrich后换算USD
+                            "volume_usd": raw_amount,  # 代币数量，enrich阶段乘价格转USD
                             "_is_token_qty": True,
                             "timestamp": tx_time,
                         })
@@ -423,6 +450,7 @@ class SmartMoneyTracker:
                     "tx_type": "buy" if is_buy else "sell",
                     "volume_usd": volume,
                     "_is_token_qty": tx.get("_is_token_qty", False),
+                    "_token_qty": tx.get("_token_qty", 0),
                     "tx_time": tx_time,
                 })
 
@@ -476,13 +504,18 @@ class SmartMoneyTracker:
             sig["net_flow"] = sig.get("buy_count", 0) - sig.get("sell_count", 0)
             sig["signal_strength"] = self._calc_strength(sig)
 
-        # EVM token数量 → USD
+        # token数量 → USD（SOL + EVM 通用）
         price_map = {sig["token_address"].lower(): sig.get("price_usd", 0) for sig in signals.values()}
         for txn in txns:
             if txn.pop("_is_token_qty", False):
                 price = price_map.get(txn["token_address"].lower(), 0)
-                if price > 0:
+                token_qty = txn.pop("_token_qty", 0)
+                if price > 0 and token_qty > 0:
+                    txn["volume_usd"] = token_qty * price
+                elif price > 0 and txn["volume_usd"] > 0:
                     txn["volume_usd"] = txn["volume_usd"] * price
+            else:
+                txn.pop("_token_qty", None)
 
         self._upsert_signals(list(signals.values()))
         self._upsert_txns(txns)

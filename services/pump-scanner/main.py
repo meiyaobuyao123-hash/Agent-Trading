@@ -125,6 +125,17 @@ async def main():
         misfire_grace_time=600,
     )
 
+    # ── 聪明钱地址挖掘（每天 UTC 04:00）───────────────────────
+    from smart_wallet_miner import run_smart_wallet_miner
+    scheduler.add_job(
+        run_smart_wallet_miner,
+        trigger="cron",
+        hour=4, minute=0,
+        id="smart_wallet_miner",
+        name="聪明钱地址挖掘",
+        misfire_grace_time=3600,
+    )
+
     # ── 热币增量扫描（每10分钟）─────────────────────────────
     # 增量模式：已入库代币复用安全/社交数据，仅新代币走 GoPlus/Helius/DexScreener
     # 多时间帧 OKX toplist 发现，耗时 ~60-90s

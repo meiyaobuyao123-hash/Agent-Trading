@@ -284,6 +284,11 @@ class HotCoinManager:
         if discovery_price > 0:
             self._write_performance_entry(coin, today_str, discovery_price, result)
 
+        # 异步采集 Top Holders（不阻塞入榜）
+        asyncio.get_event_loop().call_soon(
+            lambda: asyncio.ensure_future(self._collect_top_holders(addr, chain))
+        )
+
     def _exit_token(self, addr: str, reason: str) -> None:
         """代币退出榜单"""
         coin = self._active.pop(addr, None)
@@ -433,6 +438,45 @@ class HotCoinManager:
             log.debug(f"[HotCoin] 追踪记录写入: {coin.get('symbol')} price=${discovery_price:.8f}")
         except Exception as e:
             log.error(f"[HotCoin] 追踪记录写入失败: {e}")
+
+    # ═══════════════════════════════════════════════════════════
+    # Top Holders 采集（聪明钱发现）
+    # ═══════════════════════════════════════════════════════════
+
+    async def _collect_top_holders(self, addr: str, chain: str) -> None:
+        """入榜时异步采集 Top 10 持仓地址，写入 hot_coin_top_holders"""
+        try:
+            from hot_coin_fetcher import fetch_top_holders
+            holders = await fetch_top_holders(chain, addr, limit=10)
+            if not holders:
+                return
+
+            db = get_db()
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for h in holders:
+                wallet = h.get("wallet", "")
+                if not wallet:
+                    continue
+                row = {
+                    "chain": chain,
+                    "token_address": addr,
+                    "holder_address": wallet,
+                    "holder_rank": h.get("rank", 0),
+                    "holder_pct": h.get("pct", 0),
+                    "holder_amount": h.get("amount", 0),
+                    "discovered_at": now_iso,
+                }
+                try:
+                    db.table("hot_coin_top_holders").upsert(
+                        row, on_conflict="chain,token_address,holder_address"
+                    ).execute()
+                except Exception:
+                    pass  # 静默跳过重复
+
+            sym = self._active.get(addr, {}).get("symbol", addr[:8])
+            log.info(f"[HotCoin] Top Holders 采集: {sym} ({chain}) — {len(holders)} 个")
+        except Exception as e:
+            log.debug(f"[HotCoin] Top Holders 采集失败 {addr[:8]}: {e}")
 
     # ═══════════════════════════════════════════════════════════
     # 漏斗统计

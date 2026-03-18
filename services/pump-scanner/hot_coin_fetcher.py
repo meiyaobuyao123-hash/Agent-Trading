@@ -15,7 +15,7 @@
 import asyncio
 import logging
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
@@ -801,3 +801,112 @@ def _parse_dexscreener_pair(pair: dict) -> dict:
         "pair_address": pair.get("pairAddress"),
         "dex_id": pair.get("dexId"),
     }
+
+
+# ═══════════════════════════════════════════════════════════
+# Top Holders 采集（聪明钱发现用）
+# ═══════════════════════════════════════════════════════════
+
+async def fetch_top_holders(
+    chain: str, token_address: str, limit: int = 10
+) -> List[Dict[str, Any]]:
+    """获取代币 Top N 持仓地址
+    SOL: Helius getTokenLargestAccounts
+    EVM: GoPlus holders（已有 top10_holder_rate，此处尝试获取地址列表）
+    返回: [{rank, wallet, pct, amount}]
+    """
+    async with aiohttp.ClientSession() as session:
+        if chain == "solana":
+            return await _fetch_sol_top_holders(session, token_address, limit)
+        else:
+            return await _fetch_evm_top_holders(session, chain, token_address, limit)
+
+
+async def _fetch_sol_top_holders(
+    session: aiohttp.ClientSession, mint: str, limit: int
+) -> List[Dict[str, Any]]:
+    """Helius RPC getTokenLargestAccounts → 返回地址+占比"""
+    supply_payload = {
+        "jsonrpc": "2.0", "id": 1,
+        "method": "getTokenSupply",
+        "params": [mint],
+    }
+    largest_payload = {
+        "jsonrpc": "2.0", "id": 2,
+        "method": "getTokenLargestAccounts",
+        "params": [mint, {"commitment": "confirmed"}],
+    }
+    try:
+        async def _post(payload):
+            async with session.post(HELIUS_RPC, json=payload, timeout=_TIMEOUT) as r:
+                return await r.json()
+
+        s_data, l_data = await asyncio.gather(
+            _post(supply_payload), _post(largest_payload), return_exceptions=True
+        )
+        if isinstance(s_data, Exception) or isinstance(l_data, Exception):
+            return []
+
+        total_supply = int(s_data.get("result", {}).get("value", {}).get("amount", 0))
+        largest = l_data.get("result", {}).get("value", [])
+        if not largest or total_supply == 0:
+            return []
+
+        holders = []
+        for i, item in enumerate(largest[:limit]):
+            amount = int(item.get("amount", 0))
+            pct = round(amount / total_supply * 100, 2) if total_supply > 0 else 0
+            holders.append({
+                "rank": i + 1,
+                "wallet": item.get("address", ""),
+                "pct": pct,
+                "amount": amount,
+            })
+        return holders
+    except Exception as e:
+        log.debug("fetch_sol_top_holders %s: %s", mint[:8], e)
+        return []
+
+
+async def _fetch_evm_top_holders(
+    session: aiohttp.ClientSession, chain: str, address: str, limit: int
+) -> List[Dict[str, Any]]:
+    """GoPlus holder_info → 返回 Top N 持仓地址"""
+    goplus_chain_map = {"eth": "1", "bsc": "56", "base": "8453"}
+    gp_chain = goplus_chain_map.get(chain)
+    if not gp_chain:
+        return []
+    try:
+        url = f"{GOPLUS_API}/token_security/{gp_chain}"
+        async with session.get(
+            url, params={"contract_addresses": address}, timeout=_TIMEOUT
+        ) as resp:
+            if resp.status != 200:
+                return []
+            data = await resp.json()
+            result = data.get("result", {})
+            token_data = (
+                result.get(address)
+                or result.get(address.lower())
+                or (list(result.values())[0] if result else {})
+            )
+            if not token_data:
+                return []
+
+            # GoPlus holders 字段可能包含地址列表
+            raw_holders = token_data.get("holders", [])
+            if not raw_holders:
+                return []
+
+            holders = []
+            for i, h in enumerate(raw_holders[:limit]):
+                holders.append({
+                    "rank": i + 1,
+                    "wallet": h.get("address", ""),
+                    "pct": round(float(h.get("percent", 0) or 0) * 100, 2),
+                    "amount": float(h.get("balance", 0) or 0),
+                })
+            return holders
+    except Exception as e:
+        log.debug("fetch_evm_top_holders %s/%s: %s", chain, address[:8], e)
+        return []

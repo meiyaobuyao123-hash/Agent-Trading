@@ -337,6 +337,82 @@ def run_smart_wallet_updater():
 
     log.info(f"✅ 聪明钱多维度更新完成，共写入 {success_count} 个钱包")
 
+    # ── Step 6: Top Holder 自动晋升 ────────────────────────────
+    _evaluate_top_holders(db)
+
+
+def _evaluate_top_holders(db):
+    """评估 hot_coin_top_holders，表现好的自动晋升为聪明钱"""
+    try:
+        # 查 D3 涨幅 >= 20% 的热币
+        perf_res = db.table("token_performance").select(
+            "chain, address, daily_highs, best_pct"
+        ).eq("source", "hot_live").eq("is_active", False).execute()
+
+        good_tokens = set()
+        for p in (perf_res.data or []):
+            highs = p.get("daily_highs") or {}
+            d3 = highs.get("D3", highs.get("3", {}))
+            d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
+            if d3_pct >= 20:
+                good_tokens.add((p["chain"], p["address"]))
+
+        if not good_tokens:
+            log.info("[TopHolder晋升] 暂无 D3>=20% 的热币")
+            return
+
+        # 查这些热币的 top holders
+        holder_counts = defaultdict(int)  # {wallet: count}
+        promoted = 0
+        for chain, addr in good_tokens:
+            try:
+                holders_res = db.table("hot_coin_top_holders").select(
+                    "holder_address"
+                ).eq("chain", chain).eq("token_address", addr).execute()
+                for h in (holders_res.data or []):
+                    holder_counts[h["holder_address"]] += 1
+            except Exception:
+                pass
+
+        # 查现有 smart_wallets
+        existing_res = db.table("smart_wallets").select("wallet, tier").execute()
+        existing = {r["wallet"].lower(): r["tier"] for r in (existing_res.data or [])}
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for wallet, count in holder_counts.items():
+            wallet_lower = wallet.lower()
+            current_tier = existing.get(wallet_lower)
+
+            # 跨 3+ 个好代币 → verified
+            if count >= 3 and current_tier != "elite":
+                new_tier = "verified"
+            # 至少 1 个好代币 → watching（如果还不在库里）
+            elif count >= 1 and current_tier is None:
+                new_tier = "watching"
+            else:
+                continue
+
+            try:
+                db.table("smart_wallets").upsert({
+                    "wallet": wallet,
+                    "tier": new_tier,
+                    "total_trades": count,
+                    "win_trades": count,
+                    "total_sol_in": 0,
+                    "avg_entry_bc": 0,
+                    "active_weeks": 1,
+                    "last_seen": now_iso,
+                    "is_blacklisted": False,
+                }, on_conflict="wallet").execute()
+                promoted += 1
+            except Exception:
+                pass
+
+        log.info(f"[TopHolder晋升] 好代币 {len(good_tokens)} 个，新增/升级 {promoted} 个聪明钱地址")
+
+    except Exception as e:
+        log.warning(f"[TopHolder晋升] 失败: {e}")
+
 
 if __name__ == "__main__":
     import logging as _log

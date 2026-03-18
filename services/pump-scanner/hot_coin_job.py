@@ -1,25 +1,21 @@
 """
-热币榜定时任务 — 分层更新策略
+热币榜定时任务 — 分层更新策略 v2
 
-按各数据源实际更新频率分层调度：
+  ┌──────────────┬────────────────────────────────────────────┬──────────┐
+  │ 调度频率     │ 更新内容                                   │ 数据源   │
+  ├──────────────┼────────────────────────────────────────────┼──────────┤
+  │ 毫秒级       │ 价格变动 → PriceFeed 回调 → 重新打分       │ Helius   │
+  │ (PriceFeed)  │ → 退出判定 → 节流写DB（5s）                │ DexScr   │
+  ├──────────────┼────────────────────────────────────────────┼──────────┤
+  │ 每30秒       │ DexScreener 全量刷新多时间帧数据 + 打分     │ DexScr   │
+  ├──────────────┼────────────────────────────────────────────┼──────────┤
+  │ 每10分钟     │ OKX toplist + GeckoTerminal trending/new   │ OKX      │
+  │ (发现层)     │ → 去重 → 硬过滤 → 安全检测 → 入榜判定      │ Gecko    │
+  ├──────────────┼────────────────────────────────────────────┼──────────┤
+  │ 每天 02:00   │ 日榜 Top20                                 │ DB       │
+  └──────────────┴────────────────────────────────────────────┴──────────┘
 
-  ┌──────────────┬──────────────────────────────────────────────┬──────────┐
-  │ 调度频率     │ 更新内容                                     │ 数据源   │
-  ├──────────────┼──────────────────────────────────────────────┼──────────┤
-  │ 每5秒        │ price, mc, liq, volume(5M/1H/4H/24H),       │ OKX      │
-  │              │ change(5M/1H/4H/24H), txs, holders + 打分   │          │
-  │              │ → 所有字段来自同一 price-info 接口，免费搭载  │          │
-  ├──────────────┼──────────────────────────────────────────────┼──────────┤
-  │ 每10分钟     │ 增量发现 (trending/new pools)                │ Gecko    │
-  │ (增量模式)   │ 仅新代币: GoPlus/Helius/DexScreener 富化    │ GoPlus   │
-  │              │ 已入库代币: 复用DB安全/社交 + OKX新价格打分  │ Helius   │
-  │              │ ~30s/轮 (vs 全量3-5min)                     │ DexScr   │
-  ├──────────────┼──────────────────────────────────────────────┼──────────┤
-  │ 每天 02:00   │ 日榜 Top20                                  │ DB       │
-  └──────────────┴──────────────────────────────────────────────┴──────────┘
-
-  Flutter 实时价格：通过 /api/price/batch 代理，每次请求直取 OKX 最新价格，无缓存。
-  OKX lastPriceUsd 为毫秒级更新（每笔链上成交即刷新）。
+Python 3.9 兼容。
 """
 
 import asyncio
@@ -27,158 +23,157 @@ import logging
 from datetime import datetime, timezone, date
 from typing import Dict, List
 
+import aiohttp
+
 from hot_coin_fetcher import fetch_hot_coin_candidates, refresh_okx_prices
 from hot_scorer import score_hot_coin
-from database import upsert_hot_coins, save_hot_daily_picks, get_db
+from hot_coin_manager import hot_coin_manager
+from gecko_discovery import fetch_gecko_candidates
+from hot_coin_fetcher import apply_hard_filter, _check_goplus, _get_sol_top1_pct, _get_dexscreener_socials
+from database import save_hot_daily_picks, get_db
 from price_feed import price_feed
+from config import HOT_CHAINS
 
 log = logging.getLogger(__name__)
 
 
 # ─────────────────────────────────────────────────────────────
-# 每10分钟：增量发现（GeckoTerminal → 仅新代币富化 → 打分）
-# 已入库代币复用 DB 安全/社交数据 + OKX 最新价格 → 重新打分
+# 每10分钟：多源发现（OKX + GeckoTerminal）→ Manager 入榜
 # ─────────────────────────────────────────────────────────────
 
 async def run_hot_coin_scan():
     """
     增量全链扫描热币（每10分钟）。
-    已入库代币跳过 GoPlus/Helius/DexScreener，复用 DB 缓存的安全/社交数据。
-    仅新发现的代币走完整富化流程。
+    OKX toplist + GeckoTerminal trending/new_pools 合并去重。
+    通过 hot_coin_manager 管理入榜/退出。
     """
-    log.info("热币榜扫描开始（增量模式）...")
+    log.info("热币榜扫描开始（OKX + GeckoTerminal 双源发现）...")
 
     try:
-        candidates = await fetch_hot_coin_candidates(incremental=True)
-        if not candidates:
-            log.info("暂无候选，本次跳过")
-            return
+        # ── 1. OKX toplist 发现 ──
+        okx_candidates = await fetch_hot_coin_candidates(incremental=True)
+        log.info(f"  OKX 发现: {len(okx_candidates)} 个候选")
 
-        rows = _score_and_format(candidates)
-        upsert_hot_coins(rows)
-        _log_summary("热币榜更新完成", rows)
+        # ── 2. GeckoTerminal 发现 ──
+        gecko_candidates_raw: List[dict] = []
+        try:
+            async with aiohttp.ClientSession() as session:
+                gecko_by_chain = await fetch_gecko_candidates(session)
+                for chain, coins in gecko_by_chain.items():
+                    gecko_candidates_raw.extend(coins)
+            log.info(f"  GeckoTerminal 发现: {len(gecko_candidates_raw)} 个候选")
+        except Exception as e:
+            log.warning(f"  GeckoTerminal 发现失败（不影响 OKX）: {e}")
 
-        # 将新发现的代币注册到实时价格订阅
-        for c in candidates:
-            price_feed.register_token(
-                address=c["address"],
-                chain=c.get("chain", ""),
-                pair_address=c.get("pair_address") or "",
-            )
+        # ── 3. 去重合并（OKX 优先，数据更全） ──
+        seen: set = set()
+        merged: List[dict] = []
+
+        # OKX 先入
+        for c in okx_candidates:
+            addr = c["address"].lower()
+            if addr not in seen:
+                seen.add(addr)
+                merged.append(c)
+
+        # GeckoTerminal 补充
+        gecko_new = 0
+        for c in gecko_candidates_raw:
+            addr = c["address"].lower()
+            if addr not in seen:
+                # GeckoTerminal 候选需要过硬过滤
+                ok, reason = apply_hard_filter(c)
+                if ok:
+                    seen.add(addr)
+                    merged.append(c)
+                    gecko_new += 1
+
+        log.info(f"  合并去重: OKX={len(okx_candidates)} + Gecko新增={gecko_new} → 总计 {len(merged)}")
+
+        # ── 4. 对 GeckoTerminal 新增的做安全检测（GoPlus） ──
+        if gecko_new > 0:
+            await _enrich_gecko_candidates(merged, len(okx_candidates))
+
+        # ── 5. 交给 Manager 处理入榜/退出 ──
+        hot_coin_manager.on_discovery_result(merged)
+
+        stats = hot_coin_manager.get_stats()
+        log.info(
+            f"热币榜扫描完成: 活跃={stats['active']} "
+            f"累计入榜={stats['total_entries']} 退出={stats['total_exits']} "
+            f"链分布={stats['by_chain']}"
+        )
 
     except Exception as e:
         log.error(f"热币榜扫描失败: {e}", exc_info=True)
 
 
+async def _enrich_gecko_candidates(merged: List[dict], okx_count: int) -> None:
+    """对 GeckoTerminal 新增候选做 GoPlus 安全检测"""
+    async with aiohttp.ClientSession() as session:
+        for i in range(okx_count, len(merged)):
+            coin = merged[i]
+            if coin.get("data_source") != "gecko_trending":
+                continue
+
+            chain = coin.get("chain", "")
+            addr = coin["address"]
+            goplus_chain = HOT_CHAINS.get(chain, {}).get("goplus_chain", "")
+
+            if goplus_chain:
+                gp = await _check_goplus(session, chain, addr, goplus_chain)
+                if gp:
+                    coin["is_honeypot"] = gp.get("is_honeypot", False)
+                    coin["goplus_risk"] = gp.get("goplus_risk", False)
+                    coin["top10_holder_pct"] = gp.get("top10_holder_pct")
+                    coin["holder_count"] = gp.get("holder_count", 0)
+                    coin["is_open_source"] = gp.get("is_open_source", True)
+                    coin["buy_tax"] = gp.get("buy_tax", 0.0)
+                    coin["sell_tax"] = gp.get("sell_tax", 0.0)
+                await asyncio.sleep(0.35)
+
+            # SOL Top1 持有者
+            if chain == "solana":
+                top1 = await _get_sol_top1_pct(session, addr)
+                if top1 is not None:
+                    coin["top1_holder_pct"] = top1
+                await asyncio.sleep(0.1)
+
+            # DexScreener 社交
+            socials = await _get_dexscreener_socials(session, addr)
+            if socials:
+                coin["has_twitter"] = socials.get("has_twitter", False)
+                coin["has_telegram"] = socials.get("has_telegram", False)
+                coin["has_website"] = socials.get("has_website", False)
+                if not coin.get("image_url") and socials.get("image_url"):
+                    coin["image_url"] = socials["image_url"]
+            await asyncio.sleep(0.2)
+
+
 # ─────────────────────────────────────────────────────────────
-# 每5秒：OKX 全字段刷新 + 重新打分
-# OKX price-info 一次返回所有字段（price/mc/liq/volume/change/holders）
-# 价格 = 毫秒级（每笔成交），5M窗口 = 5分钟聚合，holders = 5-15min延迟
-# 单轮耗时：OKX 4链 ≈ 2s + 打分 ≈ 0.1s + DB写 ≈ 0.5s ≈ 3s
+# 每30秒：DexScreener 全量刷新 → Manager 打分+退出
 # ─────────────────────────────────────────────────────────────
 
 async def run_hot_price_refresh():
     """
-    OKX 批量刷新已入库代币的全量市场数据（5s 周期），重新打分后更新。
-    表现追踪由 performance_tracker.py 独立秒级循环处理，不在此重复。
+    DexScreener 批量刷新活跃热币的全量市场数据，
+    通过 Manager 重新打分+退出判定。
     """
-    log.debug("OKX 市场数据刷新开始...")
+    log.debug("DexScreener 市场数据刷新开始...")
 
     try:
         updated = await refresh_okx_prices()
         if not updated:
-            log.debug("OKX 刷新无更新数据")
+            log.debug("DexScreener 刷新无更新数据")
             return
 
-        rows = _score_and_format(updated)
-        upsert_hot_coins(rows)
+        # 交给 Manager 全量刷新（含打分+退出判定）
+        hot_coin_manager.on_full_refresh(updated)
 
-        log.debug(f"OKX 刷新完成: {len(rows)} 个代币已重新打分")
+        log.debug(f"DexScreener 刷新完成: {len(updated)} 个代币")
 
     except Exception as e:
-        log.error(f"OKX 价格刷新失败: {e}", exc_info=True)
-
-
-# ─────────────────────────────────────────────────────────────
-# 通用：打分 + 格式化
-# ─────────────────────────────────────────────────────────────
-
-def _score_and_format(candidates: List[dict]) -> List[dict]:
-    """对候选列表打分并格式化为 DB 行"""
-    now_str = datetime.now(timezone.utc).isoformat()
-    rows = []
-
-    for c in candidates:
-        result = score_hot_coin(c)
-
-        rows.append({
-            "chain":             c["chain"],
-            "address":           c["address"],
-            "name":              c.get("name"),
-            "symbol":            c.get("symbol"),
-            "pair_address":      c.get("pair_address"),
-            "dex_id":            c.get("dex_id"),
-            "price_usd":         c.get("price_usd"),
-            "market_cap_usd":    c.get("market_cap_usd"),
-            "liquidity_usd":     c.get("liquidity_usd"),
-            "volume_24h_usd":    c.get("volume_24h_usd"),
-            "volume_1h_usd":     c.get("volume_1h_usd"),
-            "volume_5m_usd":     c.get("volume_5m_usd"),
-            "volume_4h_usd":     c.get("volume_4h_usd"),
-            "price_change_1h":   c.get("price_change_1h"),
-            "price_change_6h":   c.get("price_change_6h"),
-            "price_change_24h":  c.get("price_change_24h"),
-            "price_change_5m":   c.get("price_change_5m"),
-            "price_change_4h":   c.get("price_change_4h"),
-            "buys_1h":           c.get("buys_1h"),
-            "sells_1h":          c.get("sells_1h"),
-            "buys_24h":          c.get("buys_24h"),
-            "sells_24h":         c.get("sells_24h"),
-            "pair_created_at":   (
-                c["pair_created_at"].isoformat()
-                if hasattr(c.get("pair_created_at"), "isoformat") else
-                c.get("pair_created_at")
-            ),
-            "age_days":          c.get("age_days"),
-            "holder_count":      c.get("holder_count"),
-            "top10_holder_pct":  c.get("top10_holder_pct"),
-            "top1_holder_pct":   c.get("top1_holder_pct"),
-            "is_honeypot":       c.get("is_honeypot", False),
-            "is_open_source":    c.get("is_open_source", True),
-            "buy_tax":           c.get("buy_tax", 0.0),
-            "sell_tax":          c.get("sell_tax", 0.0),
-            "goplus_risk":       c.get("goplus_risk", False),
-            "has_twitter":       c.get("has_twitter", False),
-            "has_telegram":      c.get("has_telegram", False),
-            "has_website":       c.get("has_website", False),
-            "image_url":         c.get("image_url") or c.get("token_logo_url", ""),
-            "circ_supply":       c.get("circ_supply"),
-            "token_logo_url":    c.get("token_logo_url", ""),
-            "score":             result.total,
-            "score_m":           result.score_m,
-            "score_q":           result.score_q,
-            "score_p":           result.score_p,
-            "score_detail":      result.detail,
-            "recommendation":    result.recommendation,
-            "scanned_at":        now_str,
-        })
-
-    return rows
-
-
-def _log_summary(title: str, rows: List[dict]):
-    """输出汇总日志"""
-    strong = sum(1 for r in rows if r["recommendation"] == "strong")
-    normal = sum(1 for r in rows if r["recommendation"] == "normal")
-    by_chain = {}  # type: Dict[str, int]
-    for r in rows:
-        by_chain[r["chain"]] = by_chain.get(r["chain"], 0) + 1
-
-    chain_summary = "  ".join(f"{k}={v}" for k, v in by_chain.items())
-    log.info(
-        f"{title}: 强推={strong} 普通={normal} 总计={len(rows)}\n"
-        f"   链分布: {chain_summary}"
-    )
+        log.error(f"DexScreener 价格刷新失败: {e}", exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -187,7 +182,6 @@ def _log_summary(title: str, rows: List[dict]):
 
 def run_hot_daily_picks():
     """从 hot_coins 中选出当日热币 Top20"""
-    from database import get_db
 
     log.info("生成热币日榜 Top20...")
     try:

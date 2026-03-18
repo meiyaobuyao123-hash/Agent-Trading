@@ -70,6 +70,9 @@ from governor import run_governor
 # 实时价格订阅（Binance WS + DexScreener WS）
 from price_feed import price_feed
 
+# 热币实时管理器（PriceFeed 回调 → 打分 → 进出榜单）
+from hot_coin_manager import hot_coin_manager
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -271,8 +274,9 @@ async def main():
         "  每日 UTC 01:00 → creator_stats\n"
         "  每日 UTC 02:00 → hot_daily_picks\n"
         "  每1小时        → outcome_labeler\n"
-        "  每10分钟       → hot_coin_scan (增量发现)\n"
-        "  每30秒         → hot_price_refresh (OKX+DexScreener 全字段+打分)\n"
+        "  每10分钟       → hot_coin_scan (OKX+GeckoTerminal 双源发现)\n"
+        "  每30秒         → hot_price_refresh (DexScreener 全量刷新+打分+退出)\n"
+        "  毫秒级         → hot_coin_manager (PriceFeed 回调→实时打分→进出榜)\n"
         "  每6小时        → smart_wallet_updater\n"
         "  ── KOL 系统 ──\n"
         "  每30分钟       → kol_collect\n"
@@ -302,9 +306,27 @@ async def main():
     asyncio.create_task(run_performance_loop())
     log.info("表现追踪协程已启动 (1s loop)")
 
+    # 初始化热币管理器（从 DB 加载活跃热币）
+    hot_coin_manager.load_from_db()
+
+    # 注册 PriceFeed 回调 → 热币实时打分
+    price_feed.on_price_update(hot_coin_manager.on_price_update)
+
+    # 将已加载的活跃热币注册到 PriceFeed
+    for token in hot_coin_manager.get_active_tokens():
+        price_feed.register_token(
+            address=token.get("address", ""),
+            chain=token.get("chain", ""),
+            pair_address=token.get("pair_address", ""),
+        )
+
     # 启动实时价格订阅（Binance WS: SOL/ETH/BNB/BTC + DexScreener WS: 热币 pair）
     asyncio.create_task(price_feed.start())
     log.info("price_feed 已启动 (Binance WS + DexScreener WS)")
+
+    # 启动热币管理器 pending flush 协程
+    asyncio.create_task(hot_coin_manager.flush_pending())
+    log.info("hot_coin_manager 已启动 (PriceFeed 回调 → 实时打分 → 进出榜单)")
 
     # 启动聪明钱实时追踪（SOL Helius WS ~400ms + EVM OKX API 5s轮询）
     _sm_tracker = await get_tracker()

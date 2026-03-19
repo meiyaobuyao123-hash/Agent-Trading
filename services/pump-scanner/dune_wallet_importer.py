@@ -29,9 +29,9 @@ DUNE_BASE = "https://api.dune.com/api/v1"
 # 每个查询返回该链上14天内高频 DEX 交易者（过滤 bot，LIMIT 5000）
 DUNE_QUERY_IDS = {
     "solana": int(os.getenv("DUNE_QUERY_SOL", "6850812")),
-    "eth": int(os.getenv("DUNE_QUERY_ETH", "0")),
-    "bsc": int(os.getenv("DUNE_QUERY_BSC", "0")),
-    "base": int(os.getenv("DUNE_QUERY_BASE", "0")),
+    "eth": int(os.getenv("DUNE_QUERY_ETH", "6858638")),
+    "bsc": int(os.getenv("DUNE_QUERY_BSC", "6858633")),
+    "base": int(os.getenv("DUNE_QUERY_BASE", "6858622")),
 }
 
 # Bot 过滤：14 天内超过 5000 笔交易 → 大概率是 bot/MEV

@@ -354,7 +354,7 @@ async def main():
     # 启动聪明钱实时追踪（SOL Helius WS ~400ms + EVM OKX API 5s轮询）
     _sm_tracker = await get_tracker()
     asyncio.create_task(_sm_tracker.start())
-    log.info("smart_money_tracker 已启动 (SOL Helius Webhook + EVM OKX 并发轮询)")
+    log.info("smart_money_tracker 已启动 (SOL DEX Monitor + EVM DEX Monitor + OKX 补充轮询)")
 
     # 启动事件总线
     event_bus = get_event_bus()

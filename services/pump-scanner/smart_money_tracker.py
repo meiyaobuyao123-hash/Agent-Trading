@@ -91,8 +91,25 @@ class SmartMoneyTracker:
 
     async def _load_wallets(self):
         try:
-            res = self.db.table("smart_wallets").select("wallet, tier").eq("is_blacklisted", False).execute()
-            for w in res.data:
+            # 分页加载所有钱包（Supabase 默认 limit 1000）
+            all_data = []
+            page_size = 1000
+            offset = 0
+            while True:
+                res = (
+                    self.db.table("smart_wallets")
+                    .select("wallet, tier")
+                    .eq("is_blacklisted", False)
+                    .range(offset, offset + page_size - 1)
+                    .execute()
+                )
+                batch = res.data or []
+                all_data.extend(batch)
+                if len(batch) < page_size:
+                    break
+                offset += page_size
+
+            for w in all_data:
                 addr = w["wallet"]
                 tier = w.get("tier", "watching")
                 if addr.startswith("0x"):
@@ -100,6 +117,7 @@ class SmartMoneyTracker:
                         self.wallets.setdefault(ch, []).append({"address": addr, "chain": ch, "tier": tier})
                 else:
                     self.wallets.setdefault("solana", []).append({"address": addr, "chain": "solana", "tier": tier})
+            logger.info("Loaded %d wallets from DB (paginated)", len(all_data))
         except Exception as e:
             logger.warning("DB wallets load failed: %s", e)
 
@@ -124,221 +142,82 @@ class SmartMoneyTracker:
     async def start(self):
         """启动实时追踪 — 在 main.py 中 asyncio.create_task(tracker.start())"""
         self._running = True
-        sol_count = len(self.wallets.get("solana", []))
-        evm_count = sum(len(self.wallets.get(c, [])) for c in ("eth", "bsc", "base"))
+
+        # 构建 SOL 钱包 HashSet（O(1) 查找）
+        sol_wallets = self.wallets.get("solana", [])
+        self._sol_wallet_set: Dict[str, Dict[str, Any]] = {
+            w["address"].lower(): w for w in sol_wallets
+        }
+        # 构建 EVM 钱包 HashSet
+        self._evm_wallet_set: Dict[str, Dict[str, Any]] = {}
+        for chain in ("eth", "bsc", "base"):
+            for w in self.wallets.get(chain, []):
+                self._evm_wallet_set[w["address"].lower()] = w
+
+        sol_count = len(self._sol_wallet_set)
+        evm_count = len(self._evm_wallet_set)
         logger.info(
-            "SmartMoneyTracker started (SOL Helius Webhook %d + EVM concurrent poll %d)",
+            "SmartMoneyTracker started (SOL DEX Monitor %d wallets + EVM DEX Monitor %d wallets)",
             sol_count, evm_count,
         )
         await asyncio.gather(
-            self._setup_helius_webhook(),
-            self._run_evm_poll_loop(),
+            self._run_sol_dex_monitor(),
+            self._run_evm_dex_monitor(),
+            self._run_evm_poll_loop(),  # 保留 OKX 轮询作为补充
         )
 
     # ──────────────────────────────────────────────
-    # SOL: Helius Webhook（全量追踪，<1s 延迟）
+    # SOL: DEX 程序级监控（毫秒级，全量覆盖）
+    # 监控 Raydium/Jupiter/Pump.fun 的所有 swap
+    # 用 HashSet 匹配我们的钱包地址
     # ──────────────────────────────────────────────
 
-    _HELIUS_WEBHOOK_URL = "https://api.helius.xyz/v0/webhooks"
-    _webhook_id: Optional[str] = None
+    # Solana DEX 程序 ID
+    _SOL_DEX_PROGRAMS = [
+        "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",  # Raydium AMM V4
+        "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",   # Jupiter V6
+        "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",   # Pump.fun
+        "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",   # Raydium CLMM
+        "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",    # Orca Whirlpool
+    ]
 
-    async def _setup_helius_webhook(self):
-        """注册 Helius webhook，监听所有 SOL 聪明钱地址"""
-        sol_wallets = self.wallets.get("solana", [])
-        if not sol_wallets or not self._helius_key:
-            logger.warning("SOL: no wallets or Helius key missing, skip webhook")
+    async def _run_sol_dex_monitor(self):
+        """监控 SOL DEX 程序的所有 swap，用 HashSet 匹配聪明钱"""
+        if not self._sol_wallet_set or not self._helius_key:
+            logger.warning("SOL DEX Monitor: no wallets or Helius key, skip")
             return
 
-        # 注册 webhook 回调到 API routes
-        from api.routes_webhook import set_sol_webhook_callback
-        set_sol_webhook_callback(self._handle_helius_webhook_txs)
-
-        sol_addresses = [w["address"] for w in sol_wallets]
-        server_url = os.getenv("WEBHOOK_BASE_URL", "http://43.156.207.26")
-        webhook_url = f"{server_url}/api/webhook/helius"
-
-        logger.info("SOL: registering Helius webhook for %d addresses → %s", len(sol_addresses), webhook_url)
-
-        try:
-            # 先查现有 webhooks，如果已存在就更新
-            async with self._session.get(
-                f"{self._HELIUS_WEBHOOK_URL}?api-key={self._helius_key}",
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                if resp.status == 200:
-                    existing = await resp.json()
-                    for wh in existing:
-                        if wh.get("webhookURL", "") == webhook_url:
-                            self._webhook_id = wh.get("webhookID")
-                            logger.info("SOL: found existing webhook %s, updating addresses", self._webhook_id)
-                            break
-
-            if self._webhook_id:
-                # 更新现有 webhook 的地址列表
-                async with self._session.put(
-                    f"{self._HELIUS_WEBHOOK_URL}/{self._webhook_id}?api-key={self._helius_key}",
-                    json={
-                        "webhookURL": webhook_url,
-                        "accountAddresses": sol_addresses,
-                        "transactionTypes": ["SWAP", "TRANSFER"],
-                        "webhookType": "enhanced",
-                    },
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status == 200:
-                        logger.info("SOL: webhook updated with %d addresses", len(sol_addresses))
-                    else:
-                        body = await resp.text()
-                        logger.warning("SOL: webhook update failed %d: %s", resp.status, body[:200])
-            else:
-                # 创建新 webhook
-                async with self._session.post(
-                    f"{self._HELIUS_WEBHOOK_URL}?api-key={self._helius_key}",
-                    json={
-                        "webhookURL": webhook_url,
-                        "accountAddresses": sol_addresses,
-                        "transactionTypes": ["SWAP", "TRANSFER"],
-                        "webhookType": "enhanced",
-                    },
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status in (200, 201):
-                        data = await resp.json()
-                        self._webhook_id = data.get("webhookID")
-                        logger.info("SOL: webhook created %s for %d addresses", self._webhook_id, len(sol_addresses))
-                    else:
-                        body = await resp.text()
-                        logger.error("SOL: webhook create failed %d: %s", resp.status, body[:200])
-                        # 回退到 WS 模式
-                        logger.info("SOL: falling back to WS subscribe mode")
-                        await self._run_sol_ws_fallback()
-                        return
-
-        except Exception as e:
-            logger.error("SOL: webhook setup failed: %s, falling back to WS", e)
-            await self._run_sol_ws_fallback()
-            return
-
-        # Webhook 已注册，保持运行等待回调
-        logger.info("SOL: webhook active, waiting for callbacks")
-        while self._running:
-            await asyncio.sleep(60)  # 保持协程活跃
-
-    async def _handle_helius_webhook_txs(self, txs: List[Dict[str, Any]]):
-        """处理 Helius webhook 推送的交易列表"""
-        sol_wallet_set = {w["address"].lower(): w for w in self.wallets.get("solana", [])}
-
-        for tx in txs:
-            try:
-                sig = tx.get("signature", "")
-                if not sig or sig in self._seen_txids:
-                    continue
-                self._seen_txids.add(sig)
-
-                # 找到涉及的聪明钱地址
-                accounts = tx.get("accountData", [])
-                fee_payer = tx.get("feePayer", "")
-                involved_wallet = None
-
-                # 先检查 feePayer
-                if fee_payer.lower() in sol_wallet_set:
-                    involved_wallet = sol_wallet_set[fee_payer.lower()]
-                else:
-                    # 检查所有 accountData
-                    for acc in accounts:
-                        addr = acc.get("account", "")
-                        if addr.lower() in sol_wallet_set:
-                            involved_wallet = sol_wallet_set[addr.lower()]
-                            break
-
-                if not involved_wallet:
-                    continue
-
-                address = involved_wallet["address"]
-                parsed = []
-
-                # 解析 swap events
-                native_sol = 0.0
-                for nt in tx.get("nativeTransfers", []):
-                    if nt.get("fromUserAccount", "").lower() == address.lower():
-                        native_sol += abs(float(nt.get("amount", 0))) / 1e9
-
-                ts = tx.get("timestamp", 0)
-                tx_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat()
-
-                for event in tx.get("events", {}).get("swap", {}).get("tokenOutputs", []):
-                    mint = event.get("mint", "")
-                    if not mint or mint == "So11111111111111111111111111111111111111112":
-                        continue
-                    token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
-                    decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
-                    qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
-                    parsed.append({
-                        "token_address": mint,
-                        "type": "buy",
-                        "volume_usd": native_sol * 150,
-                        "_token_qty": qty,
-                        "_is_token_qty": True,
-                        "timestamp": tx_time,
-                    })
-
-                for event in tx.get("events", {}).get("swap", {}).get("tokenInputs", []):
-                    mint = event.get("mint", "")
-                    if not mint or mint == "So11111111111111111111111111111111111111112":
-                        continue
-                    token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
-                    decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
-                    qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
-                    parsed.append({
-                        "token_address": mint,
-                        "type": "sell",
-                        "volume_usd": 0.0,
-                        "_token_qty": qty,
-                        "_is_token_qty": True,
-                        "timestamp": tx_time,
-                    })
-
-                if parsed:
-                    signals, txns = self._aggregate([{**involved_wallet, "txs": parsed}], "solana")
-                    await self._enrich_and_save(signals, txns, "solana")
-
-            except Exception as e:
-                logger.debug("Webhook tx parse error: %s", e)
-
-    async def _run_sol_ws_fallback(self):
-        """WS 订阅模式（回退用，当 webhook 创建失败时）"""
-        sol_wallets = self.wallets.get("solana", [])
-        # 限制 WS 最多订阅 top 100（elite/verified 优先）
-        priority_order = {"elite": 0, "verified": 1, "watching": 2}
-        sol_wallets.sort(key=lambda w: priority_order.get(w.get("tier", "watching"), 2))
-        max_ws = min(len(sol_wallets), 100)
-        ws_wallets = sol_wallets[:max_ws]
-        logger.info("SOL WS fallback: subscribing %d / %d wallets", max_ws, len(sol_wallets))
-        backoff = 10  # 初始退避
+        logger.info(
+            "SOL DEX Monitor: watching %d programs, matching %d wallets",
+            len(self._SOL_DEX_PROGRAMS), len(self._sol_wallet_set),
+        )
+        backoff = 5
         while self._running:
             try:
-                await self._connect_sol_ws(ws_wallets)
-                backoff = 10  # 成功连接后重置
+                await self._connect_sol_dex_ws()
+                backoff = 5
             except Exception as e:
-                logger.warning("SOL WS disconnected: %s, reconnect in %ds", e, backoff)
+                logger.warning("SOL DEX WS disconnected: %s, reconnect in %ds", e, backoff)
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 300)  # 指数退避，最多 5 分钟
+                backoff = min(backoff * 2, 120)
 
-    async def _connect_sol_ws(self, sol_wallets: List[Dict[str, Any]]):
-        """WS 订阅模式（回退）"""
-        async with websockets.connect(_HELIUS_WS, ping_interval=20) as ws:
-            sub_id_to_wallet: Dict[int, Dict[str, Any]] = {}
-            req_id_to_wallet: Dict[int, Dict[str, Any]] = {}
-            for i, w in enumerate(sol_wallets):
-                req_id = i + 1
-                req_id_to_wallet[req_id] = w
+    async def _connect_sol_dex_ws(self):
+        """订阅 DEX 程序的 logsSubscribe，解析每笔 swap"""
+        async with websockets.connect(_HELIUS_WS, ping_interval=20, max_size=2**20) as ws:
+            # 每个 DEX 程序一个 logsSubscribe
+            for i, program_id in enumerate(self._SOL_DEX_PROGRAMS):
                 await ws.send(json.dumps({
-                    "jsonrpc": "2.0", "id": req_id,
-                    "method": "accountSubscribe",
-                    "params": [w["address"], {"encoding": "jsonParsed", "commitment": "processed"}]
+                    "jsonrpc": "2.0",
+                    "id": i + 1,
+                    "method": "logsSubscribe",
+                    "params": [
+                        {"mentions": [program_id]},
+                        {"commitment": "processed"},
+                    ],
                 }))
-                await asyncio.sleep(0.05)
-            logger.info("SOL WS: %d subscriptions sent", len(sol_wallets))
+                await asyncio.sleep(0.1)
+            logger.info("SOL DEX WS: %d program subscriptions sent", len(self._SOL_DEX_PROGRAMS))
+
             async for raw in ws:
                 if not self._running:
                     break
@@ -346,17 +225,110 @@ class SmartMoneyTracker:
                     msg = json.loads(raw)
                 except Exception:
                     continue
+
+                # 跳过订阅确认
                 if "id" in msg and "result" in msg:
-                    req_id = msg["id"]
-                    sub_id = msg["result"]
-                    if req_id in req_id_to_wallet:
-                        sub_id_to_wallet[sub_id] = req_id_to_wallet[req_id]
                     continue
-                if msg.get("method") == "accountNotification":
-                    sub_id = msg.get("params", {}).get("subscription")
-                    wallet = sub_id_to_wallet.get(sub_id)
+
+                # logsNotification → 解析 signature → 获取交易详情
+                if msg.get("method") == "logsNotification":
+                    params = msg.get("params", {})
+                    value = params.get("result", {}).get("value", {})
+                    sig = value.get("signature", "")
+                    err = value.get("err")
+                    if not sig or err or sig in self._seen_txids:
+                        continue
+                    self._seen_txids.add(sig)
+                    # 异步处理，不阻塞 WS 读取
+                    asyncio.create_task(self._process_sol_dex_tx(sig))
+
+    async def _process_sol_dex_tx(self, signature: str):
+        """获取交易详情，匹配聪明钱地址"""
+        try:
+            # Helius Enhanced Transaction API — 返回解析后的交易
+            url = f"https://api.helius.xyz/v0/transactions/?api-key={self._helius_key}"
+            async with self._session.post(
+                url,
+                json={"transactions": [signature]},
+                timeout=aiohttp.ClientTimeout(total=8),
+            ) as resp:
+                if resp.status != 200:
+                    return
+                txs = await resp.json()
+                if not txs:
+                    return
+                tx = txs[0]
+
+            # 检查 feePayer 是否是我们的钱包
+            fee_payer = tx.get("feePayer", "").lower()
+            wallet = self._sol_wallet_set.get(fee_payer)
+
+            if not wallet:
+                # 检查所有 accountData
+                for acc in tx.get("accountData", []):
+                    addr = acc.get("account", "").lower()
+                    wallet = self._sol_wallet_set.get(addr)
                     if wallet:
-                        asyncio.create_task(self._handle_sol_wallet_change(wallet))
+                        break
+
+            if not wallet:
+                return  # 不是我们的钱包
+
+            address = wallet["address"]
+            parsed = []
+
+            # 解析 swap events
+            native_sol = 0.0
+            for nt in tx.get("nativeTransfers", []):
+                if nt.get("fromUserAccount", "").lower() == address.lower():
+                    native_sol += abs(float(nt.get("amount", 0))) / 1e9
+
+            ts = tx.get("timestamp", 0)
+            tx_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat()
+
+            for event in tx.get("events", {}).get("swap", {}).get("tokenOutputs", []):
+                mint = event.get("mint", "")
+                if not mint or mint == "So11111111111111111111111111111111111111112":
+                    continue
+                token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
+                decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
+                qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
+                parsed.append({
+                    "token_address": mint,
+                    "type": "buy",
+                    "volume_usd": native_sol * 150,
+                    "_token_qty": qty,
+                    "_is_token_qty": True,
+                    "timestamp": tx_time,
+                })
+
+            for event in tx.get("events", {}).get("swap", {}).get("tokenInputs", []):
+                mint = event.get("mint", "")
+                if not mint or mint == "So11111111111111111111111111111111111111112":
+                    continue
+                token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
+                decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
+                qty = token_amount / (10 ** decimals) if decimals > 0 else token_amount
+                parsed.append({
+                    "token_address": mint,
+                    "type": "sell",
+                    "volume_usd": 0.0,
+                    "_token_qty": qty,
+                    "_is_token_qty": True,
+                    "timestamp": tx_time,
+                })
+
+            if parsed:
+                sym = wallet.get("tier", "watching")
+                logger.info(
+                    "[SOL DEX] 聪明钱交易 %s(%s): %d 笔 swap",
+                    address[:8], sym, len(parsed),
+                )
+                signals, txns = self._aggregate([{**wallet, "txs": parsed}], "solana")
+                await self._enrich_and_save(signals, txns, "solana")
+
+        except Exception as e:
+            logger.debug("SOL DEX tx %s: %s", signature[:12], e)
 
     async def _handle_sol_wallet_change(self, wallet: Dict[str, Any]):
         """WS触发后，立即拉该钱包最新1条SWAP交易"""
@@ -425,7 +397,129 @@ class SmartMoneyTracker:
             logger.debug("SOL handle_change %s: %s", address[:8], e)
 
     # ──────────────────────────────────────────────
-    # EVM: OKX 20路并发 + 优先级分组（全量追踪）
+    # EVM: DEX Swap 事件监控（毫秒级）
+    # ──────────────────────────────────────────────
+
+    # Swap event topic: Transfer/Swap 通用签名
+    _SWAP_TOPIC = "0xd78ad95fa46c994b6551d0da85fc275fe613ce37657fb8d5e3d130840159d822"  # UniswapV2 Swap
+    _SWAP_V3_TOPIC = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"  # UniswapV3 Swap
+
+    # 免费公共 WS 端点
+    _EVM_WS_ENDPOINTS = {
+        "eth": os.getenv("ETH_WS_URL", "wss://ethereum-rpc.publicnode.com"),
+        "bsc": os.getenv("BSC_WS_URL", "wss://bsc-rpc.publicnode.com"),
+        "base": os.getenv("BASE_WS_URL", "wss://base-rpc.publicnode.com"),
+    }
+
+    async def _run_evm_dex_monitor(self):
+        """监控 EVM DEX Swap 事件，匹配聪明钱"""
+        if not self._evm_wallet_set:
+            logger.warning("EVM DEX Monitor: no EVM wallets, skip")
+            return
+
+        tasks = []
+        for chain, ws_url in self._EVM_WS_ENDPOINTS.items():
+            if ws_url:
+                tasks.append(self._monitor_evm_chain(chain, ws_url))
+
+        if tasks:
+            logger.info("EVM DEX Monitor: watching %d chains, matching %d wallets",
+                        len(tasks), len(self._evm_wallet_set))
+            await asyncio.gather(*tasks)
+
+    async def _monitor_evm_chain(self, chain: str, ws_url: str):
+        """单链 DEX Swap 事件监控"""
+        backoff = 5
+        while self._running:
+            try:
+                await self._connect_evm_dex_ws(chain, ws_url)
+                backoff = 5
+            except Exception as e:
+                logger.warning("EVM DEX WS %s disconnected: %s, reconnect in %ds", chain, e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 120)
+
+    async def _connect_evm_dex_ws(self, chain: str, ws_url: str):
+        """订阅 EVM 链上 Swap 事件 log"""
+        async with websockets.connect(ws_url, ping_interval=20, max_size=2**20) as ws:
+            # 订阅 Swap 事件 (V2 + V3)
+            sub_msg = json.dumps({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "eth_subscribe",
+                "params": ["logs", {
+                    "topics": [[self._SWAP_TOPIC, self._SWAP_V3_TOPIC]],
+                }],
+            })
+            await ws.send(sub_msg)
+            logger.info("EVM DEX WS %s: subscribed to Swap events", chain)
+
+            async for raw in ws:
+                if not self._running:
+                    break
+                try:
+                    msg = json.loads(raw)
+                except Exception:
+                    continue
+
+                # 跳过订阅确认
+                if "id" in msg:
+                    continue
+
+                params = msg.get("params", {})
+                result = params.get("result", {})
+                if not result:
+                    continue
+
+                tx_hash = result.get("transactionHash", "")
+                if not tx_hash or tx_hash in self._seen_txids:
+                    continue
+
+                # Swap 事件的 topics[1] 或 topics[2] 通常是 sender/recipient
+                topics = result.get("topics", [])
+                data = result.get("data", "")
+
+                # 从 topics 提取地址（去掉前缀0x + 24个0）
+                involved_addrs = set()
+                for t in topics[1:]:
+                    if len(t) == 66:  # 0x + 64 hex
+                        addr = "0x" + t[26:]  # 取后 40 个字符
+                        involved_addrs.add(addr.lower())
+
+                # 检查是否匹配我们的钱包
+                matched_wallet = None
+                for addr in involved_addrs:
+                    wallet = self._evm_wallet_set.get(addr)
+                    if wallet:
+                        matched_wallet = wallet
+                        break
+
+                if not matched_wallet:
+                    continue
+
+                self._seen_txids.add(tx_hash)
+                # 异步获取交易详情
+                asyncio.create_task(
+                    self._process_evm_dex_swap(chain, tx_hash, matched_wallet)
+                )
+
+    async def _process_evm_dex_swap(self, chain: str, tx_hash: str, wallet: Dict[str, Any]):
+        """获取 EVM swap 交易详情"""
+        try:
+            # 使用 OKX 获取交易详情
+            txs = await self._get_evm_txs_okx(chain, wallet["address"])
+            if txs:
+                logger.info(
+                    "[EVM DEX] 聪明钱交易 %s(%s/%s): %d 笔",
+                    wallet["address"][:8], chain, wallet.get("tier", "?"), len(txs),
+                )
+                signals, txn_list = self._aggregate([{**wallet, "txs": txs}], chain)
+                await self._enrich_and_save(signals, txn_list, chain)
+        except Exception as e:
+            logger.debug("EVM DEX swap %s/%s: %s", chain, tx_hash[:12], e)
+
+    # ──────────────────────────────────────────────
+    # EVM: OKX 轮询（补充，覆盖非 DEX swap 交易）
     # ──────────────────────────────────────────────
 
     _EVM_GROUP_A_INTERVAL = 120   # elite/verified: 每 2 分钟一轮

@@ -49,8 +49,8 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | 模块 | 状态 | 备注 |
 |------|------|------|
 | pump.fun 采集 | ✅ 线上 | 三阶段+实时信号池：score>=55动态进出，APP 30s轮询 |
-| 热币扫描 | ✅ 线上 | OKX toplist，4链，10min发现/30s刷新 |
-| 聪明钱追踪 | ✅ 线上 | SOL ~400ms / EVM ~2.5s，55钱包 |
+| 热币扫描 | ✅ 线上 | OKX+GeckoTerminal 双源，毫秒级打分，进出榜单 |
+| 聪明钱追踪 | ✅ 线上 | SOL ~400ms / EVM ~2.5s，三层供给（miner+TopHolders+Dune），1506地址 |
 | KOL 舆情 | ✅ 线上 | 212 KOL，_evaluate_accuracy TODO |
 | Agent 交易 | ✅ 线上 | Claude LLM + OKX DEX，SOL+EVM |
 | Flutter App | ✅ 运行 | 模拟器 iPhone 17 Pro Max，i18n 4语言 |
@@ -58,6 +58,7 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | i18n 国际化 | ✅ 完成 | zh/en/ja/ko，275+ 本地化字符串，语言切换器 |
 | 合规 | ✅ | 免责声明Gate + CN IP屏蔽 + 推送限流 |
 | XGBoost ML | ⏸ 待训练 | 管线就绪，3/27 提醒 |
+| App Store 上架 | 🔄 进行中 | Build 2 已上传，待 Build 3（含新icon）+ 截图 + 提交审核 |
 | Firebase 推送 | ⏸ 待配置 | 需创建 Firebase 项目 |
 
 ## 待执行（手动）
@@ -115,6 +116,25 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
 - ✅ Flutter PicksScreen 重写：30s 轮询 /api/pump/signals 实时显示
 - ✅ nginx 新增 /api/pump/ 路由
 - ✅ **i18n 国际化**（commit fc4740a + 1158d63）：zh/en/ja/ko，275+ 字符串，语言切换器，QA 修复 80+ 遗漏
+- ✅ **App Store 上传**（Build 2 成功）：手动签名 + ATS 修复 + App 名称 AiTrading Pro
+- ✅ **App Icon 替换**：AI 大脑+K线图 icon（替换 Flutter 默认 logo）
+- ✅ **Build 3 + App Store 已提交审核**
+- ✅ **热币实时管理器**（commit 9f5d6fe + 332eb6d + 1cca6e0）：
+  - 毫秒级打分 + GeckoTerminal 发现 + 退出机制
+  - 表现追踪：发现瞬间价格 + D0~D30 涨幅 + 退出原因写入 DB
+  - Portal 修复：daily_highs key 映射 + D0 列 + hot_live source
+- ✅ **Hot Coin Optimizer Agent**（commit b775038）：AI 自动分析+优化热币推荐算法
+- ✅ **监控口径修正**（commit bdec08d）：7天窗口/1h涨幅/退出后3天追踪/D3命中率
+- ✅ **内盘 Bug 修复**（commit 533d43e）：isoformat crash + 零交易内存泄漏 + enrich 竞态
+- ✅ **聪明钱地址供给系统**（commits 988b51a + e28c4cc + 16a4102）：
+  - 三层供给：miner(+12) + TopHolders(实时) + Dune(+493)，总数 1506
+  - v3 五维度评估：胜率/PNL/规模/活跃度/时效性，总分100，2h评估
+  - 实时bot检测 + 14天降级/28天移除
+  - Dune 4链 Query: SOL(6850812) ETH(6858638) BSC(6858633) Base(6858622)
+  - DEX 程序级监控（毫秒级）：SOL logsSubscribe 5 DEX + EVM eth_subscribe Swap 3链
+  - HashSet 匹配：SOL 5222 + EVM 10540 地址，O(1) 23ns/lookup
+  - 分页加载修复：Supabase limit 1000 → 全量 15710
+  - 内盘 pump 评分自动联动全量地址库
 
 ---
 
@@ -275,6 +295,9 @@ solana=8  bsc=7  base=14  →  总计 29 个，strong=1，normal=6
 - **Python 3.9 不支持 `list[str]`（小写）**：用 `List[str]`
 - **Flutter withOpacity 弃用**：改 `withValues(alpha: ...)`
 - **Flutter i18n**: gen-l10n 需 `pub get` 触发；const 与 S.of(context) 冲突；Model 层不应返回本地化字符串
+- **iOS ATS**: 默认阻止 HTTP 明文连接，需 Info.plist `NSAllowsArbitraryLoads=true`
+- **Xcode 签名**: 命令行 archive 跳过签名(CODE_SIGNING_REQUIRED=NO)的 archive 无法 Distribute
+- **App Store**: "AI Trading" 名称已被占用；Flutter 默认 icon 会被拒绝
 - **GeckoTerminal 429 continue bug**：continue 跳下一页，应内层重试循环
 - **ETH/Arbitrum/Polygon 不适合热币策略**：分别因太老/太新被过滤
 - **token_trades 列名**：`bc_progress`（不是 bc_progress_at_buy）

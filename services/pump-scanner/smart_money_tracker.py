@@ -308,18 +308,21 @@ class SmartMoneyTracker:
     async def _run_sol_ws_fallback(self):
         """WS 订阅模式（回退用，当 webhook 创建失败时）"""
         sol_wallets = self.wallets.get("solana", [])
-        # 限制 WS 最多订阅 500 个（elite/verified 优先）
+        # 限制 WS 最多订阅 top 100（elite/verified 优先）
         priority_order = {"elite": 0, "verified": 1, "watching": 2}
         sol_wallets.sort(key=lambda w: priority_order.get(w.get("tier", "watching"), 2))
-        max_ws = min(len(sol_wallets), 500)
+        max_ws = min(len(sol_wallets), 100)
         ws_wallets = sol_wallets[:max_ws]
         logger.info("SOL WS fallback: subscribing %d / %d wallets", max_ws, len(sol_wallets))
+        backoff = 10  # 初始退避
         while self._running:
             try:
                 await self._connect_sol_ws(ws_wallets)
+                backoff = 10  # 成功连接后重置
             except Exception as e:
-                logger.warning("SOL WS disconnected: %s, reconnect in 5s", e)
-                await asyncio.sleep(5)
+                logger.warning("SOL WS disconnected: %s, reconnect in %ds", e, backoff)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 300)  # 指数退避，最多 5 分钟
 
     async def _connect_sol_ws(self, sol_wallets: List[Dict[str, Any]]):
         """WS 订阅模式（回退）"""

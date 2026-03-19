@@ -27,6 +27,7 @@ from api.routes_pump import router as pump_router
 from api.routes_optimizer import router as optimizer_router
 from api.geo_middleware import GeoBlockMiddleware
 from routes_smart_money import router as smart_money_router
+from api.routes_webhook import router as webhook_router
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,7 @@ app.include_router(device_router)
 app.include_router(pump_router)
 app.include_router(smart_money_router)
 app.include_router(optimizer_router)
+app.include_router(webhook_router)
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

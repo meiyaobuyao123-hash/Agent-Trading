@@ -424,3 +424,68 @@ async def unread_count(
     """获取未读告警数量"""
     count = get_unread_count(user_id)
     return {"unread_count": count}
+
+
+# ── 表现分析 ────────────────────────────────────────────
+
+@router.get("/performance/{strategy_id}")
+async def strategy_performance(
+    strategy_id: str,
+    days: int = Query(30, ge=1, le=90),
+    user_id: str = Depends(get_current_user),
+):
+    """获取策略表现指标（胜率/PNL/夏普率）"""
+    from agent.performance_analytics import get_strategy_performance
+    result = await get_strategy_performance(strategy_id, days)
+    return result
+
+
+@router.get("/portfolio")
+async def portfolio_summary(
+    user_id: str = Depends(get_current_user),
+):
+    """获取用户持仓汇总"""
+    from agent.performance_analytics import get_portfolio_summary
+    result = await get_portfolio_summary(user_id)
+    return result
+
+
+@router.get("/daily-pnl")
+async def daily_pnl(
+    days: int = Query(7, ge=1, le=30),
+    user_id: str = Depends(get_current_user),
+):
+    """获取每日 P&L 汇总"""
+    from agent.performance_analytics import get_daily_pnl_summary
+    result = await get_daily_pnl_summary(user_id, days)
+    return result
+
+
+# ── 策略回测 ────────────────────────────────────────────
+
+@router.post("/backtest")
+async def backtest(
+    req: ChatRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    回测策略：输入策略规范，返回历史模拟结果
+
+    请求体示例: {"message": "策略 JSON spec"}
+    """
+    from agent.backtester import backtest_strategy
+    import json
+
+    # 尝试解析为 JSON spec
+    try:
+        spec = json.loads(req.message)
+    except (json.JSONDecodeError, TypeError):
+        # 不是 JSON，先用 LLM 解析
+        result = await _llm_parser.parse_strategy(req.message)
+        if result is None:
+            return {"error": "无法解析策略", "trigger_count": 0}
+        spec, _ = result
+
+    days = (req.context or {}).get("days", 7)
+    result = await backtest_strategy(spec, days=days)
+    return result

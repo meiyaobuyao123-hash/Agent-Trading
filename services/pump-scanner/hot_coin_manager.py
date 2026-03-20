@@ -152,6 +152,17 @@ class HotCoinManager:
         # 节流写 DB
         self._schedule_db_write(addr, coin)
 
+        # 事件驱动：score 变化显著时发布给 Agent 策略评估
+        old_score = coin.get("_prev_score", result.total)
+        if abs(result.total - old_score) > 3 or result.total >= 60:
+            coin["_prev_score"] = result.total
+            try:
+                from agent.event_bus import get_event_bus
+                loop = asyncio.get_running_loop()
+                loop.create_task(get_event_bus().publish("data.hot_coin_update", dict(coin)))
+            except RuntimeError:
+                pass
+
     # ═══════════════════════════════════════════════════════════
     # 发现层回调：OKX/GeckoTerminal 扫描结果
     # ═══════════════════════════════════════════════════════════
@@ -284,12 +295,14 @@ class HotCoinManager:
         if discovery_price > 0:
             self._write_performance_entry(coin, today_str, discovery_price, result)
 
-        # 异步采集 Top Holders（不阻塞入榜）
+        # 异步采集 Top Holders + 事件驱动通知（不阻塞入榜）
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(self._collect_top_holders(addr, chain))
+            # 事件驱动：入榜时通知 Agent 策略评估
+            from agent.event_bus import get_event_bus
+            loop.create_task(get_event_bus().publish("data.hot_coin_update", dict(coin)))
         except RuntimeError:
-            # 如果没有运行中的事件循环，用 ensure_future
             try:
                 asyncio.ensure_future(self._collect_top_holders(addr, chain))
             except Exception:

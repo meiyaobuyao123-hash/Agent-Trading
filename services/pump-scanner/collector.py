@@ -485,6 +485,27 @@ class PumpScanner:
                 f"分={result.total} [{result.recommendation}]"
             )
 
+            # 事件驱动：通知 Agent 策略评估（bc >= 3% 且过了硬过滤的）
+            if bc_progress >= 3:
+                try:
+                    from agent.event_bus import get_event_bus
+                    await get_event_bus().publish("data.pump_snapshot", {
+                        "mint": mint,
+                        "symbol": f.symbol,
+                        "name": f.name,
+                        "score": result.total,
+                        "recommendation": result.recommendation,
+                        "bc_progress": bc_progress,
+                        "market_cap_sol": f.market_cap_sol,
+                        "unique_buyers": f.unique_buyers,
+                        "buy_sell_ratio": f.buy_sell_ratio_count,
+                        "smart_money_count": f.smart_money_buy_count,
+                        "dev_sold_pct": f.dev_sold_pct,
+                        "snapshot_at": now.isoformat(),
+                    })
+                except Exception:
+                    pass
+
             # ── 实时信号池维护 ──
             in_bc_window = BC_MIN_PCT <= f.bc_progress <= BC_MAX_PCT
             if result.total >= SIGNAL_MIN_SCORE and in_bc_window and result.recommendation != "skip":

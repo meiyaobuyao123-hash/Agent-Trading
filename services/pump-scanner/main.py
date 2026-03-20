@@ -361,6 +361,14 @@ async def main():
     asyncio.create_task(event_bus.start())
     log.info("EventBus started")
 
+    # 启动 Agent 事件驱动监听（毫秒级策略评估）
+    try:
+        from agent.event_listener import start_event_listener
+        asyncio.create_task(start_event_listener())
+        log.info("Agent EventListener started (event-driven strategy evaluation)")
+    except Exception as e:
+        log.warning(f"Agent EventListener 启动失败: {e}")
+
     # 启动 FastAPI（如果启用）
     if ENABLE_API:
         from api.app import start_api_server

@@ -130,6 +130,8 @@ class RiskManager:
             ("holders", lambda: self._check_holders(token_data)),
             ("concentration", lambda: self._check_concentration(token_data)),
             ("honeypot", lambda: self._check_honeypot(token_data)),
+            ("market_regime", lambda: self._check_market_regime(action)),
+            ("chain_concentration", lambda: self._check_chain_concentration(chain, action)),
         ]
         warnings: List[str] = []
         for name, check_fn in checks:
@@ -387,6 +389,66 @@ class RiskManager:
                 "trailing_stop_pct": self.config.trailing_stop_pct,
             },
         }
+
+
+    # ── 新增风控检查 ─────────────────────────────────────
+
+    def _check_market_regime(self, action: str) -> RiskCheckResult:
+        """BTC 大盘检测：10 分钟跌 > 3% 时 block 买入"""
+        if action != "buy":
+            return RiskCheckResult.ok()
+        try:
+            from price_feed import price_feed
+            btc_price = price_feed.get_major_price("BTC")
+            if not btc_price:
+                return RiskCheckResult.ok()
+
+            # 采样 BTC 价格
+            import time
+            now = time.time()
+            if not hasattr(self, "_btc_samples"):
+                self._btc_samples = []
+            self._btc_samples.append((now, btc_price))
+            # 保留 10 分钟内的采样
+            self._btc_samples = [(t, p) for t, p in self._btc_samples if now - t < 600]
+
+            if len(self._btc_samples) < 2:
+                return RiskCheckResult.ok()
+
+            oldest_price = self._btc_samples[0][1]
+            if oldest_price <= 0:
+                return RiskCheckResult.ok()
+
+            change_pct = (btc_price - oldest_price) / oldest_price
+            if change_pct < -0.03:
+                return RiskCheckResult.block(
+                    f"BTC 10min 跌 {change_pct*100:.1f}%，暂停买入"
+                )
+            if change_pct < -0.015:
+                return RiskCheckResult(
+                    passed=True,
+                    reason=f"BTC 10min 跌 {change_pct*100:.1f}%，建议减仓",
+                    risk_level="medium",
+                )
+        except Exception:
+            pass
+        return RiskCheckResult.ok()
+
+    def _check_chain_concentration(self, chain: str, action: str) -> RiskCheckResult:
+        """同链持仓集中度检查：同一链 > 5 个持仓时警告"""
+        if action != "buy":
+            return RiskCheckResult.ok()
+        same_chain = sum(
+            1 for pos in self._open_positions.values()
+            if pos.get("chain") == chain
+        )
+        if same_chain >= 5:
+            return RiskCheckResult(
+                passed=True,
+                reason=f"{chain} 链已有 {same_chain} 个持仓，建议分散",
+                risk_level="medium",
+            )
+        return RiskCheckResult.ok()
 
 
 _risk_manager: Optional[RiskManager] = None

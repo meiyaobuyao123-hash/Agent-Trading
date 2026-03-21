@@ -860,7 +860,7 @@ abstract class S {
   /// No description provided for @netFlowLabel.
   ///
   /// In zh, this message translates to:
-  /// **'净流向'**
+  /// **'净流入'**
   String get netFlowLabel;
 
   /// No description provided for @wallet.
@@ -902,7 +902,7 @@ abstract class S {
   /// No description provided for @txCount.
   ///
   /// In zh, this message translates to:
-  /// **'{count} 笔'**
+  /// **'笔'**
   String txCount(int count);
 
   /// No description provided for @learnTier.
@@ -1328,7 +1328,7 @@ abstract class S {
   /// No description provided for @buyPressure.
   ///
   /// In zh, this message translates to:
-  /// **'{pct}% 买压'**
+  /// **'买入'**
   String buyPressure(String pct);
 
   /// No description provided for @buyLabel.
@@ -2026,6 +2026,96 @@ abstract class S {
   /// In zh, this message translates to:
   /// **'等待中'**
   String get statusPending;
+
+  /// No description provided for @topHolders.
+  ///
+  /// In zh, this message translates to:
+  /// **'持仓排名'**
+  String get topHolders;
+
+  /// No description provided for @addressLabel.
+  ///
+  /// In zh, this message translates to:
+  /// **'地址'**
+  String get addressLabel;
+
+  /// No description provided for @holdingPct.
+  ///
+  /// In zh, this message translates to:
+  /// **'占比'**
+  String get holdingPct;
+
+  /// No description provided for @fundFlow24h.
+  ///
+  /// In zh, this message translates to:
+  /// **'24h 资金流向'**
+  String get fundFlow24h;
+
+  /// No description provided for @netInflow.
+  ///
+  /// In zh, this message translates to:
+  /// **'净流入'**
+  String get netInflow;
+
+  /// No description provided for @netOutflow.
+  ///
+  /// In zh, this message translates to:
+  /// **'净流出'**
+  String get netOutflow;
+
+  /// No description provided for @sellPressure.
+  ///
+  /// In zh, this message translates to:
+  /// **'卖出'**
+  String get sellPressure;
+
+  /// No description provided for @totalBuy.
+  ///
+  /// In zh, this message translates to:
+  /// **'总买入'**
+  String get totalBuy;
+
+  /// No description provided for @totalSell.
+  ///
+  /// In zh, this message translates to:
+  /// **'总卖出'**
+  String get totalSell;
+
+  /// No description provided for @largeOrders.
+  ///
+  /// In zh, this message translates to:
+  /// **'大额交易 (>\$10K)'**
+  String get largeOrders;
+
+  /// No description provided for @largeBuy.
+  ///
+  /// In zh, this message translates to:
+  /// **'大额买入'**
+  String get largeBuy;
+
+  /// No description provided for @largeSell.
+  ///
+  /// In zh, this message translates to:
+  /// **'大额卖出'**
+  String get largeSell;
+
+  /// No description provided for @tradeHistory.
+  ///
+  /// In zh, this message translates to:
+  /// **'交易分布'**
+  String get tradeHistory;
+
+  /// No description provided for @buySimple.
+  ///
+  /// In zh, this message translates to:
+  /// **'买入'**
+  String get buySimple;
+
+  /// No description provided for @sellSimple.
+  ///
+  /// In zh, this message translates to:
+  /// **'卖出'**
+  String get sellSimple;
 }
 
 class _SDelegate extends LocalizationsDelegate<S> {

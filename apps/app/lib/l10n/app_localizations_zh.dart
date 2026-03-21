@@ -418,7 +418,7 @@ class SZh extends S {
   String get totalOutflow => '总流出';
 
   @override
-  String get netFlowLabel => '净流向';
+  String get netFlowLabel => '净流入';
 
   @override
   String get wallet => '钱包';
@@ -446,7 +446,7 @@ class SZh extends S {
 
   @override
   String txCount(int count) {
-    return '$count 笔';
+    return '笔';
   }
 
   @override
@@ -695,7 +695,7 @@ class SZh extends S {
 
   @override
   String buyPressure(String pct) {
-    return '$pct% 买压';
+    return '买入';
   }
 
   @override
@@ -1059,4 +1059,49 @@ class SZh extends S {
 
   @override
   String get statusPending => '等待中';
+
+  @override
+  String get topHolders => '持仓排名';
+
+  @override
+  String get addressLabel => '地址';
+
+  @override
+  String get holdingPct => '占比';
+
+  @override
+  String get fundFlow24h => '24h 资金流向';
+
+  @override
+  String get netInflow => '净流入';
+
+  @override
+  String get netOutflow => '净流出';
+
+  @override
+  String get sellPressure => '卖出';
+
+  @override
+  String get totalBuy => '总买入';
+
+  @override
+  String get totalSell => '总卖出';
+
+  @override
+  String get largeOrders => '大额交易 (>\$10K)';
+
+  @override
+  String get largeBuy => '大额买入';
+
+  @override
+  String get largeSell => '大额卖出';
+
+  @override
+  String get tradeHistory => '交易分布';
+
+  @override
+  String get buySimple => '买入';
+
+  @override
+  String get sellSimple => '卖出';
 }

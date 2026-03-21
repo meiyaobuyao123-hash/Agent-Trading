@@ -419,7 +419,7 @@ class SKo extends S {
   String get totalOutflow => '유출';
 
   @override
-  String get netFlowLabel => '순흐름';
+  String get netFlowLabel => '순 흐름';
 
   @override
   String get wallet => '지갑';
@@ -447,7 +447,7 @@ class SKo extends S {
 
   @override
   String txCount(int count) {
-    return '$count건';
+    return '건';
   }
 
   @override
@@ -695,7 +695,7 @@ class SKo extends S {
 
   @override
   String buyPressure(String pct) {
-    return '$pct% 매수 압력';
+    return '매수';
   }
 
   @override
@@ -1059,4 +1059,49 @@ class SKo extends S {
 
   @override
   String get statusPending => '대기 중';
+
+  @override
+  String get topHolders => '보유 순위';
+
+  @override
+  String get addressLabel => '주소';
+
+  @override
+  String get holdingPct => '비율';
+
+  @override
+  String get fundFlow24h => '24h 자금 흐름';
+
+  @override
+  String get netInflow => '순 유입';
+
+  @override
+  String get netOutflow => '순 유출';
+
+  @override
+  String get sellPressure => '매도';
+
+  @override
+  String get totalBuy => '총 매수';
+
+  @override
+  String get totalSell => '총 매도';
+
+  @override
+  String get largeOrders => '대규모 거래 (>\$10K)';
+
+  @override
+  String get largeBuy => '대규모 매수';
+
+  @override
+  String get largeSell => '대규모 매도';
+
+  @override
+  String get tradeHistory => '거래 분포';
+
+  @override
+  String get buySimple => '매수';
+
+  @override
+  String get sellSimple => '매도';
 }

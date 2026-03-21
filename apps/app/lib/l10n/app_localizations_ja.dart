@@ -1059,4 +1059,49 @@ class SJa extends S {
 
   @override
   String get statusPending => '待機中';
+
+  @override
+  String get topHolders => '持仓排名';
+
+  @override
+  String get addressLabel => '地址';
+
+  @override
+  String get holdingPct => '占比';
+
+  @override
+  String get fundFlow24h => '24h 资金流向';
+
+  @override
+  String get netInflow => '净流入';
+
+  @override
+  String get netOutflow => '净流出';
+
+  @override
+  String get sellPressure => '卖出';
+
+  @override
+  String get totalBuy => '总买入';
+
+  @override
+  String get totalSell => '总卖出';
+
+  @override
+  String get largeOrders => '大额交易 (>\$10K)';
+
+  @override
+  String get largeBuy => '大额买入';
+
+  @override
+  String get largeSell => '大额卖出';
+
+  @override
+  String get tradeHistory => '交易分布';
+
+  @override
+  String get buySimple => '买入';
+
+  @override
+  String get sellSimple => '卖出';
 }

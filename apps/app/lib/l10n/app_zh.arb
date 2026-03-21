@@ -378,5 +378,25 @@
   "statusConfirmed": "已确认",
   "statusFailed": "失败",
   "statusSubmitting": "提交中",
-  "statusPending": "等待中"
+  "statusPending": "等待中",
+
+  "topHolders": "持仓排名",
+  "addressLabel": "地址",
+  "holdingPct": "占比",
+  "addressCopied": "地址已复制",
+  "fundFlow24h": "24h 资金流向",
+  "netFlowLabel": "净流入",
+  "netInflow": "净流入",
+  "netOutflow": "净流出",
+  "buyPressure": "买入",
+  "sellPressure": "卖出",
+  "totalBuy": "总买入",
+  "totalSell": "总卖出",
+  "txCount": "笔",
+  "largeOrders": "大额交易 (>$10K)",
+  "largeBuy": "大额买入",
+  "largeSell": "大额卖出",
+  "tradeHistory": "交易分布",
+  "buySimple": "买入",
+  "sellSimple": "卖出"
 }

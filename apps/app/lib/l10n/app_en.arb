@@ -347,5 +347,25 @@
   "statusConfirmed": "Confirmed",
   "statusFailed": "Failed",
   "statusSubmitting": "Submitting",
-  "statusPending": "Pending"
+  "statusPending": "Pending",
+
+  "topHolders": "Top Holders",
+  "addressLabel": "Address",
+  "holdingPct": "Holding %",
+  "addressCopied": "Address copied",
+  "fundFlow24h": "24h Fund Flow",
+  "netFlowLabel": "Net Flow",
+  "netInflow": "Net Inflow",
+  "netOutflow": "Net Outflow",
+  "buyPressure": "Buy",
+  "sellPressure": "Sell",
+  "totalBuy": "Total Buy",
+  "totalSell": "Total Sell",
+  "txCount": "txns",
+  "largeOrders": "Large Orders (>$10K)",
+  "largeBuy": "Large Buy",
+  "largeSell": "Large Sell",
+  "tradeHistory": "Trade Distribution",
+  "buySimple": "Buy",
+  "sellSimple": "Sell"
 }

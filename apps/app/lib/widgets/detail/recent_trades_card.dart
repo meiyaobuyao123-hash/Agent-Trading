@@ -8,7 +8,8 @@ class RecentTradesCard extends StatefulWidget {
   final String? pairAddress;
   final String network;
   final bool embedded;
-  const RecentTradesCard({super.key, this.pairAddress, required this.network, this.embedded = false});
+  final void Function(List<Map<String, dynamic>>)? onTradesLoaded;
+  const RecentTradesCard({super.key, this.pairAddress, required this.network, this.embedded = false, this.onTradesLoaded});
 
   @override
   State<RecentTradesCard> createState() => _RecentTradesCardState();
@@ -35,7 +36,10 @@ class _RecentTradesCardState extends State<RecentTradesCard> {
     try {
       final trades = await GeckoTerminalService.instance.fetchTrades(
         network: widget.network, poolAddress: widget.pairAddress!);
-      if (mounted) setState(() { _trades = trades; _loading = false; });
+      if (mounted) {
+        setState(() { _trades = trades; _loading = false; });
+        widget.onTradesLoaded?.call(trades);
+      }
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }

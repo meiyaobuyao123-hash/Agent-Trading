@@ -461,7 +461,7 @@ class SEn extends S {
 
   @override
   String txCount(int count) {
-    return '$count txns';
+    return 'txns';
   }
 
   @override
@@ -711,7 +711,7 @@ class SEn extends S {
 
   @override
   String buyPressure(String pct) {
-    return '$pct% buy pressure';
+    return 'Buy';
   }
 
   @override
@@ -1079,4 +1079,49 @@ class SEn extends S {
 
   @override
   String get statusPending => 'Pending';
+
+  @override
+  String get topHolders => 'Top Holders';
+
+  @override
+  String get addressLabel => 'Address';
+
+  @override
+  String get holdingPct => 'Holding %';
+
+  @override
+  String get fundFlow24h => '24h Fund Flow';
+
+  @override
+  String get netInflow => 'Net Inflow';
+
+  @override
+  String get netOutflow => 'Net Outflow';
+
+  @override
+  String get sellPressure => 'Sell';
+
+  @override
+  String get totalBuy => 'Total Buy';
+
+  @override
+  String get totalSell => 'Total Sell';
+
+  @override
+  String get largeOrders => 'Large Orders (>\$10K)';
+
+  @override
+  String get largeBuy => 'Large Buy';
+
+  @override
+  String get largeSell => 'Large Sell';
+
+  @override
+  String get tradeHistory => 'Trade Distribution';
+
+  @override
+  String get buySimple => 'Buy';
+
+  @override
+  String get sellSimple => 'Sell';
 }

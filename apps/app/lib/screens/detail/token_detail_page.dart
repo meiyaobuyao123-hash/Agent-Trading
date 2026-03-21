@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 import '../../utils/chain_utils.dart';
 import '../../models/token_detail.dart';
@@ -17,6 +19,9 @@ import '../../widgets/detail/recent_trades_card.dart';
 import '../../widgets/detail/holder_info_card.dart';
 import '../../widgets/detail/security_check_card.dart';
 import '../../widgets/detail/shimmer_skeleton.dart';
+import '../../widgets/detail/top_holders_card.dart';
+import '../../widgets/detail/fund_flow_card.dart';
+import '../../widgets/detail/trade_history_chart.dart';
 import '../../l10n/app_localizations.dart';
 
 class TokenDetailPage extends StatefulWidget {
@@ -45,6 +50,10 @@ class _TokenDetailPageState extends State<TokenDetailPage>
 
   bool _enrichLoading = true;
   bool _goplusLoading = true;
+
+  // ── Top Holders + 交易历史 ──
+  List<Map<String, dynamic>> _topHolders = [];
+  List<Map<String, dynamic>> _recentTradesRaw = [];
 
   // ── Bitget: 图表类型 + 指标 + 子Tab + 动态筛选 ──
   String _chartType = 'candle_solid'; // 'candle_solid' | 'area'
@@ -104,6 +113,28 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           _candleLoading = false;
         });
       }
+    }
+    // 异步加载 Top Holders（不阻塞主流程）
+    _loadTopHolders();
+  }
+
+  Future<void> _loadTopHolders() async {
+    try {
+      final chain = widget.token.chain;
+      final address = widget.token.address;
+      const baseUrl = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://43.156.207.26');
+      final url = '$baseUrl/api/token/$chain/$address/top-holders';
+      final resp = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200 && mounted) {
+        final data = json.decode(resp.body);
+        if (data is Map && data['holders'] is List) {
+          setState(() {
+            _topHolders = (data['holders'] as List).cast<Map<String, dynamic>>();
+          });
+        }
+      }
+    } catch (_) {
+      // 静默失败，Top Holders 是增强数据
     }
   }
 
@@ -547,7 +578,15 @@ class _TokenDetailPageState extends State<TokenDetailPage>
     switch (_subTabIndex) {
       case 0: return _buildTradingDynamicsContent(token);
       case 1: return Padding(padding: const EdgeInsets.all(16),
-                child: HolderInfoCard(token: token, goplus: _goplus, top1Pct: _top1Pct));
+                child: Column(
+                  children: [
+                    HolderInfoCard(token: token, goplus: _goplus, top1Pct: _top1Pct),
+                    if (_topHolders.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      TopHoldersCard(holders: _topHolders, embedded: true),
+                    ],
+                  ],
+                ));
       case 2: return _buildLiquidityContent(token);
       case 3: return _buildDevTokenContent(token);
       default: return const SizedBox();
@@ -556,11 +595,27 @@ class _TokenDetailPageState extends State<TokenDetailPage>
 
   // ── 交易动态 ──
   Widget _buildTradingDynamicsContent(TokenDetail token) {
+    // 计算资金流向数据
+    final bool use1h = _dynamicsTf == '5m' || _dynamicsTf == '1h';
+    final buys = use1h ? token.buys1h : token.buys24h;
+    final sells = use1h ? token.sells1h : token.sells24h;
+    final buyVol = use1h ? token.volume1hUsd * (buys / ((buys + sells).clamp(1, 999999))) : token.volume24hUsd * (buys / ((buys + sells).clamp(1, 999999)));
+    final sellVol = use1h ? token.volume1hUsd * (sells / ((buys + sells).clamp(1, 999999))) : token.volume24hUsd * (sells / ((buys + sells).clamp(1, 999999)));
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildDynamicsTimeFilter(),
         _buildTradingDynamicsGrid(token),
+        const SizedBox(height: 12),
+        // 资金流向卡片
+        FundFlowCard(
+          buyVolume: buyVol,
+          sellVolume: sellVol,
+          buyCount: buys,
+          sellCount: sells,
+          embedded: true,
+        ),
         const SizedBox(height: 16),
         _buildAllTradesHeader(),
         _buildTradeListHeader(),
@@ -568,7 +623,17 @@ class _TokenDetailPageState extends State<TokenDetailPage>
           pairAddress: _resolvedPair ?? token.pairAddress,
           network: token.geckoNetwork,
           embedded: true,
+          onTradesLoaded: (trades) {
+            if (mounted && _recentTradesRaw.isEmpty) {
+              setState(() => _recentTradesRaw = trades);
+            }
+          },
         ),
+        // 交易历史图表（在逐笔交易下方）
+        if (_recentTradesRaw.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          TradeHistoryChart(trades: _recentTradesRaw, embedded: true),
+        ],
       ],
     );
   }

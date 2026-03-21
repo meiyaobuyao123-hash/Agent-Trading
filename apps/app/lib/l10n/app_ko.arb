@@ -347,5 +347,25 @@
   "statusConfirmed": "확인됨",
   "statusFailed": "실패",
   "statusSubmitting": "제출 중",
-  "statusPending": "대기 중"
+  "statusPending": "대기 중",
+
+  "topHolders": "보유 순위",
+  "addressLabel": "주소",
+  "holdingPct": "비율",
+  "addressCopied": "주소가 복사되었습니다",
+  "fundFlow24h": "24h 자금 흐름",
+  "netFlowLabel": "순 흐름",
+  "netInflow": "순 유입",
+  "netOutflow": "순 유출",
+  "buyPressure": "매수",
+  "sellPressure": "매도",
+  "totalBuy": "총 매수",
+  "totalSell": "총 매도",
+  "txCount": "건",
+  "largeOrders": "대규모 거래 (>$10K)",
+  "largeBuy": "대규모 매수",
+  "largeSell": "대규모 매도",
+  "tradeHistory": "거래 분포",
+  "buySimple": "매수",
+  "sellSimple": "매도"
 }

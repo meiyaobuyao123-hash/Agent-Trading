@@ -29,6 +29,7 @@ from api.geo_middleware import GeoBlockMiddleware
 from routes_smart_money import router as smart_money_router
 from api.routes_webhook import router as webhook_router
 from api.routes_token import router as token_router
+from api.routes_btc_eth import router as btc_eth_router
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +71,7 @@ app.include_router(smart_money_router)
 app.include_router(optimizer_router)
 app.include_router(token_router)
 app.include_router(webhook_router)
+app.include_router(btc_eth_router)
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

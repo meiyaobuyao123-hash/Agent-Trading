@@ -369,6 +369,17 @@ async def main():
     except Exception as e:
         log.warning(f"Agent EventListener 启动失败: {e}")
 
+    # 启动 BTC/ETH 投资 Agent 模块
+    try:
+        from btc_eth.manager import BtcEthManager
+        from api.routes_btc_eth import set_manager as set_btc_eth_manager
+        btc_eth_manager = BtcEthManager()
+        asyncio.create_task(btc_eth_manager.start())
+        set_btc_eth_manager(btc_eth_manager)
+        log.info("BTC/ETH Investment Agent started")
+    except Exception as e:
+        log.warning(f"BTC/ETH 模块启动失败: {e}")
+
     # 启动 FastAPI（如果启用）
     if ENABLE_API:
         from api.app import start_api_server

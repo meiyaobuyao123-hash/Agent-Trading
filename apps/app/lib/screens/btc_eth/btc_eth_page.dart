@@ -39,21 +39,30 @@ class _BtcEthPageState extends State<BtcEthPage> {
 
   Future<void> _load() async {
     final svc = BtcEthService.instance;
-    final results = await Future.wait([
-      svc.fetchDashboard(),
-      svc.fetchSignals(limit: 20),
-      svc.fetchAlerts(),
-      svc.fetchLatestReport('BTC'),
-    ]);
+    try {
+      final results = await Future.wait([
+        svc.fetchDashboard(),
+        svc.fetchSignals(limit: 20),
+        svc.fetchAlerts(),
+        svc.fetchLatestReport('BTC'),
+      ]);
 
-    if (!mounted) return;
-    setState(() {
-      _dashboard = results[0] as BtcEthDashboard?;
-      _signals = results[1] as List<BtcEthSignal>;
-      _alerts = results[2] as List<BtcEthAlert>;
-      _btcReport = results[3] as BtcEthReport?;
-      _loading = false;
-    });
+      if (!mounted) return;
+      setState(() {
+        // 只在有新数据时更新，避免刷新失败清空旧数据
+        final newDash = results[0] as BtcEthDashboard?;
+        if (newDash != null) _dashboard = newDash;
+        final newSignals = results[1] as List<BtcEthSignal>;
+        if (newSignals.isNotEmpty || _signals.isEmpty) _signals = newSignals;
+        final newAlerts = results[2] as List<BtcEthAlert>;
+        _alerts = newAlerts;
+        final newReport = results[3] as BtcEthReport?;
+        if (newReport != null) _btcReport = newReport;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override

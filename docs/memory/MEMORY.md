@@ -166,4 +166,6 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - API: /api/btc-eth/* (health/indicators/dashboard/signals/alerts/reports)
   - DB: migration 025（6张表）
   - ⚠️ Blockchain.com WS 暂禁（消息量阻塞事件循环）→ 改用 REST
+  - ✅ DB migration 025 已执行（6 张表）
+  - ✅ API 正常：/api/btc-eth/health + dashboard + signals + alerts
   - 📝 Phase 5 Flutter UI 待做

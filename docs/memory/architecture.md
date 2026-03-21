@@ -122,6 +122,21 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 - `optimization_runs` / `optimization_proposals` / `optimization_metrics_history`（Migration 020）
 - 共 20 个 Migration
 
+### BTC/ETH 智能投资 Agent（btc_eth/ 独立模块）
+- **数据采集**（13 个 collector，全部免费）：
+  - 实时: Binance WS (BTC/ETH kline+ticker, 1连接6stream)
+  - 5min: Binance REST (大户多空/散户多空/OI/爆仓) + OKX REST (费率/多空/OI)
+  - 30min: CryptoPanic(新闻情绪) + Coinalyze(聚合OI) + Mempool(BTC拥堵)
+  - 4h: DeFiLlama(ETF/稳定币/TVL) + Blockchain.com(哈希率/矿工/活跃地址) + TwelveData(DXY/标普/黄金) + LunarCrush(社交) + Alternative.me(恐慌指数)
+  - Daily: Dune(交易所净流入/SOPR)
+  - ⚠️ Blockchain.com WS 暂禁（unconfirmed_sub 每秒数百条消息阻塞事件循环）
+- **指标引擎**: IndicatorEngine 50 项指标 + 5 项复合评分 + K线 ring buffer(200)
+- **AI 分析**: CycleAnalyzer(7阶段周期,规则+Claude) + SignalGenerator(规则预筛+Claude确认) + ReportGenerator(每日) + AlertGenerator(事件驱动)
+- **模拟盘**: PaperTradingEngine 自动执行信号 + 止盈止损 + 绩效(胜率/夏普/回撤)
+- **API**: /api/btc-eth/* (health/indicators/dashboard/signals/alerts/reports/portfolio)
+- **DB**: btc_eth_indicators / btc_eth_reports / btc_eth_signals / btc_eth_alerts / btc_eth_portfolios / btc_eth_paper_trades
+- **Claude**: BTCETH_CLAUDE_API_KEY（fallback 到 ANTHROPIC_API_KEY），Sonnet，~$23/月
+
 ## 服务器部署架构
 - 项目路径: `/opt/agent-trading/`
 - 端口: 8000=FastAPI后端, 3000=Portal(Next.js), 80=nginx入口

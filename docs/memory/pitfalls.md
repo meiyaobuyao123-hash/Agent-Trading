@@ -65,6 +65,10 @@
 - **Supabase 默认 limit 1000**：`_load_wallets` 只加载 1000 个，16623 个钱包丢失 94%。必须分页 `.range(offset, offset+999)`
 - **DEX 程序监控优于钱包监控**：监控 5 个 DEX 程序 = 覆盖所有钱包的 swap，而监控 16000 个钱包 = 429 限流
 
+## BTC/ETH 模块
+- **Blockchain.com WS unconfirmed_sub 阻塞事件循环**: 每秒推送数百笔未确认交易，json.loads 全部解析导致 asyncio 过载，FastAPI 完全无响应。必须禁用或用 REST 替代
+- **Binance WS 合并 stream**: 6 个 stream 用 1 个连接（`/stream?streams=a/b/c`），避免多连接
+
 ## iOS App Store / Xcode 签名
 - **命令行 archive 跳过签名不可行**: `CODE_SIGNING_REQUIRED=NO` 产生的 archive 无 team 信息，Distribute 报 "No Team Found in Archive"
 - **Xcode 自动签名需注册设备**: 无注册设备时无法创建 Development provisioning profile → 改用手动创建 App Store Distribution profile

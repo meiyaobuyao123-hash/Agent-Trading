@@ -135,6 +135,20 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
   - HashSet 匹配：SOL 5222 + EVM 10540 地址，O(1) 23ns/lookup
   - 分页加载修复：Supabase limit 1000 → 全量 15710
   - 内盘 pump 评分自动联动全量地址库
+- ✅ **Agent 事件驱动升级**（commit ce12609）：
+  - event_listener.py：EventBus 订阅毫秒级策略评估（替代 30s 轮询）
+  - performance_analytics.py：胜率/PNL/最大回撤/夏普率
+  - backtester.py：策略回测引擎（7 天历史数据）
+  - risk_manager.py：+2 风控检查（BTC 大盘 + 同链集中度），总 15 项
+  - 4 新 API：performance/portfolio/daily-pnl/backtest
+- ✅ **代币详情页增强**（commit c154732）：
+  - Top Holders 卡片 + 资金流向卡片 + 交易分布图表
+  - 新 API：/api/token/{chain}/{address}/top-holders
+- ✅ **BTC/ETH 智能投资 Agent**（commit 3d8aa82）：
+  - 13 个免费 collector（93-95% 覆盖率），Binance WS 实时 BTC/ETH 价格
+  - 50 项指标引擎 + AI 分析(周期/信号/报告/预警) + 模拟盘
+  - API: /api/btc-eth/*，DB: migration 025（6张表）
+  - Phase 5 Flutter UI 待做
 
 ---
 

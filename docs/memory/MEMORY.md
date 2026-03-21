@@ -152,3 +152,18 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - backtester.py：策略回测引擎（7 天历史数据）
   - risk_manager.py：+2 风控检查（BTC 大盘 + 同链集中度），总计 15 项
   - 4 个新 API：performance/portfolio/daily-pnl/backtest
+- ✅ **代币详情页增强**（commit c154732）：
+  - Top Holders 卡片：Top 10 持仓排名，地址+占比+进度条，一键复制
+  - 资金流向卡片：24h 净流入/流出，买卖力量条，大额交易统计
+  - 交易分布图表：30min 聚合柱状图，买卖对比
+  - 新 API：/api/token/{chain}/{address}/top-holders
+- ✅ **BTC/ETH 智能投资 Agent**（commit 3d8aa82 + 35421d8）：
+  - 13 个免费数据采集器（93-95% 覆盖率）：Binance WS/REST + OKX + CryptoPanic + DeFiLlama + Blockchain.com + TwelveData + LunarCrush + Coinalyze + Mempool + Alternative.me + Dune
+  - 50 项指标引擎 + 5 项复合评分（momentum/sentiment/onchain/macro/risk）
+  - 技术指标本地计算：RSI/MACD/布林带/ATR/MA/支撑阻力
+  - AI 分析层：CycleAnalyzer(7阶段周期) + SignalGenerator(两阶段) + ReportGenerator + AlertGenerator
+  - 模拟盘引擎：自动执行+止盈止损+绩效计算
+  - API: /api/btc-eth/* (health/indicators/dashboard/signals/alerts/reports)
+  - DB: migration 025（6张表）
+  - ⚠️ Blockchain.com WS 暂禁（消息量阻塞事件循环）→ 改用 REST
+  - 📝 Phase 5 Flutter UI 待做

@@ -35,7 +35,7 @@ class RiskDashboard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          // 三个指标卡片
+          // 三个指标卡片（点击查看解释）
           Row(
             children: [
               _indicatorCard(
@@ -45,6 +45,14 @@ class RiskDashboard extends StatelessWidget {
                 label: _fgiLabel(fgi),
                 color: _fgiColor(fgi),
                 progress: fgi / 100,
+                context: context,
+                explanation: 'Fear & Greed Index (0-100)\n\n'
+                    '0-20: Extreme Fear — Market panic, historically good buying opportunities\n'
+                    '20-40: Fear — Investors are worried, potential dip buying zone\n'
+                    '40-60: Neutral — No strong bias\n'
+                    '60-80: Greed — Market is heating up, be cautious\n'
+                    '80-100: Extreme Greed — FOMO territory, high risk of correction\n\n'
+                    'Current: $fgi (${_fgiLabel(fgi)})',
               ),
               const SizedBox(width: 8),
               _indicatorCard(
@@ -54,6 +62,14 @@ class RiskDashboard extends StatelessWidget {
                 label: _rsiLabel(rsi),
                 color: _rsiColor(rsi),
                 progress: rsi / 100,
+                context: context,
+                explanation: 'RSI - Relative Strength Index (0-100)\n\n'
+                    'Measures how fast price is moving up or down.\n\n'
+                    '0-30: Oversold — Price dropped too fast, may bounce up (buy signal)\n'
+                    '30-50: Weak — Downward pressure\n'
+                    '50-70: Normal — Healthy uptrend\n'
+                    '70-100: Overbought — Price rose too fast, may pull back (sell signal)\n\n'
+                    'Current: ${rsi.toStringAsFixed(0)} (${_rsiLabel(rsi)})',
               ),
               const SizedBox(width: 8),
               _indicatorCard(
@@ -63,51 +79,69 @@ class RiskDashboard extends StatelessWidget {
                 label: _fundingLabel(funding),
                 color: _fundingColor(funding),
                 progress: (funding * 5000 + 50).clamp(0, 100) / 100,
+                context: context,
+                explanation: 'Funding Rate (Futures Market)\n\n'
+                    'Shows which side (long/short) is paying the other in perpetual futures.\n\n'
+                    'Positive (>0.01%): Longs pay shorts — too many buyers, may drop\n'
+                    'Near zero: Balanced market\n'
+                    'Negative (<-0.005%): Shorts pay longs — too many sellers, may bounce\n\n'
+                    'Current: ${(funding * 100).toStringAsFixed(4)}% (${_fundingLabel(funding)})',
               ),
             ],
           ),
           const SizedBox(height: 10),
 
-          // 综合评分
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.03),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: data.scores.entries.map((e) {
-                final label = _scoreLabel(e.key);
-                final color = _scoreColor(e.value);
-                return Expanded(
-                  child: Column(
-                    children: [
-                      Text(label,
-                          style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 10)),
-                      const SizedBox(height: 4),
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            CircularProgressIndicator(
-                              value: e.value / 100,
-                              strokeWidth: 3,
-                              backgroundColor: Colors.white.withValues(alpha: 0.08),
-                              valueColor: AlwaysStoppedAnimation(color),
-                            ),
-                            Text('${e.value}',
-                                style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
-                          ],
+          // 综合评分（点击查看解释）
+          GestureDetector(
+            onTap: () => _showExplanation(context, 'Composite Scores',
+                'Five dimensions that together assess the overall market condition (0-100 each):\n\n'
+                'Trend — Price momentum (RSI + MACD + price change + OI change)\n'
+                'Mood — Market sentiment (Fear/Greed + funding rate + long/short ratio + news)\n'
+                'Chain — On-chain activity (exchange flow + active addresses + SOPR)\n'
+                'Macro — Macro environment (DXY + ETF flows + stablecoin supply)\n'
+                'Safety — Risk level (liquidations + funding extremes + order book depth)\n\n'
+                '>70 = Bullish  |  50 = Neutral  |  <30 = Bearish',
+                const Color(0xFF3B82F6)),
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.03),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: data.scores.entries.map((e) {
+                  final label = _scoreLabel(e.key);
+                  final color = _scoreColor(e.value);
+                  return Expanded(
+                    child: Column(
+                      children: [
+                        Text(label,
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.5),
+                                fontSize: 10)),
+                        const SizedBox(height: 4),
+                        SizedBox(
+                          width: 36,
+                          height: 36,
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              CircularProgressIndicator(
+                                value: e.value / 100,
+                                strokeWidth: 3,
+                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                valueColor: AlwaysStoppedAnimation(color),
+                              ),
+                              Text('${e.value}',
+                                  style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
             ),
           ),
         ],
@@ -122,34 +156,81 @@ class RiskDashboard extends StatelessWidget {
     required String label,
     required Color color,
     required double progress,
+    required String explanation,
+    required BuildContext context,
   }) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withValues(alpha: 0.15)),
+      child: GestureDetector(
+        onTap: () => _showExplanation(context, title, explanation, color),
+        child: Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: color.withValues(alpha: 0.15)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icon, color: color, size: 14),
+                  const SizedBox(width: 2),
+                  Icon(Icons.info_outline, color: Colors.white.withValues(alpha: 0.3), size: 10),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Text(value,
+                  style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 2),
+              Text(label,
+                  style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  minHeight: 3,
+                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  valueColor: AlwaysStoppedAnimation(color),
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  void _showExplanation(BuildContext context, String title, String text, Color color) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A2E),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => Padding(
+        padding: const EdgeInsets.all(20),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Icon(icon, color: color, size: 16),
-            const SizedBox(height: 4),
-            Text(value,
-                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(color: color.withValues(alpha: 0.8), fontSize: 10, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 4),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(2),
-              child: LinearProgressIndicator(
-                value: progress.clamp(0, 1),
-                minHeight: 3,
-                backgroundColor: Colors.white.withValues(alpha: 0.1),
-                valueColor: AlwaysStoppedAnimation(color),
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
             ),
+            const SizedBox(height: 16),
+            Text(title,
+                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Text(text,
+                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.6)),
+            const SizedBox(height: 20),
           ],
         ),
       ),

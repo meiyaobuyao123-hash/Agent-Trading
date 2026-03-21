@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'api_client.dart';
+import '../config/app_config.dart';
 import '../models/btc_eth.dart';
 
 /// BTC/ETH 投资 Agent API 服务
@@ -8,11 +9,12 @@ class BtcEthService {
   BtcEthService._();
 
   final _api = ApiClient.instance;
+  static const _base = AppConfig.backendBaseUrl;
 
   /// 获取仪表盘数据
   Future<BtcEthDashboard?> fetchDashboard() async {
     try {
-      final data = await _api.get('/api/btc-eth/dashboard');
+      final data = await _api.get('$_base/api/btc-eth/dashboard');
       if (data != null) return BtcEthDashboard.fromJson(data);
     } catch (e) {
       debugPrint('[BtcEthService] dashboard: $e');
@@ -39,7 +41,7 @@ class BtcEthService {
   /// 获取风险预警
   Future<List<BtcEthAlert>> fetchAlerts() async {
     try {
-      final data = await _api.get('/api/btc-eth/alerts');
+      final data = await _api.get('$_base/api/btc-eth/alerts');
       if (data != null) {
         final list = data['alerts'] as List<dynamic>? ?? [];
         return list.map((j) => BtcEthAlert.fromJson(j as Map<String, dynamic>)).toList();
@@ -53,7 +55,7 @@ class BtcEthService {
   /// 获取最新周期报告
   Future<BtcEthReport?> fetchLatestReport(String asset) async {
     try {
-      final data = await _api.get('/api/btc-eth/reports/$asset/latest');
+      final data = await _api.get('$_base/api/btc-eth/reports/$asset/latest');
       if (data != null && data['error'] == null) {
         return BtcEthReport.fromJson(data);
       }
@@ -66,7 +68,7 @@ class BtcEthService {
   /// 获取指标数据
   Future<Map<String, dynamic>?> fetchIndicators(String asset) async {
     try {
-      return await _api.get('/api/btc-eth/indicators/$asset');
+      return await _api.get('$_base/api/btc-eth/indicators/$asset');
     } catch (e) {
       debugPrint('[BtcEthService] indicators: $e');
     }
@@ -76,7 +78,7 @@ class BtcEthService {
   /// 获取健康状态
   Future<Map<String, dynamic>?> fetchHealth() async {
     try {
-      return await _api.get('/api/btc-eth/health');
+      return await _api.get('$_base/api/btc-eth/health');
     } catch (e) {
       debugPrint('[BtcEthService] health: $e');
     }

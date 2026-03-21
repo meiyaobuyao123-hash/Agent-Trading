@@ -91,9 +91,11 @@ class BtcEthManager:
                 await c.init()
 
         # 启动各组件
+        # 注意：Blockchain.com WS unconfirmed_sub 每秒数百条消息，
+        # 解析阻塞事件循环导致 FastAPI 挂掉。暂时禁用，改用 REST 轮询。
         tasks = [
             asyncio.create_task(self._binance_ws.start()),
-            asyncio.create_task(self._blockchain_ws.start()),
+            # asyncio.create_task(self._blockchain_ws.start()),  # 暂禁：消息量过大
             asyncio.create_task(self._high_freq_loop()),
             asyncio.create_task(self._mid_freq_loop()),
             asyncio.create_task(self._low_freq_loop()),

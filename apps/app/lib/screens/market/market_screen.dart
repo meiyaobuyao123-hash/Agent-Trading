@@ -19,6 +19,7 @@ import '../../widgets/smart_money_detail_sheet.dart';
 import '../../widgets/shimmer_list.dart';
 import '../../l10n/app_localizations.dart';
 import '../detail/token_detail_page.dart';
+import '../btc_eth/btc_eth_page.dart';
 
 class MarketScreen extends StatefulWidget {
   const MarketScreen({super.key});
@@ -227,7 +228,7 @@ class _MarketScreenState extends State<MarketScreen> {
               padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
               child: _GlassSegment(
                 selected: _segment,
-                items: [t.hotCoins, t.smartMoney, t.newCoins],
+                items: [t.hotCoins, t.smartMoney, t.newCoins, 'BTC/ETH'],
                 onChanged: (v) {
                   HapticFeedback.selectionClick();
                   setState(() => _segment = v);
@@ -340,19 +341,22 @@ class _MarketScreenState extends State<MarketScreen> {
               ),
             ),
 
-          CupertinoSliverRefreshControl(
-            onRefresh: () {
-              if (_segment == 0) return _loadHot();
-              if (_segment == 1) return _loadSmartMoney();
-              return _loadPicks();
-            },
-          ),
+          if (_segment != 3)  // BTC/ETH 有自己的刷新机制
+            CupertinoSliverRefreshControl(
+              onRefresh: () {
+                if (_segment == 0) return _loadHot();
+                if (_segment == 1) return _loadSmartMoney();
+                return _loadPicks();
+              },
+            ),
           if (_segment == 0)
             ..._buildHotContent()
           else if (_segment == 1)
             ..._buildSmartMoneyContent()
+          else if (_segment == 2)
+            ..._buildPicksContent()
           else
-            ..._buildPicksContent(),
+            ..._buildBtcEthContent(),
 
           // 底部留白（给浮动 Tab Bar 留空间）
           const SliverToBoxAdapter(child: SizedBox(height: 100)),
@@ -579,6 +583,15 @@ class _MarketScreenState extends State<MarketScreen> {
             ),
           ),
         ),
+      ),
+    ];
+  }
+
+  List<Widget> _buildBtcEthContent() {
+    return [
+      SliverFillRemaining(
+        hasScrollBody: true,
+        child: const BtcEthPage(),
       ),
     ];
   }

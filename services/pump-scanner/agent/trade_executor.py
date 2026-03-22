@@ -224,11 +224,19 @@ class TradeExecutor:
             elif action == "sell":
                 from_token = token_address
                 to_token = USDC_ADDRESS.get(chain, NATIVE_TOKEN[chain])
-                # TODO: 查询持仓数量，全部卖出
-                return TradeResult(
-                    success=False, error="Sell execution not yet implemented (need position query)",
-                    chain=chain, token_address=token_address, action=action,
-                )
+                # 查询链上代币余额
+                balance_raw = await self._query_token_balance(chain, wallet_addr, token_address)
+                if balance_raw <= 0:
+                    return TradeResult(
+                        success=False, error="Token balance is zero, nothing to sell",
+                        chain=chain, token_address=token_address, action=action,
+                    )
+                # 支持部分卖出（amount_usd < 0 表示全仓，>0 表示卖出指定比例）
+                sell_pct = min(amount_usd, 1.0) if 0 < amount_usd <= 1.0 else 1.0
+                amount_raw = str(int(balance_raw * sell_pct))
+                # EVM 需要 approve
+                if chain != "solana":
+                    await self._approve_if_needed(chain, wallet_addr, token_address, priv_key, amount_raw)
             else:
                 return TradeResult(
                     success=False, error=f"Unknown action: {action}",
@@ -288,8 +296,16 @@ class TradeExecutor:
 
             # 计算价格 — 使用 OKX 返回的 toTokenDecimalNum 而非硬编码
             to_decimals = int(router_result.get("toTokenDecimalNum", 6))
+            from_decimals = int(router_result.get("fromTokenDecimalNum", 6))
             to_amount_float = float(to_amount_raw) / (10 ** to_decimals)
-            price = amount_usd / to_amount_float if to_amount_float > 0 and action == "buy" else 0
+            from_amount_float = float(amount_raw) / (10 ** from_decimals)
+
+            if action == "buy":
+                price = amount_usd / to_amount_float if to_amount_float > 0 else 0
+            else:
+                # 卖出：to_amount 是 USDC，即卖出所得 USD
+                price = to_amount_float / from_amount_float if from_amount_float > 0 else 0
+                amount_usd = to_amount_float  # 实际卖出所得
 
             result = TradeResult(
                 success=True,
@@ -550,7 +566,142 @@ class TradeExecutor:
             log.error(f"Failed to record execution: {e}")
 
 
-# ── 全局单例 ──────────────────────────────────────────────────
+    # ── 代币余额查询 ─────────────────────────────────────────
+
+    async def _query_token_balance(self, chain: str, wallet: str, token_address: str) -> int:
+        """查询链上代币余额（返回最小单位 raw amount）"""
+        try:
+            if chain == "solana":
+                return await self._query_sol_balance(wallet, token_address)
+            else:
+                return await self._query_evm_balance(chain, wallet, token_address)
+        except Exception as e:
+            log.error(f"Balance query error {chain}/{token_address[:10]}: {e}")
+            return 0
+
+    async def _query_sol_balance(self, wallet: str, token_mint: str) -> int:
+        """Solana SPL 代币余额"""
+        session = await self._get_session()
+        from config import HELIUS_RPC
+        rpc_url = HELIUS_RPC if HELIUS_RPC else SOLANA_RPC
+
+        payload = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "getTokenAccountsByOwner",
+            "params": [
+                wallet,
+                {"mint": token_mint},
+                {"encoding": "jsonParsed"},
+            ],
+        }
+        async with session.post(rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            data = await resp.json()
+            accounts = data.get("result", {}).get("value", [])
+            if not accounts:
+                return 0
+            info = accounts[0].get("account", {}).get("data", {}).get("parsed", {}).get("info", {})
+            amount = info.get("tokenAmount", {}).get("amount", "0")
+            return int(amount)
+
+    async def _query_evm_balance(self, chain: str, wallet: str, token_address: str) -> int:
+        """ERC20 代币余额"""
+        session = await self._get_session()
+        rpc_url = EVM_RPC.get(chain, "")
+        if not rpc_url:
+            return 0
+
+        # balanceOf(address) = 0x70a08231
+        addr_padded = wallet[2:].lower().zfill(64) if wallet.startswith("0x") else wallet.zfill(64)
+        call_data = "0x70a08231" + addr_padded
+
+        payload = {
+            "jsonrpc": "2.0", "id": 1,
+            "method": "eth_call",
+            "params": [{"to": token_address, "data": call_data}, "latest"],
+        }
+        async with session.post(rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+            data = await resp.json()
+            result = data.get("result", "0x0")
+            return int(result, 16) if result and result != "0x" else 0
+
+    # ── EVM Approve ────────────────────────────────────────────
+
+    async def _approve_if_needed(
+        self, chain: str, wallet: str, token_address: str,
+        private_key: str, amount_raw: str,
+    ):
+        """EVM 卖出前检查 allowance，不足则发 approve 交易"""
+        try:
+            session = await self._get_session()
+            rpc_url = EVM_RPC.get(chain, "")
+            if not rpc_url:
+                return
+
+            # OKX DEX Router 地址（approve 的 spender）
+            # 从 OKX swap 返回的 tx.to 获取，这里用已知的聚合器地址
+            spender = "0x40aA958dd87FC8305b97f2BA922CDdCa374bcD7f"  # OKX DEX Router
+
+            # 查 allowance: allowance(owner, spender) = 0xdd62ed3e
+            owner_padded = wallet[2:].lower().zfill(64)
+            spender_padded = spender[2:].lower().zfill(64)
+            call_data = "0xdd62ed3e" + owner_padded + spender_padded
+
+            payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "eth_call",
+                "params": [{"to": token_address, "data": call_data}, "latest"],
+            }
+            async with session.post(rpc_url, json=payload, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                data = await resp.json()
+                allowance = int(data.get("result", "0x0"), 16)
+
+            needed = int(amount_raw)
+            if allowance >= needed:
+                return  # 已 approve 过
+
+            log.info(f"Approving {token_address[:10]} for OKX DEX on {chain}")
+
+            # approve(spender, MAX_UINT256) = 0x095ea7b3
+            max_uint = "f" * 64
+            approve_data = "0x095ea7b3" + spender_padded + max_uint
+
+            from eth_account import Account
+            account = Account.from_key(private_key)
+            nonce = await self._get_evm_nonce(chain, account.address)
+            chain_id = EVM_CHAIN_ID.get(chain, 1)
+
+            tx = {
+                "to": token_address,
+                "data": approve_data,
+                "value": 0,
+                "gas": 60000,
+                "gasPrice": 5_000_000_000,  # 5 gwei default
+                "chainId": chain_id,
+                "nonce": nonce,
+            }
+            signed = account.sign_transaction(tx)
+            tx_hex = signed.raw_transaction.hex()
+            if not tx_hex.startswith("0x"):
+                tx_hex = "0x" + tx_hex
+
+            # 广播 approve
+            broadcast_payload = {
+                "jsonrpc": "2.0", "id": 1,
+                "method": "eth_sendRawTransaction",
+                "params": [tx_hex],
+            }
+            async with session.post(rpc_url, json=broadcast_payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                data = await resp.json()
+                if "error" in data:
+                    log.warning(f"Approve failed: {data['error']}")
+                else:
+                    log.info(f"Approve tx: {data.get('result', '')}")
+                    await asyncio.sleep(3)  # 等待 approve 确认
+
+        except Exception as e:
+            log.warning(f"Approve check/send error: {e}")
+
+    # ── 全局单例 ──────────────────────────────────────────────────
 
 _executor: Optional[TradeExecutor] = None
 

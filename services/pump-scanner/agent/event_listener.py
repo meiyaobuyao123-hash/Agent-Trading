@@ -54,9 +54,10 @@ async def start_event_listener():
     bus.subscribe("data.hot_coin_update", _on_hot_coin_event)
     bus.subscribe("data.pump_snapshot", _on_pump_event)
     bus.subscribe("data.kol_signal", _on_kol_event)
+    bus.subscribe("data.hot_coin_update", _on_price_for_positions)
 
     log.info(
-        "Agent EventListener 已启动: 订阅 hot_coin_update / pump_snapshot / kol_signal"
+        "Agent EventListener 已启动: 订阅 hot_coin_update / pump_snapshot / kol_signal + 持仓监控"
     )
 
 
@@ -226,6 +227,23 @@ def _get_cached_strategies(source: str) -> list:
     strategies = _strategy_mgr.get_active_strategies(data_source=source)
     _strategy_cache[source] = (strategies, now)
     return strategies
+
+
+async def _on_price_for_positions(event_data: Dict[str, Any]):
+    """价格变动 → 检查持仓止盈止损"""
+    try:
+        data = event_data.get("data", event_data)
+        token_addr = data.get("address", "")
+        chain = data.get("chain", "")
+        price = float(data.get("price_usd") or 0)
+        if not token_addr or price <= 0:
+            return
+
+        from agent.position_monitor import get_position_monitor
+        monitor = get_position_monitor()
+        await monitor.check_all({f"{chain}:{token_addr}": price, token_addr: price})
+    except Exception as e:
+        log.debug(f"[PositionMonitor] price event error: {e}")
 
 
 def get_event_listener_stats() -> dict:

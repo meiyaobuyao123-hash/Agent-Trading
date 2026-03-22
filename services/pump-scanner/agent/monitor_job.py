@@ -54,11 +54,38 @@ async def run_agent_monitor():
         kol_events = await _build_kol_events()
         total_triggered += await _process_events(kol_events, "kol_signals")
 
+        # 4. 持仓止盈止损检查（fallback，event_listener 是主力）
+        await _check_position_exits()
+
         if total_triggered > 0:
             log.info(f"Agent monitor: {total_triggered} strategies triggered")
 
     except Exception as e:
         log.error(f"Agent monitor error: {e}")
+
+
+async def _check_position_exits():
+    """30s fallback: 检查所有持仓的止盈止损"""
+    try:
+        from agent.position_monitor import get_position_monitor
+        monitor = get_position_monitor()
+
+        # 从 hot_coins 获取当前价格
+        db = get_db()
+        prices = {}
+        hot_res = db.table("hot_coins").select("chain, address, price_usd").execute()
+        for coin in (hot_res.data or []):
+            addr = coin.get("address", "")
+            chain = coin.get("chain", "")
+            price = float(coin.get("price_usd") or 0)
+            if addr and price > 0:
+                prices[f"{chain}:{addr}"] = price
+                prices[addr] = price
+
+        if prices:
+            await monitor.check_all(prices)
+    except Exception as e:
+        log.debug(f"Position exit check error: {e}")
 
 
 async def _process_events(

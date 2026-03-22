@@ -148,7 +148,7 @@ async def run_tests():
 
         try:
             async with sess.get(
-                "http://127.0.0.1:8000/api/agent/performance?user_id=test",
+                "http://127.0.0.1:8000/api/agent/performance/00000000-0000-0000-0000-000000000001",
                 timeout=aiohttp.ClientTimeout(total=10),
             ) as r:
                 (ok if r.status == 200 else fail)("IT-01c Performance", f"status={r.status}")
@@ -158,7 +158,7 @@ async def run_tests():
         try:
             async with sess.post(
                 "http://127.0.0.1:8000/api/agent/backtest",
-                json={"strategy": {"conditions": {"min_score": 70}, "actions": [{"type": "buy", "amount_usd": 100}]}, "days": 7},
+                json={"message": "{\"conditions\":{\"min_score\":70},\"actions\":[{\"type\":\"buy\",\"amount_usd\":100}]}", "user_id": "test"},
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as r:
                 (ok if r.status == 200 else fail)("IT-01d Backtest", f"status={r.status}")

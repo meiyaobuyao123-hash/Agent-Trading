@@ -556,3 +556,63 @@
 - **backtester.py 新建**：策略回测（7 天历史，模拟胜率/触发次数）
 - **risk_manager.py**：+2 检查（BTC 大盘 + 同链集中度），总计 15 项
 - **routes_agent.py**：4 个新端点（performance/portfolio/daily-pnl/backtest）
+
+---
+
+## 2026-03-22 会话（BTC/ETH Agent + 代币详情页 + Portal + App Store）
+
+### 做了什么
+- **代币详情页增强**（commit c154732）：
+  - Top Holders 卡片：Top 10 持仓排名，地址+占比+进度条，一键复制
+  - 资金流向卡片：24h 净流入/流出，买卖力量条，大额交易统计
+  - 交易分布图表：30min 聚合柱状图，买卖对比
+  - 新 API：/api/token/{chain}/{address}/top-holders
+- **BTC/ETH 智能投资 Agent**（commit 3d8aa82 + 35421d8）：
+  - 13 个免费数据采集器（93-95% 覆盖率）
+  - Binance WS/REST + OKX + CryptoPanic + DeFiLlama + Blockchain.com + TwelveData + LunarCrush + Coinalyze + Mempool + Alternative.me + Dune
+  - 50 项指标引擎 + 5 项复合评分（momentum/sentiment/onchain/macro/risk）
+  - 技术指标本地计算：RSI/MACD/布林带/ATR/MA/支撑阻力
+  - AI 分析层：CycleAnalyzer(7阶段周期) + SignalGenerator(两阶段) + ReportGenerator + AlertGenerator
+  - 模拟盘引擎：自动执行+止盈止损+绩效计算
+  - API: /api/btc-eth/* (health/indicators/dashboard/signals/alerts/reports)
+  - DB: migration 025（6张表）已执行
+  - ⚠️ Blockchain.com WS 暂禁（消息量阻塞事件循环）→ 改用 REST
+- **App Store 上传**：
+  - Build 3: ATS 修复 + 新 icon（alpha 通道移除）→ 已提交审核
+  - Build 4: Agent 90s 超时修复 → 替换 Build 3
+  - Build 5: objective_c.framework x86_64 模拟器架构错误 → 验证失败
+  - Build 6: Podfile strip_simulator_archs 修复 → IPA 构建成功，待验证上传
+  - App 改名：AiTrading Pro → Future Trading
+- **Portal BTC/ETH 看板**（commit 47fef65）：
+  - 重写为质量监控看板（去掉价格/指标展示）
+  - 6 核心 KPI：总信号/胜率/累计收益/盈亏比/7天/30天
+  - 信号追踪表：入场价 vs 1h/4h/24h/72h 实际走势
+  - 采集器健康折叠展示
+  - 部署到服务器 http://43.156.207.26/btc-eth
+- **Flutter BTC/ETH 页面**：
+  - Market 新增 "BTC/ETH" tab
+  - 实时价格卡片 + 风险仪表盘（恐慌指数/RSI/资金费率）
+  - Dashboard 交互优化：点击指标弹出解释 + i18n 多语言
+  - 钱包删除功能
+- **记忆文件同步到 GitHub**：docs/memory/（排除 credentials.md）
+- **预测市场分析**：市场规模/竞品/用户痛点/切入方案（纯研究，未实现）
+
+### 讨论结论
+- **Portal 看板定位错误纠正**：看板目标是"监控 Agent 信号质量"，不是再展示一遍价格和指标
+- **Blockchain.com WS 必须禁用**：unconfirmed_sub 每秒推送数百条消息，json.loads 全部解析导致 asyncio 事件循环阻塞，FastAPI 完全无响应
+- **objective_c.framework 问题**：path_provider_foundation 依赖 objective_c 9.3.0，包含模拟器架构 x86_64，App Store 拒绝。需 Podfile post_install 剥离
+- **Agent 30s 超时不够**：服务器后台任务增多（DEX 监控/聪明钱追踪等），事件循环拥堵导致 Claude API 响应变慢，Flutter 超时改为 90s
+- **数据源覆盖率优化路径**：55% → 85% → 93-95%，通过深挖 Binance 未用数据 + Blockchain.com + DeFiLlama + TwelveData + LunarCrush
+- **模拟盘验证机制**：用户先模拟投 $10,000 观察 Agent 表现，确认赚钱后切实盘
+- **聪明钱全量追踪方案**：不监控 16,000 钱包 → 监控 5 个 DEX 程序（Raydium/Jupiter/Uniswap/PancakeSwap/Aerodrome），HashSet O(1) 匹配
+
+### 踩坑记录
+- Blockchain.com WS `unconfirmed_sub` 阻塞事件循环（每秒 100+ 条消息）
+- objective_c.framework 含 x86_64 模拟器架构，App Store 验证失败
+- Agent HTTP 超时：后台任务增多后 Claude API 响应从 12s 变为 20-30s
+- App Store Connect 名称 "AiTrading Pro" 后改为 "Future Trading"
+
+### 被否定的方案
+- ~~Blockchain.com WS 实时大额转账~~：消息量太大，改用 REST 4h 轮询
+- ~~Portal 展示价格/指标~~：看板目标是监控信号质量，不是再做一次行情展示
+- ~~30s Agent 超时~~：不够用，改 90s

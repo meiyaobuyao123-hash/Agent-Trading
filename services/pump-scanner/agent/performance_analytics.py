@@ -246,6 +246,7 @@ def _empty_performance() -> dict:
     return {
         "total_executions": 0, "paired_trades": 0,
         "wins": 0, "losses": 0, "win_rate": 0,
+        "actual_win_rate": 0, "theoretical_win_rate": 0,
         "avg_pnl_ratio": 0, "total_invested_usd": 0,
         "total_returned_usd": 0, "realized_pnl_usd": 0,
         "max_drawdown_pct": 0, "sharpe_ratio": 0,

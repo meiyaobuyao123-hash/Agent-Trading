@@ -113,7 +113,7 @@ async def run_tests():
 
     # === UT-07: PerformanceAnalytics ===
     from agent.performance_analytics import get_strategy_performance
-    perf = await get_strategy_performance(user_id="test")
+    perf = await get_strategy_performance(strategy_id="00000000-0000-0000-0000-000000000001")
     ok("UT-07 Performance", f"trades={perf.get('total_trades', 0)}")
 
     # === UT-08: Backtester ===

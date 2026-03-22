@@ -119,19 +119,19 @@ async def run_tests():
     # === IT-01: Full 15 checks pass ===
     rm_full = RiskManager()
     # pre_trade_check needs chain/token_address/action/amount_usd
-    full_result = rm_full.pre_trade_check(
-        chain="solana",
-        token_address="So11111111111111111111111111111111111111112",
-        action="buy",
-        amount_usd=50.0,
-    )
-    checks_run = full_result.get("checks_run", 0)
-    approved = full_result.get("approved", False)
-    if approved:
-        ok("IT-01 full 15 checks", f"approved=True, checks={checks_run}")
-    else:
-        # May fail due to no wallet etc, but shouldn't crash
-        ok("IT-01 full 15 checks", f"approved={approved}, reason={full_result.get('block_reason','')[:50]}")
+    try:
+        full_result = rm_full.check_trade(
+            chain="solana",
+            token_address="So11111111111111111111111111111111111111112",
+            action="buy",
+            amount_usd=50.0,
+        )
+        if isinstance(full_result, dict):
+            ok("IT-01 full checks", f"result={full_result}")
+        else:
+            ok("IT-01 full checks", f"passed={full_result.passed} reason={full_result.reason}")
+    except Exception as e:
+        fail("IT-01 full checks", f"crash: {type(e).__name__}: {str(e)[:60]}")
 
     # === Results ===
     print()

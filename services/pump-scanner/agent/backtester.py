@@ -88,7 +88,8 @@ async def backtest_strategy(
                 if len(sample_triggers) < 10:
                     sample_triggers.append(trigger_info)
 
-    # 模拟收益（用 token_performance 数据）
+    # 模拟收益（PRD-003: 用 D3 涨幅判断 win，区分 pump/hot 场景）
+    from config import WIN_RATE_PUMP_D3_PCT, WIN_RATE_HOT_D3_PCT
     win_count = 0
     returns = []
     for t in triggers:
@@ -96,7 +97,18 @@ async def backtest_strategy(
         if perf:
             best_pct = perf.get("best_pct", 0)
             returns.append(best_pct / 100 if best_pct else 0)
-            if best_pct >= 20:
+            # 用 D3 涨幅判断 win
+            dh = perf.get("daily_highs") or {}
+            d3 = dh.get("D3") or dh.get("3") or {}
+            d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
+            source = perf.get("source", "")
+            if source in ("pump", "pump_live"):
+                is_win = d3_pct >= WIN_RATE_PUMP_D3_PCT
+            elif source in ("hot", "hot_live"):
+                is_win = d3_pct >= WIN_RATE_HOT_D3_PCT
+            else:
+                is_win = best_pct >= 0  # 默认不亏就算 win
+            if is_win:
                 win_count += 1
 
     total = len(triggers)

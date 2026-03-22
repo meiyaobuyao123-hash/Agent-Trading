@@ -81,6 +81,29 @@ async def get_strategy_performance(
     avg_pnl = sum(pnl_list) / len(pnl_list) if pnl_list else 0
     realized_pnl = total_returned - total_invested
 
+    # 理论胜率（PRD-003: 基于 D3 涨幅，与 optimizer/backtester 统一口径）
+    from config import WIN_RATE_PUMP_D3_PCT
+    theo_wins = 0
+    theo_total = 0
+    for token_addr, token_execs in trades_by_token.items():
+        buys = [e for e in token_execs if e.get("action") == "buy"]
+        if not buys:
+            continue
+        theo_total += 1
+        # 查 token_performance 获取 D3 涨幅
+        try:
+            perf_res = db.table("token_performance").select("daily_highs") \
+                .eq("address", token_addr).limit(1).execute()
+            if perf_res.data:
+                dh = perf_res.data[0].get("daily_highs") or {}
+                d3 = dh.get("D3") or dh.get("3") or {}
+                d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
+                if d3_pct >= WIN_RATE_PUMP_D3_PCT:
+                    theo_wins += 1
+        except Exception:
+            pass
+    theoretical_win_rate = theo_wins / theo_total if theo_total > 0 else 0
+
     # 最大回撤（基于累积 PNL 曲线）
     max_drawdown = _calc_max_drawdown(pnl_list)
 
@@ -94,7 +117,9 @@ async def get_strategy_performance(
         "paired_trades": total_trades,
         "wins": wins,
         "losses": losses,
-        "win_rate": round(win_rate, 4),
+        "actual_win_rate": round(win_rate, 4),
+        "theoretical_win_rate": round(theoretical_win_rate, 4),
+        "win_rate": round(win_rate, 4),  # 向后兼容
         "avg_pnl_ratio": round(avg_pnl, 4),
         "total_invested_usd": round(total_invested, 2),
         "total_returned_usd": round(total_returned, 2),

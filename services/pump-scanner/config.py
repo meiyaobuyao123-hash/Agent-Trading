@@ -97,3 +97,9 @@ HOT_MAX_TOP10_PCT    = 0.80        # Top10 持仓 > 80% 标记为风险
 
 # ── Hot Coin Optimizer Agent ─────────────────────────────────────
 HOT_OPTIMIZER_API_KEY = os.getenv("HOT_OPTIMIZER_API_KEY", "")
+
+# ── 胜率统一定义（PRD-003）─────────────────────────────────────
+WIN_RATE_PUMP_D3_PCT = 30       # Pump 内盘：D3 涨幅 ≥ 30% 算 hit
+WIN_RATE_HOT_D3_PCT = 20        # 热币：D3 涨幅 ≥ 20% 算 hit
+WIN_RATE_BTCETH_PNL_PCT = 2     # BTC/ETH：PnL ≥ 2% 算 hit
+WIN_RATE_AGENT_BREAK_EVEN = 0   # Agent 策略：PnL ≥ 0% 就算 win

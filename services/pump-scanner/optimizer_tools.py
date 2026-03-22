@@ -51,14 +51,23 @@ def tool_read_metrics(days: int = 7) -> dict:
         .gte("created_at", f"{cutoff}T00:00:00Z") \
         .execute().data
 
-    # 4. 计算指标
+    # 4. 计算指标（PRD-003: D3 ≥ 30% 或毕业 = hit）
+    from config import WIN_RATE_PUMP_D3_PCT
     recommended_mints = {p["address"] for p in perf}
     graduated_mints = {g["mint"] for g in graduated}
 
-    # 命中：推荐了 & 毕业了
-    hits = recommended_mints & graduated_mints
-    # 误报：推荐了 & 没毕业
-    false_positives = recommended_mints - graduated_mints
+    # 命中：推荐了 & (D3 ≥ 30% 或毕业)
+    hit_mints = set()
+    for p in perf:
+        addr = p.get("address", "")
+        dh = p.get("daily_highs") or {}
+        d3 = dh.get("D3") or dh.get("3") or {}
+        d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
+        if d3_pct >= WIN_RATE_PUMP_D3_PCT or addr in graduated_mints:
+            hit_mints.add(addr)
+    hits = hit_mints
+    # 误报：推荐了 & 没命中
+    false_positives = recommended_mints - hits
     # 漏掉：毕业了 & 没推荐
     missed = graduated_mints - recommended_mints
 
@@ -456,6 +465,7 @@ TOOL_DEFINITIONS = [
 
 def tool_hot_read_metrics(days: int = 7) -> dict:
     """读取热币推荐的表现指标"""
+    from config import WIN_RATE_HOT_D3_PCT
     db = get_db()
     cutoff = (date.today() - timedelta(days=days)).isoformat()
 
@@ -505,7 +515,7 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
 
         if d1_pct > 0:
             d1_positive += 1
-        if d3_pct >= 20:
+        if d3_pct >= WIN_RATE_HOT_D3_PCT:
             d3_above_20 += 1
         if d7_pct >= 20:
             d7_above_20 += 1
@@ -524,7 +534,7 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
             by_chain[chain] = {"count": 0, "sum_best": 0, "hits_50": 0}
         by_chain[chain]["count"] += 1
         by_chain[chain]["sum_best"] += bp
-        if bp >= 50:
+        if d3_pct >= WIN_RATE_HOT_D3_PCT:
             by_chain[chain]["hits_50"] += 1
 
         # score 分桶
@@ -533,7 +543,7 @@ def tool_hot_read_metrics(days: int = 7) -> dict:
             by_score_bucket[bucket] = {"count": 0, "sum_best": 0, "hits_50": 0}
         by_score_bucket[bucket]["count"] += 1
         by_score_bucket[bucket]["sum_best"] += bp
-        if bp >= 50:
+        if d3_pct >= WIN_RATE_HOT_D3_PCT:
             by_score_bucket[bucket]["hits_50"] += 1
 
     avg_best = sum(best_pcts) / len(best_pcts) if best_pcts else 0

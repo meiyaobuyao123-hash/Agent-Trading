@@ -103,6 +103,8 @@ class RiskManager:
         self._circuit_breaker_reason: str = ""
         self._blacklist: set = set()
         self._recent_trade_times: deque = deque(maxlen=100)
+        self._btc_samples: List = []
+        self._position_chains: Dict[str, str] = {}  # {token_address: chain}
         log.info(
             f"RiskManager initialized: max_position=${self.config.max_position_usd}, "
             f"max_daily_loss=${self.config.max_daily_loss_usd}, "
@@ -287,10 +289,12 @@ class RiskManager:
         self._daily_trade_count += 1
         if action == "buy":
             self._open_positions[token_address] = self._open_positions.get(token_address, 0.0) + amount_usd
+            self._position_chains[token_address] = chain
         elif action == "sell" and token_address in self._open_positions:
             rem = self._open_positions[token_address] - amount_usd
             if rem <= 0:
                 del self._open_positions[token_address]
+                self._position_chains.pop(token_address, None)
             else:
                 self._open_positions[token_address] = rem
         if pnl_usd != 0:
@@ -406,8 +410,6 @@ class RiskManager:
             # 采样 BTC 价格
             import time
             now = time.time()
-            if not hasattr(self, "_btc_samples"):
-                self._btc_samples = []
             self._btc_samples.append((now, btc_price))
             # 保留 10 分钟内的采样
             self._btc_samples = [(t, p) for t, p in self._btc_samples if now - t < 600]
@@ -439,8 +441,8 @@ class RiskManager:
         if action != "buy":
             return RiskCheckResult.ok()
         same_chain = sum(
-            1 for pos in self._open_positions.values()
-            if pos.get("chain") == chain
+            1 for c in self._position_chains.values()
+            if c == chain
         )
         if same_chain >= 5:
             return RiskCheckResult(

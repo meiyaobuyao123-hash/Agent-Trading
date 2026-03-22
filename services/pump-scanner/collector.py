@@ -274,7 +274,13 @@ class PumpScanner:
         }
 
         self._trades[mint].append(trade)
-        insert_trade({**trade, "traded_at": now.isoformat()})
+        # 只存信号池代币 + 毕业代币的交易到 DB（节省 Supabase 存储 95%+）
+        # 内存追踪（self._trades）仍然覆盖全部代币
+        token_info = self._tokens.get(mint, {})
+        is_in_signal_pool = mint in self._signal_pool
+        is_graduated = token_info.get("complete", False)
+        if is_in_signal_pool or is_graduated:
+            insert_trade({**trade, "traded_at": now.isoformat()})
 
         # ── 聪明钱入场检测 ──
         if tx_type == "buy":

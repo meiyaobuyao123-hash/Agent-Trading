@@ -112,15 +112,13 @@ async def run_tests():
     ok("UT-06 EventListener", f"events={el_stats.get('events_processed', 0)}")
 
     # === UT-07: PerformanceAnalytics ===
-    from agent.performance_analytics import get_performance_analytics
-    pa = get_performance_analytics()
-    perf = await pa.get_performance_summary()
+    from agent.performance_analytics import get_strategy_performance
+    perf = await get_strategy_performance(user_id="test")
     ok("UT-07 Performance", f"trades={perf.get('total_trades', 0)}")
 
     # === UT-08: Backtester ===
-    from agent.backtester import get_backtester
-    bt = get_backtester()
-    bt_r = await bt.backtest_strategy(
+    from agent.backtester import backtest_strategy
+    bt_r = await backtest_strategy(
         {"conditions": {"min_score": 70}, "actions": [{"type": "buy", "amount_usd": 100}]},
         days=7,
     )

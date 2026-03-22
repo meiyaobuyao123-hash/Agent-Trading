@@ -148,6 +148,17 @@ async def main():
         misfire_grace_time=7200,
     )
 
+    # ── 数据库清理（每 6 小时）─────────────────────────────
+    from db_cleanup import run_db_cleanup
+    scheduler.add_job(
+        run_db_cleanup,
+        trigger="interval",
+        hours=6,
+        id="db_cleanup",
+        name="DB数据清理",
+        misfire_grace_time=3600,
+    )
+
     # ── 热币增量扫描（每10分钟）─────────────────────────────
     # 增量模式：已入库代币复用安全/社交数据，仅新代币走 GoPlus/Helius/DexScreener
     # 多时间帧 OKX toplist 发现，耗时 ~60-90s

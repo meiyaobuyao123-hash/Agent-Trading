@@ -229,9 +229,11 @@ class PriceFeed:
                 await self._connect_helius()
                 backoff = 5
             except Exception as e:
+                is_429 = "429" in str(e)
+                max_backoff = 600 if is_429 else 120
                 log.warning(f"[Helius WS] 断开: {e}，{backoff}s 后重连")
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 120)
+                backoff = min(backoff * 2, max_backoff)
 
     async def _connect_helius(self) -> None:
         import websockets  # type: ignore

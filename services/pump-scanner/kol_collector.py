@@ -41,6 +41,7 @@ class KOLCollector:
 
     def __init__(self):
         self._api_key = TWITTERAPI_IO_KEY
+        self._credits_exhausted = False
         if not self._api_key:
             log.warning(
                 "TWITTERAPI_IO_KEY not set. "
@@ -69,6 +70,9 @@ class KOLCollector:
         自动重试 + 指数退避。
         """
         url = f"{BASE_URL}{path}"
+
+        if self._credits_exhausted:
+            return None
 
         for attempt in range(retries):
             try:
@@ -105,6 +109,10 @@ class KOLCollector:
                         log.warning(f"Rate limited, waiting {retry_after}s")
                         await asyncio.sleep(retry_after)
                         return None
+                    elif resp.status == 402:
+                        log.warning("Twitter API credits exhausted (402), pausing KOL collection")
+                        self._credits_exhausted = True
+                        return None
                     else:
                         text = await resp.text()
                         log.error(f"HTTP {resp.status}: {text[:200]}")
@@ -119,6 +127,10 @@ class KOLCollector:
                     retry_after = int(resp.headers.get("Retry-After", "60"))
                     log.warning(f"Rate limited, waiting {retry_after}s")
                     await asyncio.sleep(retry_after)
+                    return None
+                elif resp.status_code == 402:
+                    log.warning("Twitter API credits exhausted (402), pausing KOL collection")
+                    self._credits_exhausted = True
                     return None
                 else:
                     log.error(f"HTTP {resp.status_code}: {resp.text[:200]}")

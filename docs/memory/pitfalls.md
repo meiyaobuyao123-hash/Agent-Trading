@@ -65,6 +65,13 @@
 - **Supabase 默认 limit 1000**：`_load_wallets` 只加载 1000 个，16623 个钱包丢失 94%。必须分页 `.range(offset, offset+999)`
 - **DEX 程序监控优于钱包监控**：监控 5 个 DEX 程序 = 覆盖所有钱包的 swap，而监控 16000 个钱包 = 429 限流
 
+## Supabase 免费版存储优化
+- **token_trades 每天 20 万行**：13 天积累 130 万行，接近 500MB 上限。必须保留 ≤3 天
+- **Supabase DELETE 大量数据超时**：直接 DELETE 70 万行会 statement timeout。必须分批（500 行/批 + sleep 0.3s）
+- **pump_tokens 外键约束**：删除前必须先删 token_outcomes + token_snapshots + token_trades 中引用该 mint 的行
+- **hot_coins DB_THROTTLE_INTERVAL**：5s 太频繁（每天 8800 次写入），改 15s（减少 66%）
+- **btc_eth_indicators 每 5min 写入**：每天 576 行，可接受不需优化
+
 ## BTC/ETH 模块
 - **Blockchain.com WS unconfirmed_sub 阻塞事件循环**: 每秒推送数百笔未确认交易，json.loads 全部解析导致 asyncio 过载，FastAPI 完全无响应。必须禁用或用 REST 替代
 - **Binance WS 合并 stream**: 6 个 stream 用 1 个连接（`/stream?streams=a/b/c`），避免多连接

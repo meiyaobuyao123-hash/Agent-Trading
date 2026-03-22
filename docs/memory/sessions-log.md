@@ -612,7 +612,13 @@
 - Agent HTTP 超时：后台任务增多后 Claude API 响应从 12s 变为 20-30s
 - App Store Connect 名称 "AiTrading Pro" 后改为 "Future Trading"
 
+### Supabase 免费版优化（commit e715d02）
+- **问题**：token_trades 每天 20 万行，13 天 130 万行，接近 500MB 上限
+- **解决**：db_cleanup.py 每 6h 定时清理 + hot_coins 写入节流 5s→15s
+- 首次清理删除 25,007 行
+
 ### 被否定的方案
 - ~~Blockchain.com WS 实时大额转账~~：消息量太大，改用 REST 4h 轮询
 - ~~Portal 展示价格/指标~~：看板目标是监控信号质量，不是再做一次行情展示
 - ~~30s Agent 超时~~：不够用，改 90s
+- ~~Supabase 直接 DELETE 大量数据~~：70 万行超时，必须分批 500 行/批

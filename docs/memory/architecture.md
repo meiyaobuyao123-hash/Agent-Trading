@@ -120,7 +120,17 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 - `strategies` / `strategy_executions`
 - `user_api_quota`（Migration 017）
 - `optimization_runs` / `optimization_proposals` / `optimization_metrics_history`（Migration 020）
-- 共 20 个 Migration
+- 共 25 个 Migration
+
+### 数据库清理策略（db_cleanup.py，每 6h）
+- Supabase 免费版 500MB 上限，月增长需控制在 ~150MB 以内
+- `token_trades`: 保留 3 天（最大表，每天 ~20 万行，分批删除避免超时）
+- `token_snapshots`: 保留 14 天
+- `btc_eth_indicators`: 保留 7 天
+- `pump_tokens + 依赖`: 30 天未毕业的连同 outcomes/snapshots/trades 一起删
+- `kol_tweets / hot_funnel_stats / btc_eth_alerts`: 保留 30 天
+- `token_performance`: 保留 90 天（已完成追踪的）
+- `hot_coins DB_THROTTLE_INTERVAL`: 15s（从 5s 优化，减少 66% 写入）
 
 ### BTC/ETH 智能投资 Agent（btc_eth/ 独立模块）
 - **数据采集**（13 个 collector，全部免费）：

@@ -72,6 +72,9 @@
 - **hot_coins DB_THROTTLE_INTERVAL**：5s 太频繁（每天 8800 次写入），改 15s（减少 66%）
 - **btc_eth_indicators 每 5min 写入**：每天 576 行，可接受不需优化
 
+## KOL 采集
+- **Twitter API 402 Credits Exhausted 疯狂重试**：额度耗尽后 212 KOL × 3 重试 = 每轮 636 条错误日志。必须设 `_credits_exhausted` flag，402 后立即停止整轮采集
+
 ## BTC/ETH 模块
 - **Blockchain.com WS unconfirmed_sub 阻塞事件循环**: 每秒推送数百笔未确认交易，json.loads 全部解析导致 asyncio 过载，FastAPI 完全无响应。必须禁用或用 REST 替代
 - **Binance WS 合并 stream**: 6 个 stream 用 1 个连接（`/stream?streams=a/b/c`），避免多连接

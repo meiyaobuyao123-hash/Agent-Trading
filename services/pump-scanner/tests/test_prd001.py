@@ -1,7 +1,13 @@
 """PRD-001 Agent Sell Execution - Unit + Integration Tests"""
+import sys
+import os
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
 import asyncio
 import json
 import logging
+from dotenv import load_dotenv
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"), override=True)
 
 logging.basicConfig(level=logging.WARNING)
 

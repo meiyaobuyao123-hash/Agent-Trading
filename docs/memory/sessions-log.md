@@ -625,7 +625,7 @@
 
 ---
 
-## 2026-03-22~23 会话（PRD 需求文档体系 + 4 个 PRD 开发测试）
+## 2026-03-22~23 会话（PRD 需求文档体系 + 4 个 PRD 开发测试 + 全量测试）
 
 ### 做了什么
 - **需求文档体系建立**：
@@ -661,6 +661,23 @@
 - **统一方案**：pump=D3≥30%+毕业，hot=D3≥20%，agent=不亏就赢，btceth=PnL≥2%
 - **performance_analytics 需要双指标**：actual（实际买卖PnL）+ theoretical（D3理论命中），用户和 optimizer 各看各的
 - **_empty_performance 必须同步**：新字段忘了加到空值返回函数 → API 返回缺字段
+
+- **PRD-004 中等问题合集**（commit 468ca74）：
+  - M-01：trigger_count TOCTOU 修复 → Supabase RPC 原子递增（migration 027）
+  - M-02：LLM Parser 重试逻辑 → 3 次指数退避（5s/10s/20s），捕获 429/5xx
+  - M-03：15 个硬编码参数提取到 config.py（从 .env 读取，支持热更新）
+  - M-04：btc_eth_indicators 持久化修复 → 列名白名单过滤 + 日志
+  - M-05：Paper Trading 止盈止损循环 → check_all_exits 每 60s 检查所有 open 交易
+  - 测试：16/16 ALL PASSED
+
+### 全部 PRD 测试汇总
+| PRD | 测试数 | 结果 |
+|-----|--------|------|
+| PRD-001 Agent 卖出 | 17 | ALL PASSED |
+| PRD-002 风控修复 | 11 | ALL PASSED |
+| PRD-003 胜率统一 | 20 | ALL PASSED |
+| PRD-004 中等问题 | 16 | ALL PASSED |
+| **总计** | **64** | **ALL PASSED** |
 
 ### 被否定的方案
 - ~~pump hit 只看 graduated~~：毕业后可能暴涨也可能归零，D3 涨幅更贴近实际

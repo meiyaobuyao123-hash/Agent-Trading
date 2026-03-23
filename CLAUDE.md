@@ -153,7 +153,8 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
   - PRD-001 Agent 卖出执行：17/17 测试通过
   - PRD-002 风控 Bug 修复：11/11 测试通过
   - PRD-003 胜率定义统一：20/20 测试通过
-  - PRD-004 中等问题合集：待开发
+  - PRD-004 中等问题合集：16/16 测试通过
+  - **总计 64 个测试 ALL PASSED**
 - ✅ **Supabase 优化**：db_cleanup + token_trades 95%缩减 + 节流，预计可用 2 年+
 
 ---

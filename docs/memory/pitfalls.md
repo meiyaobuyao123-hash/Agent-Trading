@@ -72,6 +72,13 @@
 - **hot_coins DB_THROTTLE_INTERVAL**：5s 太频繁（每天 8800 次写入），改 15s（减少 66%）
 - **btc_eth_indicators 每 5min 写入**：每天 576 行，可接受不需优化
 
+## Agent 交易
+- **trigger_count TOCTOU 竞态**：read-modify-write 并发丢失计数 → 改用 Supabase RPC 原子递增
+- **LLM Parser 无重试**：Claude API 429/5xx 直接返回 None → 加 3 次指数退避重试
+- **硬编码参数散落各处**：修改需改代码重启 → 统一到 config.py 从 .env 读取
+- **btc_eth_indicators 写入失败静默**：snapshot 含 DB 不存在的列名 → 白名单过滤 + 日志
+- **Paper Trading SL/TP 不检查**：check_exits 存在但未被定时调用 → 加 60s 循环
+
 ## KOL 采集
 - **Twitter API 402 Credits Exhausted 疯狂重试**：额度耗尽后 212 KOL × 3 重试 = 每轮 636 条错误日志。必须设 `_credits_exhausted` flag，402 后立即停止整轮采集
 

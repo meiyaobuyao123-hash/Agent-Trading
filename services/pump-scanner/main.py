@@ -257,6 +257,41 @@ async def main():
         misfire_grace_time=10,
     )
 
+    # ── PRD-008: 模拟盘 SL/TP 检查（每30秒）─────────────────
+    from agent.paper_engine import run_paper_check_exits, run_paper_check_reminders
+    scheduler.add_job(
+        run_paper_check_exits,
+        trigger="interval",
+        seconds=30,
+        id="paper_check_exits",
+        name="Paper 模拟盘 SL/TP 检查",
+        misfire_grace_time=10,
+        max_instances=1,
+    )
+
+    # ── PRD-008: 模拟盘提醒（每1小时）────────────────────────
+    scheduler.add_job(
+        run_paper_check_reminders,
+        trigger="interval",
+        hours=1,
+        id="paper_check_reminders",
+        name="Paper 3天提醒 + 7天暂停",
+        misfire_grace_time=300,
+        max_instances=1,
+    )
+
+    # ── PRD-008: AI 主动推荐扫描（每4小时）───────────────────
+    from agent.proactive_scanner import run_proactive_scan
+    scheduler.add_job(
+        run_proactive_scan,
+        trigger="interval",
+        hours=4,
+        id="proactive_scan",
+        name="AI 主动推荐扫描",
+        misfire_grace_time=600,
+        max_instances=1,
+    )
+
     # ── PRD-005: 每日反思（UTC 20:00）──────────────────────
     from agent.memory.cron_tasks import run_daily_reflection, backfill_risk_events
     scheduler.add_job(
@@ -341,6 +376,9 @@ async def main():
         "  每日 UTC 03:00 → kol_accuracy_eval\n"
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
+        "  每30秒         → paper_check_exits (模拟盘 SL/TP 检查)\n"
+        "  每1小时        → paper_check_reminders (3天提醒 + 7天暂停)\n"
+        "  每4小时        → proactive_scan (AI 主动推荐)\n"
         "  每日 UTC 20:00 → daily_reflection (Agent 记忆反思)\n"
         "  每6小时        → risk_events_backfill (风控事件价格回填)\n"
         "  常驻 WS        → smart_money_tracker (SOL ~400ms / EVM OKX 5s)\n"

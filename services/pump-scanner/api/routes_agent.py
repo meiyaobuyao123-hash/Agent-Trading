@@ -672,3 +672,161 @@ async def get_regime_audit(
     """获取 Regime 审计报告（O7 工具数据）"""
     from optimizer_tools import tool_read_regime_history
     return tool_read_regime_history(days=days)
+
+
+# ══════════════════════════════════════════════════════════════
+# PRD-008: 模拟盘 + 策略模板 + AI 主动推荐
+# ══════════════════════════════════════════════════════════════
+
+# ── 模拟盘端点 ────────────────────────────────────────────────
+
+class TemplateCreateRequest(BaseModel):
+    override: Optional[Dict[str, Any]] = None
+
+
+@router.get("/paper-trades")
+async def list_paper_trades(
+    strategy_id: Optional[str] = Query(None, description="按策略过滤"),
+    status: Optional[str] = Query(None, description="open/closed"),
+    limit: int = Query(100, ge=1, le=500),
+    user_id: str = Depends(get_current_user),
+):
+    """获取模拟交易记录"""
+    from database import get_db
+
+    try:
+        query = (
+            get_db()
+            .table("agent_paper_trades")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+        if strategy_id:
+            query = query.eq("strategy_id", strategy_id)
+        if status:
+            query = query.eq("status", status)
+
+        result = query.execute()
+        rows = result.data or []
+    except Exception as e:
+        log.warning("Failed to fetch paper trades: %s", e)
+        rows = []
+
+    return {"data": rows, "total": len(rows)}
+
+
+@router.get("/paper-stats/{strategy_id}")
+async def paper_stats(
+    strategy_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """获取策略的模拟盘统计"""
+    # 验证策略归属
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+
+    from agent.paper_engine import get_paper_engine
+    engine = get_paper_engine()
+    stats = await engine.get_stats(strategy_id)
+    return stats
+
+
+@router.post("/strategies/{strategy_id}/go-live")
+async def go_live(
+    strategy_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """将策略从 paper 切换到 live 模式"""
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+    if strategy.get("mode") == "live":
+        return {"strategy": strategy, "message": "策略已在实盘模式"}
+
+    result = _strategy_mgr.go_live(strategy_id)
+    if not result:
+        raise HTTPException(status_code=400, detail="切换失败：策略状态不允许")
+
+    return {"strategy": result, "message": "已切换到实盘模式"}
+
+
+# ── 策略模板端点 ──────────────────────────────────────────────
+
+@router.get("/templates")
+async def list_templates(
+    user_id: str = Depends(get_current_user),
+):
+    """获取所有策略模板"""
+    from agent.templates import list_templates as _list_templates
+    templates = _list_templates()
+    return {"templates": templates, "total": len(templates)}
+
+
+@router.post("/templates/{template_id}/create")
+async def create_from_template(
+    template_id: str,
+    req: TemplateCreateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """从模板创建策略（支持参数覆盖）"""
+    from agent.templates import create_from_template as _create
+
+    # 检查策略数量限制
+    existing = _strategy_mgr.list_strategies(user_id)
+    active_count = len([s for s in existing if s.get("status") != "archived"])
+    if active_count >= 20:
+        raise HTTPException(
+            status_code=400,
+            detail="策略数量已达上限（最多 20 个活跃策略）",
+        )
+
+    try:
+        spec = _create(
+            template_id=template_id,
+            user_id=user_id,
+            override=req.override,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    try:
+        strategy = _strategy_mgr.create_strategy(
+            user_id=user_id,
+            spec=spec,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {
+        "strategy": strategy,
+        "message": f"从模板 '{template_id}' 创建成功（paper 模式）",
+    }
+
+
+# ── 模拟盘 vs 实盘对比 ───────────────────────────────────────
+
+@router.get("/compare/{strategy_id}")
+async def compare_paper_live(
+    strategy_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """模拟盘 vs 实盘数据对比 (v1.1 Q6)"""
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+
+    from agent.paper_engine import get_paper_engine
+    engine = get_paper_engine()
+    comparison = await engine.get_comparison(strategy_id)
+    return comparison

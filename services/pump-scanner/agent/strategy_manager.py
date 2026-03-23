@@ -68,6 +68,13 @@ class StrategyManager:
         if risk_params:
             filters["risk_params"] = risk_params
 
+        # ── PRD-008: mode 字段 (paper/live) ──
+        mode = spec.get("mode", "paper")  # 默认 paper
+        if mode not in ("paper", "live"):
+            mode = "paper"
+
+        template_id = spec.get("template_id")
+
         row = {
             "user_id": user_id,
             "name": spec.get("name", "未命名策略"),
@@ -78,8 +85,11 @@ class StrategyManager:
             "data_sources": data_sources,
             "cooldown_min": max(spec.get("cooldown_minutes", 30), 5),
             "status": "active",
+            "mode": mode,
             "source_prompt": source_prompt,
         }
+        if template_id:
+            row["template_id"] = template_id
 
         try:
             result = get_db().table("agent_strategies").insert(row).execute()
@@ -209,6 +219,45 @@ class StrategyManager:
         """归档策略"""
         result = self.update_strategy(strategy_id, {"status": "archived"})
         return result is not None
+
+    # ── PRD-008: 模式切换 ─────────────────────────────────────
+
+    def go_live(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+        """
+        将策略从 paper 切换到 live 模式
+
+        前提：策略必须是 active + paper 模式。
+
+        Returns:
+            更新后的策略记录，失败返回 None
+        """
+        strategy = self.get_strategy(strategy_id)
+        if not strategy:
+            return None
+        if strategy.get("mode") != "paper":
+            log.warning(
+                "go_live: strategy %s is already in '%s' mode",
+                strategy_id, strategy.get("mode"),
+            )
+            return strategy
+        if strategy.get("status") != "active":
+            log.warning(
+                "go_live: strategy %s status='%s', not active",
+                strategy_id, strategy.get("status"),
+            )
+            return None
+
+        result = self.update_strategy(strategy_id, {"mode": "live"})
+        if result:
+            log.info("Strategy %s switched to LIVE mode", strategy_id)
+        return result
+
+    def get_mode(self, strategy_id: str) -> str:
+        """获取策略 mode (paper/live)"""
+        strategy = self.get_strategy(strategy_id)
+        if strategy:
+            return strategy.get("mode", "paper")
+        return "paper"
 
     # ── 删除 ──────────────────────────────────────────────────
 

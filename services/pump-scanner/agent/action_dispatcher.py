@@ -201,14 +201,20 @@ class ActionDispatcher:
         action: Dict[str, Any],
     ):
         """
-        处理 buy/sell 动作 → 风控检查 → OKX DEX 执行
+        处理 buy/sell 动作 → 检查 paper/live 模式 → 风控检查 → 执行
 
-        Phase 3 实现，当前仅记录日志 + 风控检查
+        PRD-008: paper 模式走 PaperEngine（模拟交易），live 模式走 OKX DEX。
         """
         action_type = action.get("type", "buy")
         amount_usd = action.get("amount_usd", 0)
         token_address = event.matched_token or ""
         chain = event.matched_chain or ""
+
+        # ── PRD-008: Paper 模式分流 ──────────────────────────
+        strategy_mode = await self._get_strategy_mode(event.strategy_id)
+        if strategy_mode == "paper" and action_type == "buy":
+            await self._handle_paper_trade(event, action)
+            return
 
         # ── PRD-005: 规则合规检查（warn only，不 block）──
         memory = get_memory_manager()
@@ -384,6 +390,116 @@ class ActionDispatcher:
                 }).execute()
             except Exception as e:
                 log.error(f"Failed to create trade fail alert: {e}")
+
+    # ── PRD-008: Paper mode helpers ─────────────────────────────
+
+    async def _get_strategy_mode(self, strategy_id: Optional[str]) -> str:
+        """获取策略的 mode (paper/live)，默认 live"""
+        if not strategy_id:
+            return "live"
+        try:
+            result = (
+                get_db()
+                .table("agent_strategies")
+                .select("mode")
+                .eq("id", strategy_id)
+                .execute()
+            )
+            if result.data:
+                return result.data[0].get("mode", "live")
+        except Exception as e:
+            log.debug("_get_strategy_mode error: %s", e)
+        return "live"
+
+    async def _handle_paper_trade(
+        self,
+        event: StrategyTriggeredEvent,
+        action: Dict[str, Any],
+    ):
+        """
+        PRD-008: Paper 模式 — 模拟买入（不调 DEX）
+
+        用 PriceFeed 实时价格 + 1.5% 滑点模拟。
+        """
+        from agent.paper_engine import get_paper_engine
+        from price_feed import price_feed
+
+        token_address = event.matched_token or ""
+        chain = event.matched_chain or ""
+        amount_usd = action.get("amount_usd", 0)
+
+        # 获取实时价格
+        current_price = price_feed.get_token_price(token_address)
+        if current_price is None:
+            # 尝试从 trigger_context 获取价格
+            tc = event.trigger_context or {}
+            current_price = tc.get("price_usd") or tc.get("price")
+            if current_price is not None:
+                current_price = float(current_price)
+
+        if not current_price:
+            log.warning(
+                "Paper trade skipped: no price for %s (strategy=%s)",
+                token_address, event.strategy_id,
+            )
+            return
+
+        # 读取风控参数
+        risk_params = {}
+        try:
+            strat = (
+                get_db()
+                .table("agent_strategies")
+                .select("filters")
+                .eq("id", event.strategy_id)
+                .execute()
+            )
+            if strat.data:
+                risk_params = (strat.data[0].get("filters") or {}).get(
+                    "risk_params", {}
+                )
+        except Exception:
+            pass
+
+        sl_pct = risk_params.get("stop_loss_pct", 25)
+        tp_pct = risk_params.get("take_profit_pct", 100)
+
+        engine = get_paper_engine()
+        await engine.open_position(
+            strategy_id=event.strategy_id or "",
+            user_id=event.user_id or "",
+            token_address=token_address,
+            token_symbol=event.token_name or "",
+            chain=chain,
+            price=current_price,
+            amount_usd=amount_usd,
+            sl_pct=sl_pct,
+            tp_pct=tp_pct,
+            trigger_context=event.trigger_context,
+        )
+
+        # 写入告警通知
+        try:
+            get_db().table("agent_alerts").insert({
+                "user_id": event.user_id,
+                "strategy_id": event.strategy_id,
+                "token_address": token_address,
+                "token_name": event.token_name,
+                "chain": chain,
+                "title": f"Paper Trade: BUY {event.token_name}",
+                "message": f"模拟买入 ${amount_usd} @{current_price:.8f} (含 1.5% 滑点)",
+                "severity": "info",
+                "is_read": False,
+                "is_pushed": False,
+                "trigger_context": {
+                    "type": "paper_trade",
+                    "action": "buy",
+                    "amount_usd": amount_usd,
+                    "price": current_price,
+                },
+            }).execute()
+        except Exception as e:
+            log.error("Paper trade alert error: %s", e)
 
     def _render_template(
         self,

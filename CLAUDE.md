@@ -159,7 +159,9 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
 - ✅ **Agent 优化规划**：6 Phase 29 模块
   - PRD-005 Phase 1 **已开发上线**（29/29 测试，2424 行，migration 028）
   - PRD-006 Phase 2 文档完成（PRD+TECH+TEST），待开发
+  - PRD-006 Phase 2 **已开发上线**（42/44 测试，1875 行，regime_detector+动态风控）
   - PRD-007 Phase 3 文档完成，待开发
+  - PRD-008/009/010 Phase 4-6 文档已输出+审查（16 项修订）
 
 ---
 

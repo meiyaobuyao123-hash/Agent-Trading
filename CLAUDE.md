@@ -149,6 +149,12 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
   - 50 项指标引擎 + AI 分析(周期/信号/报告/预警) + 模拟盘
   - API: /api/btc-eth/*，DB: migration 025（6张表）
   - Phase 5 Flutter UI 待做
+- ✅ **PRD 需求文档体系 + 4 个 PRD 开发**：
+  - PRD-001 Agent 卖出执行：17/17 测试通过
+  - PRD-002 风控 Bug 修复：11/11 测试通过
+  - PRD-003 胜率定义统一：20/20 测试通过
+  - PRD-004 中等问题合集：待开发
+- ✅ **Supabase 优化**：db_cleanup + token_trades 95%缩减 + 节流，预计可用 2 年+
 
 ---
 

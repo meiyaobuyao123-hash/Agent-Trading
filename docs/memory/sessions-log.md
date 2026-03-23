@@ -622,3 +622,46 @@
 - ~~Portal 展示价格/指标~~：看板目标是监控信号质量，不是再做一次行情展示
 - ~~30s Agent 超时~~：不够用，改 90s
 - ~~Supabase 直接 DELETE 大量数据~~：70 万行超时，必须分批 500 行/批
+
+---
+
+## 2026-03-22~23 会话（PRD 需求文档体系 + 4 个 PRD 开发测试）
+
+### 做了什么
+- **需求文档体系建立**：
+  - `docs/agent-trading/prd/` 目录结构：每个 PRD 下含 需求文档 + 技术文档 + 测试文档
+  - PRD-001~004 完整文档输出
+- **PRD-001 Agent 卖出执行**（commit dd28c98）：
+  - trade_executor.py：sell 逻辑（查余额→OKX swap→签名→广播）
+  - position_monitor.py：止盈/止损/追踪止损自动触发卖出
+  - EVM approve 支持
+  - migration 026：agent_executions 新增 exit_price/pnl/trigger 列 + strategies 表
+  - 测试：17/17 ALL PASSED（UT-01~08 + IT-01a~d）
+- **PRD-002 风控 Bug 修复**（commit 37405a1）：
+  - _check_chain_concentration：float.get("chain") → _position_chains Dict 追踪
+  - _btc_samples：hasattr 懒初始化 → __init__ 初始化
+  - record_trade：新增 _position_chains 跟踪买卖
+  - 测试：11/11 ALL PASSED
+- **PRD-003 胜率定义统一**（commit 4e5d34c + 736b3e4）：
+  - config.py：WIN_RATE_PUMP_D3_PCT=30 / HOT=20 / BTCETH=2 / AGENT=0
+  - optimizer_tools.py：pump hit 改为 D3≥30% 或 graduated（旧：仅 graduated）
+  - optimizer_tools.py：hot hit 改用 WIN_RATE_HOT_D3_PCT 常量
+  - backtester.py：按 source 区分场景使用不同阈值
+  - performance_analytics.py：新增 actual_win_rate + theoretical_win_rate 双指标
+  - 测试：20/20 ALL PASSED（UT-01~07 + IT-01~05）
+- **Supabase 优化**：
+  - db_cleanup.py：每 6h 清理过期数据（token_trades 3天/snapshots 14天/indicators 7天）
+  - token_trades 95% 缩减：只存信号池+毕业代币交易（每天 20万→1万行）
+  - hot_coins 写入节流：5s→15s（减少 66%）
+  - 预计可使用 2 年+
+- **docs/memory/ 同步到 GitHub**：换电脑可恢复记忆文件
+
+### 讨论结论
+- **胜率定义旧逻辑问题**：Optimizer 用 "graduated" 判 hit，Backtester 用 "best_pct>=20%"，两者给出矛盾结论
+- **统一方案**：pump=D3≥30%+毕业，hot=D3≥20%，agent=不亏就赢，btceth=PnL≥2%
+- **performance_analytics 需要双指标**：actual（实际买卖PnL）+ theoretical（D3理论命中），用户和 optimizer 各看各的
+- **_empty_performance 必须同步**：新字段忘了加到空值返回函数 → API 返回缺字段
+
+### 被否定的方案
+- ~~pump hit 只看 graduated~~：毕业后可能暴涨也可能归零，D3 涨幅更贴近实际
+- ~~单一胜率指标~~：actual 和 theoretical 含义不同，必须都展示

@@ -168,4 +168,16 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - ⚠️ Blockchain.com WS 暂禁（消息量阻塞事件循环）→ 改用 REST
   - ✅ DB migration 025 已执行（6 张表）
   - ✅ API 正常：/api/btc-eth/health + dashboard + signals + alerts
+  - ✅ DB migration 025 已执行（6 张表）
+  - ✅ API 正常：/api/btc-eth/health + dashboard + signals + alerts
   - 📝 Phase 5 Flutter UI 待做
+- ✅ **PRD 需求文档体系**（docs/agent-trading/prd/）：
+  - PRD-001 Agent 卖出执行：17/17 测试通过，已上线
+  - PRD-002 风控 Bug 修复：11/11 测试通过，已上线
+  - PRD-003 胜率定义统一：20/20 测试通过，已上线
+  - PRD-004 中等问题合集：待开发
+- ✅ **Supabase 优化**：
+  - db_cleanup.py 每 6h 清理
+  - token_trades 95% 缩减（只存信号池+毕业代币）
+  - hot_coins 节流 15s
+  - 预计可用 2 年+

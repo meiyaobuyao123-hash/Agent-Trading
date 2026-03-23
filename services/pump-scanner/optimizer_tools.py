@@ -457,6 +457,28 @@ TOOL_DEFINITIONS = [
             "required": ["run_id", "title", "rationale", "changes", "backtest_before", "backtest_after"],
         },
     },
+    # PRD-005: Agent 表现分析
+    {
+        "name": "read_agent_performance",
+        "description": "读取交易 Agent 表现：胜率/PNL/按链/按策略类型/按时段/按持仓时长 + 记忆系统效果统计。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    # PRD-005: 风控审计
+    {
+        "name": "read_risk_events",
+        "description": "读取风控拦截/警告事件，评估风控是否合理：拦截准确率/误拦截率/按原因分组统计。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
 ]
 
 # ══════════════════════════════════════════════════════
@@ -819,6 +841,27 @@ HOT_TOOL_DEFINITIONS = [
             "required": ["run_id", "title", "rationale", "changes", "backtest_before", "backtest_after"],
         },
     },
+    # PRD-005: Agent 表现分析（hot optimizer 也可调用）
+    {
+        "name": "read_agent_performance",
+        "description": "读取交易 Agent 表现：胜率/PNL/按链/策略类型/时段/持仓时长 + 记忆系统效果。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "read_risk_events",
+        "description": "读取风控拦截/警告事件，评估风控准确率。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
 ]
 
 HOT_TOOL_MAP = {
@@ -837,6 +880,8 @@ HOT_TOOL_MAP = {
         backtest_before=args["backtest_before"],
         backtest_after=args["backtest_after"],
     ),
+    "read_agent_performance": lambda args: tool_read_agent_performance(days=args.get("days", 7)),
+    "read_risk_events": lambda args: tool_read_risk_events(days=args.get("days", 7)),
 }
 
 
@@ -868,4 +913,290 @@ TOOL_MAP = {
         backtest_before=args["backtest_before"],
         backtest_after=args["backtest_after"],
     ),
+    "read_agent_performance": lambda args: tool_read_agent_performance(days=args.get("days", 7)),
+    "read_risk_events": lambda args: tool_read_risk_events(days=args.get("days", 7)),
 }
+
+
+# ══════════════════════════════════════════════════════
+# PRD-005: O4 Agent 表现分析工具
+# ══════════════════════════════════════════════════════
+
+def tool_read_agent_performance(days: int = 7) -> dict:
+    """
+    O4: 优化 Agent 调用此工具了解交易 Agent 表现
+
+    按链/策略类型/时段/持仓时长 4 维度分析。
+    strategy_type 自动推断。
+    """
+    db = get_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    try:
+        # 所有交易（含 open）
+        all_res = db.table("agent_executions").select("*") \
+            .gte("created_at", f"{cutoff}T00:00:00Z") \
+            .order("created_at", desc=True).limit(500).execute()
+        all_trades = all_res.data or []
+    except Exception as e:
+        log.warning("tool_read_agent_performance: %s", e)
+        return {"error": str(e)}
+
+    total_trades = len(all_trades)
+    buys = [t for t in all_trades if t.get("action") == "buy"]
+    # 配对 = 有 exit_price 的 buy
+    paired = [t for t in buys if t.get("exit_price") is not None]
+    open_positions = [t for t in buys if t.get("exit_price") is None]
+
+    # 胜率 / PNL
+    wins = [t for t in paired if (t.get("pnl_pct") or 0) > 0]
+    actual_wr = len(wins) / len(paired) if paired else 0
+    total_invested = sum(float(t.get("amount_usd") or 0) for t in buys)
+    realized_pnl = sum(float(t.get("pnl_usd") or 0) for t in paired)
+    pnl_pcts = [float(t.get("pnl_pct") or 0) for t in paired]
+    avg_pnl = sum(pnl_pcts) / len(pnl_pcts) if pnl_pcts else 0
+    best_pnl = max(pnl_pcts) if pnl_pcts else 0
+    worst_pnl = min(pnl_pcts) if pnl_pcts else 0
+
+    # 按链
+    by_chain: Dict[str, dict] = {}
+    for t in paired:
+        c = t.get("chain", "unknown")
+        if c not in by_chain:
+            by_chain[c] = {"trades": 0, "wins": 0, "sum_pnl": 0}
+        by_chain[c]["trades"] += 1
+        pnl = float(t.get("pnl_pct") or 0)
+        by_chain[c]["sum_pnl"] += pnl
+        if pnl > 0:
+            by_chain[c]["wins"] += 1
+    chain_summary = {}
+    for c, v in by_chain.items():
+        chain_summary[c] = {
+            "trades": v["trades"],
+            "win_rate": round(v["wins"] / v["trades"], 3) if v["trades"] > 0 else 0,
+            "avg_pnl": round(v["sum_pnl"] / v["trades"], 2) if v["trades"] > 0 else 0,
+        }
+
+    # 按策略类型（自动推断）
+    by_strategy: Dict[str, dict] = {}
+    from agent.strategy_manager import StrategyManager
+    _sm = StrategyManager()
+    _strategy_type_cache: Dict[str, str] = {}  # strategy_id -> type
+    for t in paired:
+        sid = t.get("strategy_id", "")
+        if sid not in _strategy_type_cache:
+            try:
+                s = _sm.get_strategy(sid)
+                if s:
+                    _strategy_type_cache[sid] = _sm._infer_strategy_type(
+                        s.get("conditions", {}), s.get("data_sources", [])
+                    )
+                else:
+                    _strategy_type_cache[sid] = "custom"
+            except Exception:
+                _strategy_type_cache[sid] = "custom"
+
+        stype = _strategy_type_cache.get(sid, "custom")
+        if stype not in by_strategy:
+            by_strategy[stype] = {"trades": 0, "wins": 0, "sum_pnl": 0}
+        by_strategy[stype]["trades"] += 1
+        pnl = float(t.get("pnl_pct") or 0)
+        by_strategy[stype]["sum_pnl"] += pnl
+        if pnl > 0:
+            by_strategy[stype]["wins"] += 1
+    strategy_summary = {}
+    for s, v in by_strategy.items():
+        strategy_summary[s] = {
+            "trades": v["trades"],
+            "win_rate": round(v["wins"] / v["trades"], 3) if v["trades"] > 0 else 0,
+            "avg_pnl": round(v["sum_pnl"] / v["trades"], 2) if v["trades"] > 0 else 0,
+        }
+
+    # 按时段
+    by_hour: Dict[str, dict] = {"00-06": {"t": 0, "w": 0}, "06-12": {"t": 0, "w": 0},
+                                 "12-18": {"t": 0, "w": 0}, "18-24": {"t": 0, "w": 0}}
+    for t in paired:
+        ca = t.get("created_at", "")
+        try:
+            h = int(ca[11:13]) if len(ca) > 13 else 12
+        except (ValueError, IndexError):
+            h = 12
+        bucket = "00-06" if h < 6 else "06-12" if h < 12 else "12-18" if h < 18 else "18-24"
+        by_hour[bucket]["t"] += 1
+        if (t.get("pnl_pct") or 0) > 0:
+            by_hour[bucket]["w"] += 1
+    hour_summary = {
+        k: {"trades": v["t"], "win_rate": round(v["w"] / v["t"], 3) if v["t"] > 0 else 0}
+        for k, v in by_hour.items()
+    }
+
+    # 按持仓时长
+    by_hold: Dict[str, dict] = {"0-1h": {"t": 0, "w": 0, "sum": 0},
+                                  "1-4h": {"t": 0, "w": 0, "sum": 0},
+                                  "4-12h": {"t": 0, "w": 0, "sum": 0},
+                                  "12h+": {"t": 0, "w": 0, "sum": 0}}
+    for t in paired:
+        ca = t.get("created_at", "")
+        ea = t.get("exited_at", "")
+        try:
+            from datetime import datetime as _dt
+            c_dt = _dt.fromisoformat(ca.replace("Z", "+00:00"))
+            e_dt = _dt.fromisoformat(ea.replace("Z", "+00:00"))
+            hours = (e_dt - c_dt).total_seconds() / 3600
+        except Exception:
+            hours = 4
+        bucket = "0-1h" if hours < 1 else "1-4h" if hours < 4 else "4-12h" if hours < 12 else "12h+"
+        pnl = float(t.get("pnl_pct") or 0)
+        by_hold[bucket]["t"] += 1
+        by_hold[bucket]["sum"] += pnl
+        if pnl > 0:
+            by_hold[bucket]["w"] += 1
+    hold_summary = {
+        k: {
+            "trades": v["t"],
+            "win_rate": round(v["w"] / v["t"], 3) if v["t"] > 0 else 0,
+            "avg_pnl": round(v["sum"] / v["t"], 2) if v["t"] > 0 else 0,
+        }
+        for k, v in by_hold.items()
+    }
+
+    # 记忆系统效果
+    memory_stats = {"total_reflections": 0, "active_semantic_rules": 0,
+                    "rule_compliance_rate": 0, "compliance_win_rate": 0,
+                    "violation_win_rate": 0}
+    try:
+        sem_res = db.table("agent_memory").select("comply_win, comply_lose, violate_win, violate_lose") \
+            .eq("type", "semantic").eq("is_active", True).execute()
+        rules = sem_res.data or []
+        memory_stats["active_semantic_rules"] = len(rules)
+        total_cw = sum(r.get("comply_win", 0) or 0 for r in rules)
+        total_cl = sum(r.get("comply_lose", 0) or 0 for r in rules)
+        total_vw = sum(r.get("violate_win", 0) or 0 for r in rules)
+        total_vl = sum(r.get("violate_lose", 0) or 0 for r in rules)
+        total_comply = total_cw + total_cl
+        total_violate = total_vw + total_vl
+        total_all = total_comply + total_violate
+        if total_all > 0:
+            memory_stats["rule_compliance_rate"] = round(total_comply / total_all, 3)
+        if total_comply > 0:
+            memory_stats["compliance_win_rate"] = round(total_cw / total_comply, 3)
+        if total_violate > 0:
+            memory_stats["violation_win_rate"] = round(total_vw / total_violate, 3)
+
+        refl_res = db.table("agent_memory").select("id", count="exact") \
+            .eq("type", "episodic").eq("category", "risk_lesson").execute()
+        memory_stats["total_reflections"] = refl_res.count or 0
+    except Exception:
+        pass
+
+    return {
+        "period_days": days,
+        "total_trades": total_trades,
+        "paired_trades": len(paired),
+        "open_positions": len(open_positions),
+        "actual_win_rate": round(actual_wr, 3),
+        "total_invested_usd": round(total_invested, 2),
+        "realized_pnl_usd": round(realized_pnl, 2),
+        "avg_pnl_per_trade_pct": round(avg_pnl, 2),
+        "best_trade_pct": round(best_pnl, 2),
+        "worst_trade_pct": round(worst_pnl, 2),
+        "by_chain": chain_summary,
+        "by_strategy_type": strategy_summary,
+        "by_hour": hour_summary,
+        "by_hold_duration": hold_summary,
+        "memory_stats": memory_stats,
+    }
+
+
+# ══════════════════════════════════════════════════════
+# PRD-005: O5 风控审计工具
+# ══════════════════════════════════════════════════════
+
+def tool_read_risk_events(days: int = 7) -> dict:
+    """
+    O5: 优化 Agent 调用此工具评估风控是否合理
+
+    只读取 block + warn（不含 pass）。
+    包含多时间窗口价格回填 + 最大回撤 + 综合判定。
+    """
+    db = get_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    try:
+        res = db.table("agent_risk_events").select("*") \
+            .gte("created_at", f"{cutoff}T00:00:00Z") \
+            .order("created_at", desc=True).limit(500).execute()
+        events = res.data or []
+    except Exception as e:
+        log.warning("tool_read_risk_events: %s", e)
+        return {"error": str(e)}
+
+    total_blocked = sum(1 for e in events if e.get("action") == "block")
+    total_warned = sum(1 for e in events if e.get("action") == "warn")
+
+    # 拦截后表现分析（只看 block）
+    blocks = [e for e in events if e.get("action") == "block"]
+    profitable_24h = 0
+    dropped_24h = 0
+    no_data = 0
+    max_dd_exceeded = 0
+
+    by_reason: Dict[str, dict] = {}
+    for e in blocks:
+        reason = e.get("reason", "unknown")
+        # 简化 reason key
+        reason_key = reason.split("]")[1].strip().split("(")[0].strip() if "]" in reason else reason.split("(")[0].strip()
+        reason_key = reason_key[:40]
+        if reason_key not in by_reason:
+            by_reason[reason_key] = {"count": 0, "correct": 0}
+        by_reason[reason_key]["count"] += 1
+
+        p24 = e.get("token_price_24h_later")
+        p_at = e.get("token_price_at_event")
+        was_correct = e.get("was_correct")
+        max_dd = e.get("token_max_drawdown_24h")
+
+        if p24 is None or p_at is None or p_at == 0:
+            no_data += 1
+        else:
+            if float(p24) > float(p_at):
+                profitable_24h += 1
+            else:
+                dropped_24h += 1
+
+        if max_dd is not None and float(max_dd) > 20:
+            max_dd_exceeded += 1
+
+        if was_correct is True:
+            by_reason[reason_key]["correct"] += 1
+
+    total_with_data = total_blocked - no_data
+    block_accuracy = 0
+    missed_opp = 0
+    if total_with_data > 0:
+        correct_count = dropped_24h + max_dd_exceeded  # 去重后
+        block_accuracy = round(min(1.0, correct_count / total_with_data), 3)
+        missed_opp = round(profitable_24h / total_with_data, 3)
+
+    reason_summary = {}
+    for r, v in by_reason.items():
+        reason_summary[r] = {
+            "count": v["count"],
+            "correct": v["correct"],
+            "accuracy": round(v["correct"] / v["count"], 3) if v["count"] > 0 else 0,
+        }
+
+    return {
+        "period_days": days,
+        "total_blocked": total_blocked,
+        "total_warned": total_warned,
+        "blocked_token_performance": {
+            "actually_profitable_24h": profitable_24h,
+            "actually_dropped_24h": dropped_24h,
+            "no_data": no_data,
+            "max_drawdown_exceeded_20pct": max_dd_exceeded,
+        },
+        "block_accuracy": block_accuracy,
+        "missed_opportunity_rate": missed_opp,
+        "by_block_reason": reason_summary,
+    }

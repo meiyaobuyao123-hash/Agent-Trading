@@ -426,6 +426,59 @@ async def unread_count(
     return {"unread_count": count}
 
 
+# ── PRD-005: 记忆系统端点 ──────────────────────────────────────
+
+@router.get("/memory")
+async def get_memory_stats(
+    user_id: str = Depends(get_current_user),
+):
+    """
+    获取记忆系统状态
+
+    返回短期/中期/长期记忆统计 + 最近事件 + 活跃规则列表。
+    """
+    from agent.memory import get_memory_manager
+
+    mem = get_memory_manager()
+    stats = mem.get_stats()
+
+    # 最近短期事件（10条）
+    recent_events = mem.working.get_recent(10)
+    # 只返回摘要
+    recent_summaries = [
+        {"summary": e.get("summary", str(e)[:80]), "type": e.get("type", ""), "ts": e.get("_ts", 0)}
+        for e in recent_events
+    ]
+
+    # 活跃 semantic 规则
+    active_rules = mem.semantic.get_all_active()
+    rules_summary = []
+    for r in active_rules:
+        sd = r.get("structured_data") or {}
+        cw = r.get("comply_win", 0) or 0
+        cl = r.get("comply_lose", 0) or 0
+        total = cw + cl
+        rules_summary.append({
+            "id": r.get("id", ""),
+            "condition": sd.get("condition", "") if isinstance(sd, dict) else "",
+            "action": sd.get("action", "") if isinstance(sd, dict) else "",
+            "comply_win": cw,
+            "comply_lose": cl,
+            "violate_win": r.get("violate_win", 0) or 0,
+            "violate_lose": r.get("violate_lose", 0) or 0,
+            "comply_win_rate": round(cw / total * 100, 1) if total > 0 else None,
+            "usage_count": r.get("usage_count", 0) or 0,
+            "content": r.get("content", "")[:100],
+            "created_at": r.get("created_at", ""),
+        })
+
+    return {
+        "stats": stats,
+        "recent_events": recent_summaries,
+        "active_rules": rules_summary,
+    }
+
+
 # ── 表现分析 ────────────────────────────────────────────
 
 @router.get("/performance/{strategy_id}")

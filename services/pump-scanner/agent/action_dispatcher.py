@@ -17,6 +17,7 @@ from datetime import datetime
 from database import get_db
 from agent.schemas import StrategyTriggeredEvent
 from agent.risk_manager import get_risk_manager
+from agent.memory import get_memory_manager
 
 log = logging.getLogger(__name__)
 
@@ -209,6 +210,36 @@ class ActionDispatcher:
         token_address = event.matched_token or ""
         chain = event.matched_chain or ""
 
+        # ── PRD-005: 规则合规检查（warn only，不 block）──
+        memory = get_memory_manager()
+        _matched_rules: list = []
+        try:
+            trade_ctx = {
+                "chain": chain,
+                "trigger_source": (event.trigger_context or {}).get("source", ""),
+                "rsi": (event.trigger_context or {}).get("rsi", 50),
+                "regime": (event.trigger_context or {}).get("market_regime", "unknown"),
+                "mcap_bucket": (event.trigger_context or {}).get("mcap_bucket", ""),
+                "hold_hours": 0,
+            }
+            violations = memory.check_rules(trade_ctx)
+            for v in violations:
+                if v.get("action", "").startswith("skip") and action_type == "buy":
+                    log.warning(
+                        "[Memory] Rule violation (warn): %s -> %s (token=%s)",
+                        v["condition"], v["action"], event.token_name,
+                    )
+                    memory.add_event({
+                        "type": "rule_violation",
+                        "rule": v["condition"],
+                        "action": v["action"],
+                        "token": event.token_name,
+                        "summary": f"违反规则: {v['condition']} -> {v['action']}",
+                    })
+                    _matched_rules.append(v)
+        except Exception as e:
+            log.debug("Rule compliance check error: %s", e)
+
         # ── 风控检查 ──
         risk_mgr = get_risk_manager()
         token_data = event.trigger_context or {}
@@ -276,6 +307,34 @@ class ActionDispatcher:
                 action=action_type, amount_usd=amount_usd,
                 price=result.price, pnl_usd=0.0,
             )
+            # PRD-005: 写入短期记忆 + 交易计数
+            try:
+                memory.add_event({
+                    "type": "trade",
+                    "action": action_type,
+                    "token": event.token_name,
+                    "chain": chain,
+                    "amount_usd": amount_usd,
+                    "price": result.price,
+                    "summary": f"{'买入' if action_type == 'buy' else '卖出'} {event.token_name} ${amount_usd:.0f} @{result.price:.6f}",
+                })
+                memory.reflection.increment_trade_count()
+                # 存储匹配的规则 ID，用于交易闭环后回填 comply/violate
+                if _matched_rules:
+                    try:
+                        get_db().table("agent_executions").update({
+                            "trigger_context": {
+                                **(event.trigger_context or {}),
+                                "_matched_rules": [
+                                    {"rule_id": r["rule_id"], "condition": r["condition"], "action": r["action"]}
+                                    for r in _matched_rules
+                                ],
+                            }
+                        }).eq("token_address", token_address).eq("status", "confirmed").eq("action", action_type).execute()
+                    except Exception:
+                        pass
+            except Exception as e:
+                log.debug("Memory write after trade error: %s", e)
             # 写入成功告警
             try:
                 get_db().table("agent_alerts").insert({

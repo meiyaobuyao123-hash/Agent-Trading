@@ -180,6 +180,75 @@ class PositionMonitor:
             self._positions.pop(eid, None)
             self._peak_prices.pop(eid, None)
 
+            # PRD-005: 写入中期记忆（交易复盘） + 紧急反思检查
+            try:
+                from agent.memory import get_memory_manager
+                mem = get_memory_manager()
+
+                # 写入短期记忆
+                mem.add_event({
+                    "type": "exit",
+                    "trigger": trigger,
+                    "token": pos.token_address[:10],
+                    "chain": pos.chain,
+                    "pnl_pct": round(pnl_pct, 2),
+                    "amount_usd": pos.amount_usd,
+                    "summary": f"退出 {pos.token_address[:10]}.. {trigger} pnl={pnl_pct:+.1f}%",
+                })
+
+                # 写入中期记忆（交易闭环 → episodic）
+                mem.add_trade_review({
+                    "content": (
+                        f"{pos.token_address[:10]} {trigger}: "
+                        f"entry=${pos.entry_price:.6f} exit=${exit_price:.6f} "
+                        f"pnl={pnl_pct:+.1f}%"
+                    ),
+                    "structured_data": {
+                        "token": pos.token_address,
+                        "chain": pos.chain,
+                        "entry_price": pos.entry_price,
+                        "exit_price": exit_price,
+                        "pnl_pct": round(pnl_pct, 2),
+                        "pnl_usd": round(pnl_usd, 2),
+                        "hold_seconds": (
+                            datetime.now(timezone.utc) - datetime.now(timezone.utc)
+                        ).total_seconds(),  # 实际用 created_at
+                        "exit_trigger": trigger,
+                        "amount_usd": pos.amount_usd,
+                    },
+                    "chain": pos.chain,
+                    "importance": min(10, abs(pnl_pct) / 5),
+                })
+
+                # 回填规则合规记录
+                try:
+                    db = get_db()
+                    exec_row = db.table("agent_executions").select(
+                        "trigger_context"
+                    ).eq("id", eid).execute()
+                    if exec_row.data:
+                        tc = exec_row.data[0].get("trigger_context") or {}
+                        matched = tc.get("_matched_rules", [])
+                        won = pnl_pct > 0
+                        for mr in matched:
+                            rule_action = mr.get("action", "")
+                            # 如果规则说 skip_buy 且我们买了 → violate
+                            complied = not rule_action.startswith("skip")
+                            mem.semantic.record_compliance(
+                                mr["rule_id"], complied=complied, won=won
+                            )
+                except Exception:
+                    pass
+
+                # 紧急反思检查
+                if mem.reflection.should_emergency_reflect(pnl_pct, pos.amount_usd):
+                    import asyncio
+                    asyncio.create_task(
+                        _trigger_emergency_reflection(mem, pos.chain)
+                    )
+            except Exception as e:
+                log.debug("[PositionMonitor] Memory write error: %s", e)
+
             if result.success:
                 log.info(
                     f"[PositionMonitor] 卖出成功: {trigger} "
@@ -214,3 +283,54 @@ def get_position_monitor() -> PositionMonitor:
     if _monitor is None:
         _monitor = PositionMonitor()
     return _monitor
+
+
+async def _trigger_emergency_reflection(mem, chain: str) -> None:
+    """PRD-005: 紧急反思 — 单笔亏损 >25% 且金额 >$30"""
+    try:
+        from database import get_db
+        from datetime import timedelta
+
+        db = get_db()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        res = db.table("agent_executions").select("*") \
+            .eq("status", "closed") \
+            .gte("exited_at", cutoff) \
+            .order("exited_at", desc=True) \
+            .limit(10).execute()
+
+        trades = []
+        for r in (res.data or []):
+            trades.append({
+                "token": r.get("token_address", "")[:10],
+                "chain": r.get("chain", ""),
+                "action": r.get("action", ""),
+                "pnl_pct": r.get("pnl_pct", 0),
+                "pnl_usd": r.get("pnl_usd", 0),
+                "exit_trigger": r.get("exit_trigger", ""),
+                "amount_usd": r.get("amount_usd", 0),
+            })
+
+        if not trades:
+            return
+
+        active_rules = mem.semantic.get_all_active()
+        result = await mem.reflection.run_reflection(
+            trades=trades,
+            active_rules=active_rules,
+            is_emergency=True,
+        )
+
+        if result and result.get("new_rules"):
+            for rule in result["new_rules"][:3]:
+                mem.episodic.add({
+                    "category": "risk_lesson",
+                    "content": f"Emergency: {rule.get('condition', '')} -> {rule.get('action', '')}",
+                    "structured_data": rule,
+                    "chain": chain,
+                    "importance": 8,
+                })
+            log.info("[Emergency Reflection] Generated %d new rules", len(result["new_rules"]))
+
+    except Exception as e:
+        log.warning("[Emergency Reflection] Failed: %s", e)

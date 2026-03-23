@@ -125,6 +125,27 @@ class RiskManager:
             f"max_positions={self.config.max_open_positions}"
         )
 
+    def _record_risk_event(
+        self, action: str, reason: str, chain: str,
+        token_address: str, token_symbol: str,
+        amount_usd: float, risk_data: Dict[str, Any],
+    ) -> None:
+        """PRD-005: 写入 agent_risk_events（只记录 block + warn）"""
+        try:
+            from database import get_db
+            get_db().table("agent_risk_events").insert({
+                "action": action,  # 'block' | 'warn'
+                "reason": reason,
+                "chain": chain,
+                "token_address": token_address,
+                "token_symbol": token_symbol,
+                "amount_usd": amount_usd,
+                "risk_data": risk_data,
+                "token_price_at_event": risk_data.get("price_usd", 0),
+            }).execute()
+        except Exception as e:
+            log.debug("Risk event record failed: %s", e)
+
     def check_trade(
         self, token_address: str, chain: str, action: str,
         amount_usd: float, token_data: Optional[Dict[str, Any]] = None,
@@ -150,17 +171,32 @@ class RiskManager:
             ("chain_concentration", lambda: self._check_chain_concentration(chain, action)),
         ]
         warnings: List[str] = []
+        token_symbol = token_data.get("symbol", token_address[:10] if token_address else "")
         for name, check_fn in checks:
             try:
                 result = check_fn()
                 if not result.passed:
                     log.warning(f"Risk BLOCKED [{name}]: {result.reason} (token={token_address[:10]})")
+                    # PRD-005: 记录 block 事件
+                    self._record_risk_event(
+                        action="block", reason=f"[{name}] {result.reason}",
+                        chain=chain, token_address=token_address,
+                        token_symbol=token_symbol, amount_usd=amount_usd,
+                        risk_data={**token_data, "check_name": name},
+                    )
                     return result
                 if result.reason:
                     warnings.append(f"[{name}] {result.reason}")
             except Exception as e:
                 log.error(f"Risk check error [{name}]: {e}")
         if warnings:
+            # PRD-005: 记录 warn 事件
+            self._record_risk_event(
+                action="warn", reason="; ".join(warnings),
+                chain=chain, token_address=token_address,
+                token_symbol=token_symbol, amount_usd=amount_usd,
+                risk_data={**token_data, "warnings": warnings},
+            )
             return RiskCheckResult(passed=True, reason="; ".join(warnings), risk_level="medium")
         return RiskCheckResult.ok()
 

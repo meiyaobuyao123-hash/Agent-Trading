@@ -30,6 +30,7 @@ SIMPLE_RULES = [
     ("kol_tweets",         "created_at",  30,  None),
     ("hot_funnel_stats",   "recorded_at", 30,  None),
     ("token_performance",  "created_at",  90,  {"is_active": False}),
+    ("agent_risk_events",  "created_at",  30,  None),  # PRD-005
 ]
 
 

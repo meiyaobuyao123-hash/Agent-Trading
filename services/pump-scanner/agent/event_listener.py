@@ -25,6 +25,7 @@ from agent.evaluator import StrategyEvaluator
 from agent.strategy_manager import StrategyManager
 from agent.action_dispatcher import ActionDispatcher
 from agent.event_bus import get_event_bus
+from agent.memory import get_memory_manager
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +75,20 @@ async def _on_hot_coin_event(event_data: Dict[str, Any]):
         if _is_deduped("hot_coins", token_addr):
             return
 
+        # PRD-005: 写入短期记忆
+        try:
+            get_memory_manager().add_event({
+                "type": "signal",
+                "source": "hot_coin",
+                "token": data.get("symbol", token_addr[:8]),
+                "chain": data.get("chain", ""),
+                "score": data.get("score", 0),
+                "price": data.get("price_usd", 0),
+                "summary": f"hot_coin {data.get('symbol', token_addr[:8])} score={data.get('score', 0)} ${data.get('price_usd', 0):.6f}",
+            })
+        except Exception:
+            pass
+
         de = DataEvent(
             source="hot_coins",
             data=data,
@@ -104,6 +119,20 @@ async def _on_pump_event(event_data: Dict[str, Any]):
         if _is_deduped("pump_tokens", mint):
             return
 
+        # PRD-005: 写入短期记忆
+        try:
+            get_memory_manager().add_event({
+                "type": "signal",
+                "source": "pump",
+                "token": data.get("symbol", mint[:8]),
+                "chain": "solana",
+                "score": data.get("score", 0),
+                "bc_progress": data.get("bc_progress", 0),
+                "summary": f"pump {data.get('symbol', mint[:8])} score={data.get('score', 0)} bc={data.get('bc_progress', 0):.1f}%",
+            })
+        except Exception:
+            pass
+
         de = DataEvent(
             source="pump_tokens",
             data=data,
@@ -133,6 +162,20 @@ async def _on_kol_event(event_data: Dict[str, Any]):
 
         if _is_deduped("kol_signals", token_addr):
             return
+
+        # PRD-005: 写入短期记忆
+        try:
+            get_memory_manager().add_event({
+                "type": "signal",
+                "source": "kol",
+                "token": data.get("token_name", token_addr[:8]),
+                "chain": data.get("chain", ""),
+                "kol_count": data.get("kol_count", 0),
+                "signal_strength": data.get("signal_strength", 0),
+                "summary": f"kol {data.get('token_name', token_addr[:8])} kols={data.get('kol_count', 0)} strength={data.get('signal_strength', 0)}",
+            })
+        except Exception:
+            pass
 
         de = DataEvent(
             source="kol_signals",

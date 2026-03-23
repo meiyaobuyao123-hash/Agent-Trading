@@ -6,6 +6,7 @@
 
 Python 3.9 兼容。
 """
+import json
 import logging
 from typing import Any, Dict, List, Optional
 from datetime import datetime
@@ -313,3 +314,32 @@ class StrategyManager:
         if "rules" in node:
             for rule in node["rules"]:
                 self._collect_sources(rule, sources)
+
+    def _infer_strategy_type(
+        self,
+        conditions: Dict[str, Any],
+        data_sources: List[str],
+    ) -> str:
+        """
+        PRD-005: 自动推断 strategy_type 标签
+
+        推断逻辑：
+        - conditions 含 smart_money -> smart_money_follow
+        - conditions 含 kol -> kol_mention
+        - data_sources 含 hot_coins -> hot_breakout / hot_score
+        - data_sources 含 pump_tokens -> pump_early
+        - 其他 -> custom
+        """
+        cond_str = json.dumps(conditions).lower()
+
+        if "smart_money" in cond_str:
+            return "smart_money_follow"
+        if "kol" in cond_str or "kol_mentions" in str(data_sources).lower():
+            return "kol_mention"
+        if "hot_coins" in str(data_sources).lower():
+            if "price_change" in cond_str:
+                return "hot_breakout"
+            return "hot_score"
+        if "pump_tokens" in str(data_sources).lower():
+            return "pump_early"
+        return "custom"

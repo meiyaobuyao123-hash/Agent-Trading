@@ -257,6 +257,28 @@ async def main():
         misfire_grace_time=10,
     )
 
+    # ── PRD-005: 每日反思（UTC 20:00）──────────────────────
+    from agent.memory.cron_tasks import run_daily_reflection, backfill_risk_events
+    scheduler.add_job(
+        run_daily_reflection,
+        trigger=CronTrigger(hour=20, minute=0, timezone="UTC"),
+        id="daily_reflection",
+        name="Agent 每日反思",
+        misfire_grace_time=600,
+        max_instances=1,
+    )
+
+    # ── PRD-005: 风控事件回填（每 6h）──────────────────────
+    scheduler.add_job(
+        backfill_risk_events,
+        trigger="interval",
+        hours=6,
+        id="risk_events_backfill",
+        name="风控事件价格回填",
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
 
     # ══════════════════════════════════════════════════════════
     # 内盘数据报表
@@ -319,6 +341,8 @@ async def main():
         "  每日 UTC 03:00 → kol_accuracy_eval\n"
         "  ── Agent 系统 ──\n"
         "  每30秒         → agent_monitor\n"
+        "  每日 UTC 20:00 → daily_reflection (Agent 记忆反思)\n"
+        "  每6小时        → risk_events_backfill (风控事件价格回填)\n"
         "  常驻 WS        → smart_money_tracker (SOL ~400ms / EVM OKX 5s)\n"
         "  ── 数据报表 ──\n"
         "  每日 UTC 00:30 → pump_report (内盘漏斗报表)\n"

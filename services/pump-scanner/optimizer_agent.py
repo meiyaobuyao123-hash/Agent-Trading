@@ -22,7 +22,7 @@ from typing import Optional
 import anthropic
 
 from database import get_db
-from optimizer_tools import TOOL_DEFINITIONS, TOOL_MAP
+from optimizer_tools import TOOL_DEFINITIONS, TOOL_MAP, AGENT_TOOL_DEFINITIONS, AGENT_TOOL_MAP
 
 log = logging.getLogger(__name__)
 
@@ -537,6 +537,224 @@ def run_hot_optimization() -> dict:
             "completed_at": _now(),
         }).eq("id", run_id).execute()
         return {"run_id": run_id, "status": "failed", "mode": "hot", "error": str(e)}
+
+
+# ══════════════════════════════════════════════════════
+# PRD-010: Agent 全链路优化
+# ══════════════════════════════════════════════════════
+
+AGENT_OPTIMIZER_SYSTEM_PROMPT = """你是交易系统全链路优化专家。你可以优化 5 个维度：
+1. 信号发现（scorer 权重/阈值）-- propose_change type=scorer_param
+2. Agent 决策（分析师权重/辩论轮数/触发阈值）-- type=agent_config
+3. 风控参数（止损/止盈/仓位/Regime 参数）-- type=risk_param
+4. 记忆规则（新增/废弃 semantic 规则）-- type=memory_rule
+5. 监控口径（命中定义/追踪窗口）-- type=monitoring
+
+优化目标：
+- Agent 策略胜率 >= 55%
+- 盈亏比 >= 1.5:1
+- 最大回撤 <= 15%
+- 夏普率 >= 1.5
+
+工作流程：
+1. read_agent_performance -> 了解当前表现
+2. read_risk_events -> 风控是否合理
+3. read_agent_memory -> 记忆规则有效性
+4. read_regime_history -> 市场适应性
+5. 找到最薄弱环节
+6. backtest 验证改动
+7. propose_change（每次最多改 2 个维度）
+
+规则：
+- A/B 测试优于直接修改
+- memory_rule 一次最多废弃 3 条
+- 必须回测验证后才能提交
+- 先诊断再优化（找到最薄弱环节）
+- 用中文输出分析过程
+- 必须提交方案（propose_change），不要只给建议不行动
+"""
+
+
+def run_agent_optimization() -> dict:
+    """
+    PRD-010: 运行一次 Agent 全链路优化。
+    使用 AGENT_OPTIMIZER_SYSTEM_PROMPT + AGENT_TOOL_DEFINITIONS。
+    """
+    if not OPTIMIZER_API_KEY:
+        log.warning("OPTIMIZER_API_KEY not configured, skip agent optimization")
+        return {"status": "skipped", "reason": "no_api_key"}
+
+    db = get_db()
+
+    # 1. 创建运行记录
+    run = db.table("optimization_runs").insert({
+        "status": "running",
+        "metrics_snapshot": {},
+        "conversation": [],
+        "analysis": "agent_full_chain_optimizer",
+    }).execute()
+    run_id = run.data[0]["id"]
+    log.info("[AgentOptimizer] Started -- run_id=%s", run_id)
+
+    client = anthropic.Anthropic(api_key=OPTIMIZER_API_KEY)
+
+    # 2. 初始消息
+    initial_msg = (
+        "当前是 %s。\n"
+        "Agent 全链路优化运行 ID: %s\n\n"
+        "优化目标:\n"
+        "- Agent 策略胜率 >= 55%%\n"
+        "- 盈亏比 >= 1.5:1\n"
+        "- 最大回撤 <= 15%%\n"
+        "- 夏普率 >= 1.5\n\n"
+        "请开始分析：\n"
+        "1. 先用 read_agent_performance 了解最近 7 天交易表现\n"
+        "2. 然后用 read_risk_events 检查风控\n"
+        "3. 再用 read_agent_memory 检查记忆规则有效性\n"
+        "4. 诊断最薄弱环节，提出优化方案"
+    ) % (datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC'), run_id)
+
+    messages = [{"role": "user", "content": initial_msg}]
+    conversation_log = [{"role": "user", "content": initial_msg, "timestamp": _now()}]
+
+    total_input_tokens = 0
+    total_output_tokens = 0
+    max_turns = 20
+    proposals_count = 0
+
+    try:
+        for turn in range(max_turns):
+            log.info("[AgentOptimizer] turn %d/%d", turn + 1, max_turns)
+
+            for attempt in range(3):
+                try:
+                    response = client.messages.create(
+                        model=OPTIMIZER_MODEL,
+                        max_tokens=4096,
+                        system=AGENT_OPTIMIZER_SYSTEM_PROMPT,
+                        tools=AGENT_TOOL_DEFINITIONS,
+                        messages=messages,
+                    )
+                    break
+                except anthropic.RateLimitError:
+                    if attempt < 2:
+                        wait = 30 * (attempt + 1)
+                        log.warning("[AgentOptimizer] API 429, wait %ds...", wait)
+                        time.sleep(wait)
+                    else:
+                        raise
+                except anthropic.InternalServerError:
+                    if attempt < 2:
+                        time.sleep(10 * (attempt + 1))
+                    else:
+                        raise
+
+            total_input_tokens += response.usage.input_tokens
+            total_output_tokens += response.usage.output_tokens
+
+            # 记录 assistant 回复
+            for block in response.content:
+                if block.type == "text":
+                    conversation_log.append({
+                        "role": "assistant", "content": block.text, "timestamp": _now(),
+                    })
+                elif block.type == "tool_use":
+                    conversation_log.append({
+                        "role": "assistant", "tool_call": block.name,
+                        "input": block.input, "timestamp": _now(),
+                    })
+
+            messages.append({"role": "assistant", "content": response.content})
+
+            if response.stop_reason == "end_turn":
+                log.info("[AgentOptimizer] Analysis complete")
+                break
+
+            if response.stop_reason == "tool_use":
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        tool_name = block.name
+                        tool_input = block.input
+                        log.info("[AgentOptimizer] Tool: %s(%s)",
+                                 tool_name,
+                                 json.dumps(tool_input, ensure_ascii=False)[:100])
+
+                        try:
+                            if tool_name == "propose_change":
+                                tool_input["run_id"] = run_id
+
+                            handler = AGENT_TOOL_MAP.get(tool_name)
+                            if handler:
+                                result = handler(tool_input)
+                                proposals_count += 1 if tool_name == "propose_change" else 0
+                            else:
+                                result = {"error": "Unknown tool: %s" % tool_name}
+
+                            result_json = json.dumps(result, ensure_ascii=False, default=str)
+                            if len(result_json) > 15000:
+                                result_json = result_json[:15000] + "...(truncated)"
+                        except Exception as e:
+                            log.error("[AgentOptimizer] Tool %s failed: %s", tool_name, e)
+                            result_json = json.dumps({"error": str(e)})
+
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result_json,
+                        })
+                        conversation_log.append({
+                            "role": "tool", "tool": tool_name,
+                            "result_preview": result_json[:500], "timestamp": _now(),
+                        })
+
+                messages.append({"role": "user", "content": tool_results})
+
+        # 3. 费用
+        cost = (total_input_tokens / 1_000_000) * 15 + (total_output_tokens / 1_000_000) * 75
+
+        # 4. 最终分析文本
+        analysis_text = ""
+        for entry in reversed(conversation_log):
+            if entry["role"] == "assistant" and "content" in entry:
+                analysis_text = entry["content"]
+                break
+
+        # 5. 更新运行记录
+        db.table("optimization_runs").update({
+            "status": "completed",
+            "conversation": conversation_log,
+            "analysis": analysis_text,
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "cost_usd": round(cost, 4),
+            "completed_at": _now(),
+        }).eq("id", run_id).execute()
+
+        log.info(
+            "[AgentOptimizer] Done -- run_id=%s, turns=%d, proposals=%d, cost=$%.4f",
+            run_id, turn + 1, proposals_count, cost,
+        )
+
+        return {
+            "run_id": run_id,
+            "status": "completed",
+            "mode": "agent",
+            "turns": turn + 1,
+            "proposals_count": proposals_count,
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "cost_usd": round(cost, 4),
+        }
+
+    except Exception as e:
+        log.error("[AgentOptimizer] Exception: %s", e, exc_info=True)
+        db.table("optimization_runs").update({
+            "status": "failed",
+            "conversation": conversation_log,
+            "analysis": "Agent optimization failed: %s" % str(e),
+            "tokens_used": total_input_tokens + total_output_tokens,
+            "completed_at": _now(),
+        }).eq("id", run_id).execute()
+        return {"run_id": run_id, "status": "failed", "mode": "agent", "error": str(e)}
 
 
 # ══════════════════════════════════════════════════════

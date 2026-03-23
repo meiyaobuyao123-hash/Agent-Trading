@@ -1,13 +1,14 @@
 """
-Governor — 优化 Agent 的调度器和安全守卫
+Governor -- Optimizer Agent 的调度器和安全守卫
 
-职责：
-1. 每3天检查指标是否达标
-2. 不达标时启动 Optimizer Agent
-3. 收集每日指标快照
-4. 回滚保护：连续恶化 → 自动回滚
+PRD-010 升级：
+- 三模块轮转：pump(day%9<3) -> hot(day%9<6) -> agent(day%9>=6)
+- 紧急触发：win_rate<40% 或 max_drawdown>10% -> 立即 agent 优化
+- 紧急后冷却：跳过下次正常轮转
+- 回滚保护：连续恶化 -> 自动回滚
 """
 
+import asyncio
 import logging
 from datetime import date, timedelta, datetime, timezone
 
@@ -17,42 +18,23 @@ from optimizer_tools import tool_read_metrics, tool_read_config
 
 log = logging.getLogger(__name__)
 
+# 冷却状态存储（进程内存级，重启后清除）
+_cooldown_until = None  # type: datetime | None
+
 
 async def run_governor():
     """
     Governor 主入口（由 APScheduler 每3天调用）。
-    检查指标 → 必要时启动 Optimizer Agent。
+
+    PRD-010: 三模块轮转 + 紧急触发 + 冷却机制。
     """
-    log.info("🏛️ Governor 开始检查...")
+    log.info("[Governor] 开始检查...")
 
     try:
-        # 1. 收集当前指标快照（每次都做，不管是否触发优化）
+        # 1. 收集当前指标快照（每次都做）
         _save_daily_metrics()
 
-        # 2. 读取7天指标
-        metrics = tool_read_metrics(days=7)
-        perf = metrics.get("performance", {})
-        hit_rate = perf.get("hit_rate", 0)
-        recall = perf.get("recall", 0)
-        f1 = perf.get("f1_score", 0)
-
-        log.info(
-            f"🏛️ 当前指标: hit_rate={hit_rate:.2%}, "
-            f"recall={recall:.2%}, f1={f1:.4f}"
-        )
-
-        # 3. 检查是否达标
-        targets_met = (
-            hit_rate >= TARGETS["hit_rate_7d"] and
-            recall >= TARGETS["recall_7d"] and
-            f1 >= TARGETS["f1_7d"]
-        )
-
-        if targets_met:
-            log.info("🏛️ ✅ 所有指标达标，跳过优化")
-            return {"status": "targets_met", "metrics": perf}
-
-        # 4. 检查是否有未审批的方案（避免重复生成）
+        # 2. 检查是否有未审批的方案（避免重复生成）
         db = get_db()
         pending = db.table("optimization_proposals") \
             .select("id") \
@@ -60,53 +42,173 @@ async def run_governor():
             .execute()
 
         if pending.data:
-            log.info(f"🏛️ ⏳ 有 {len(pending.data)} 个待审批方案，跳过新优化")
+            log.info("[Governor] %d 个待审批方案，跳过新优化", len(pending.data))
             return {
                 "status": "pending_proposals",
                 "pending_count": len(pending.data),
             }
 
-        # 5. 检查回滚保护：最近3次优化结果是否连续恶化
+        # 3. 检查回滚保护
         if _should_rollback():
-            log.warning("🏛️ ⚠️ 连续3次优化后指标恶化，触发回滚")
+            log.warning("[Governor] 连续3次优化后指标恶化，触发回滚")
             _auto_rollback()
             return {"status": "rolled_back"}
 
-        # 6. 交替运行 pump / hot optimizer
-        # 用 day_of_year 奇偶交替：偶数天跑 pump，奇数天跑 hot
-        import asyncio
+        # 4. 紧急触发检查 (PRD-010: 优先于正常轮转)
+        emergency = _check_emergency_trigger()
+        if emergency:
+            if _is_in_cooldown():
+                log.info("[Governor] Emergency skipped: in cooldown until %s",
+                         _cooldown_until)
+                return {"status": "emergency_cooldown"}
+
+            log.warning("[Governor] Emergency trigger: %s", emergency)
+            _set_cooldown(days=6)  # 紧急后跳过下次正常轮转
+            result = await _run_mode("agent")
+            return {
+                "status": "emergency_optimization",
+                "trigger": emergency,
+                "result": result,
+            }
+
+        # 5. 正常轮转：day%9 决定模式
         day_of_year = date.today().timetuple().tm_yday
-        mode = "hot" if day_of_year % 2 == 1 else "pump"
+        cycle_pos = day_of_year % 9
 
-        if mode == "hot":
-            log.info("🏛️ 🚀 启动 Hot Coin Optimizer Agent...")
-            result = await asyncio.to_thread(run_hot_optimization)
+        if cycle_pos < 3:
+            mode = "pump"
+        elif cycle_pos < 6:
+            mode = "hot"
         else:
-            log.info("🏛️ 🚀 指标未达标，启动 Pump Optimizer Agent...")
-            result = await asyncio.to_thread(run_optimization)
+            mode = "agent"
 
-        log.info(f"🏛️ {mode} Optimizer 完成: {result}")
+        # 冷却检查（紧急优化后跳过下次正常轮）
+        if _is_in_cooldown() and mode != "agent":
+            log.info("[Governor] Skipping %s: post-emergency cooldown", mode)
+            return {"status": "cooldown_skip", "skipped_mode": mode}
+
+        # 6. 读取指标判断是否需要优化（pump/hot 仅在不达标时运行）
+        if mode in ("pump", "hot"):
+            metrics = tool_read_metrics(days=7)
+            perf = metrics.get("performance", {})
+            hit_rate = perf.get("hit_rate", 0)
+            recall = perf.get("recall", 0)
+            f1 = perf.get("f1_score", 0)
+
+            log.info("[Governor] Metrics: hit_rate=%.2f%%, recall=%.2f%%, f1=%.4f",
+                     hit_rate * 100, recall * 100, f1)
+
+            targets_met = (
+                hit_rate >= TARGETS["hit_rate_7d"]
+                and recall >= TARGETS["recall_7d"]
+                and f1 >= TARGETS["f1_7d"]
+            )
+            if targets_met:
+                log.info("[Governor] Targets met, skip %s optimization", mode)
+                return {"status": "targets_met", "mode": mode, "metrics": perf}
+
+        # 7. 运行优化
+        result = await _run_mode(mode)
+        log.info("[Governor] %s Optimizer done: %s", mode, result)
 
         return {"status": "optimization_run", "mode": mode, "result": result}
 
     except Exception as e:
-        log.error(f"🏛️ Governor 异常: {e}", exc_info=True)
+        log.error("[Governor] Exception: %s", e, exc_info=True)
         return {"status": "error", "error": str(e)}
 
+
+async def _run_mode(mode: str) -> dict:
+    """运行指定模式的优化。"""
+    if mode == "pump":
+        log.info("[Governor] Starting Pump Optimizer Agent...")
+        return await asyncio.to_thread(run_optimization)
+    elif mode == "hot":
+        log.info("[Governor] Starting Hot Coin Optimizer Agent...")
+        return await asyncio.to_thread(run_hot_optimization)
+    elif mode == "agent":
+        log.info("[Governor] Starting Agent Full-Chain Optimizer...")
+        from optimizer_agent import run_agent_optimization
+        return await asyncio.to_thread(run_agent_optimization)
+    else:
+        raise ValueError("Unknown optimization mode: %s" % mode)
+
+
+# ============================================================
+# 紧急触发 (PRD-010)
+# ============================================================
+
+def _check_emergency_trigger() -> str:
+    """
+    检查紧急触发条件。
+    返回触发原因字符串，无触发则返回空字符串。
+    """
+    try:
+        from agent.performance_analytics import get_strategy_performance
+        # get_strategy_performance is async, run it sync
+        loop = asyncio.new_event_loop()
+        try:
+            perf = loop.run_until_complete(
+                get_strategy_performance("all", days=7)
+            )
+        finally:
+            loop.close()
+
+        win_rate = perf.get("win_rate", 0)
+        max_drawdown = perf.get("max_drawdown_pct", 0)
+
+        if win_rate > 0 and win_rate < 0.40:
+            return "win_rate=%.1f%% < 40%%" % (win_rate * 100)
+        if max_drawdown > 10:
+            return "max_drawdown=%.1f%% > 10%%" % max_drawdown
+
+    except Exception as e:
+        log.warning("[Governor] Emergency check failed (ok if no trades): %s", e)
+
+    return ""
+
+
+# ============================================================
+# 冷却机制 (PRD-010 Q14)
+# ============================================================
+
+def _is_in_cooldown() -> bool:
+    """检查是否在冷却期内。"""
+    global _cooldown_until
+    if _cooldown_until is None:
+        return False
+    return datetime.now(timezone.utc) < _cooldown_until
+
+
+def _set_cooldown(days: int = 6):
+    """设置冷却期（紧急优化后跳过下次正常轮）。"""
+    global _cooldown_until
+    _cooldown_until = datetime.now(timezone.utc) + timedelta(days=days)
+    log.info("[Governor] Cooldown set until %s", _cooldown_until.isoformat())
+
+
+def _clear_cooldown():
+    """清除冷却（测试用）。"""
+    global _cooldown_until
+    _cooldown_until = None
+
+
+# ============================================================
+# 每日指标快照
+# ============================================================
 
 def _save_daily_metrics():
     """保存每日指标快照到 optimization_metrics_history"""
     db = get_db()
     today = date.today().isoformat()
 
-    # 检查今天是否已保存
     existing = db.table("optimization_metrics_history") \
         .select("id") \
         .eq("snapshot_date", today) \
         .execute()
 
     if existing.data:
-        return  # 已有
+        return
 
     try:
         metrics = tool_read_metrics(days=1)
@@ -126,16 +228,19 @@ def _save_daily_metrics():
             "scorer_params": config.get("current_params"),
         }).execute()
 
-        log.info(f"📊 每日指标快照已保存: {today}")
+        log.info("[Governor] Daily metrics snapshot saved: %s", today)
     except Exception as e:
-        log.error(f"保存每日指标失败: {e}")
+        log.error("[Governor] Failed to save daily metrics: %s", e)
 
+
+# ============================================================
+# 回滚保护
+# ============================================================
 
 def _should_rollback() -> bool:
     """检查是否需要回滚（最近3次优化后连续恶化）"""
     db = get_db()
 
-    # 获取最近3次 applied 的方案
     applied = db.table("optimization_proposals") \
         .select("id, applied_at") \
         .eq("status", "applied") \
@@ -146,7 +251,6 @@ def _should_rollback() -> bool:
     if len(applied.data) < 3:
         return False
 
-    # 获取最近7天的每日指标
     history = db.table("optimization_metrics_history") \
         .select("snapshot_date, pump_f1") \
         .order("snapshot_date", desc=True) \
@@ -156,9 +260,8 @@ def _should_rollback() -> bool:
     if len(history.data) < 4:
         return False
 
-    # 简单检查：最近3天 F1 是否连续下降
     f1_values = [float(h.get("pump_f1") or 0) for h in history.data[:4]]
-    declining = all(f1_values[i] < f1_values[i+1] for i in range(3))
+    declining = all(f1_values[i] < f1_values[i + 1] for i in range(3))
 
     return declining
 
@@ -167,7 +270,6 @@ def _auto_rollback():
     """自动回滚到最近一次 applied 方案之前的参数"""
     db = get_db()
 
-    # 找到最近的 applied 方案
     latest = db.table("optimization_proposals") \
         .select("*") \
         .eq("status", "applied") \
@@ -176,29 +278,27 @@ def _auto_rollback():
         .execute()
 
     if not latest.data:
-        log.warning("没有可回滚的方案")
+        log.warning("[Governor] No proposal to rollback")
         return
 
     proposal = latest.data[0]
     params_before = proposal.get("params_before") or {}
 
     if not params_before:
-        log.warning("方案没有保存之前的参数，无法回滚")
+        log.warning("[Governor] Proposal has no params_before, cannot rollback")
         return
 
     import os
     base_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # 恢复参数
     for param, value in params_before.items():
         from optimizer_agent import _apply_config_change
         _apply_config_change(base_dir, param, value)
 
-    # 标记方案为回滚
     db.table("optimization_proposals").update({
         "status": "rolled_back",
         "rolled_back_at": datetime.now(timezone.utc).isoformat(),
         "rollback_reason": "连续3次优化后指标恶化，自动回滚",
     }).eq("id", proposal["id"]).execute()
 
-    log.warning(f"🔙 已回滚方案 #{proposal['id']}，参数恢复到之前状态")
+    log.warning("[Governor] Rolled back proposal #%s", proposal["id"])

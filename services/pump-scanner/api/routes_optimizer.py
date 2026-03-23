@@ -9,6 +9,9 @@ Optimizer API 路由
 - POST /api/optimizer/proposals/{id}/reject  — 审批拒绝
 - GET  /api/optimizer/metrics       — 指标趋势
 - POST /api/optimizer/trigger       — 手动触发优化
+- GET  /api/optimizer/ab-tests      — A/B 测试列表
+- POST /api/optimizer/ab-tests      — 创建 A/B 测试
+- GET  /api/optimizer/ab-tests/{id}/results — A/B 测试结果
 """
 
 import logging
@@ -174,7 +177,7 @@ async def get_metrics(days: int = 30):
 async def trigger_optimization(mode: str = "auto"):
     """
     手动触发一次优化（异步执行）。
-    mode: "auto"（Governor 自动选择）| "pump" | "hot"
+    mode: "auto"（Governor 自动选择）| "pump" | "hot" | "agent"
     """
     async def _run():
         try:
@@ -184,6 +187,9 @@ async def trigger_optimization(mode: str = "auto"):
             elif mode == "pump":
                 from optimizer_agent import run_optimization
                 result = await asyncio.to_thread(run_optimization)
+            elif mode == "agent":
+                from optimizer_agent import run_agent_optimization
+                result = await asyncio.to_thread(run_agent_optimization)
             else:
                 from governor import run_governor
                 result = await run_governor()
@@ -193,8 +199,77 @@ async def trigger_optimization(mode: str = "auto"):
 
     asyncio.create_task(_run())
 
+    mode_names = {"hot": "热币", "pump": "Pump", "agent": "Agent全链路", "auto": "自动"}
     return {
         "status": "triggered",
         "mode": mode,
-        "message": f"{'热币' if mode == 'hot' else 'Pump' if mode == 'pump' else '自动'}优化已在后台启动",
+        "message": f"{mode_names.get(mode, mode)}优化已在后台启动",
+    }
+
+
+# ── A/B 测试 (PRD-010) ────────────────────────────────
+
+class ABTestCreateRequest(BaseModel):
+    config_a: dict
+    config_b: dict
+    duration_days: int = 7
+
+
+@router.get("/ab-tests")
+async def list_ab_tests(status: Optional[str] = None, limit: int = 20):
+    """A/B 测试列表"""
+    db = get_db()
+    query = db.table("agent_ab_tests") \
+        .select("*") \
+        .order("started_at", desc=True) \
+        .limit(limit)
+
+    if status:
+        query = query.eq("status", status)
+
+    res = query.execute()
+    return {"tests": res.data, "count": len(res.data)}
+
+
+@router.post("/ab-tests")
+async def create_ab_test(body: ABTestCreateRequest):
+    """创建 A/B 测试"""
+    from agent.ab_test_manager import ABTestManager
+
+    manager = ABTestManager()
+    test_id = await manager.create_test(
+        config_a=body.config_a,
+        config_b=body.config_b,
+        duration_days=body.duration_days,
+    )
+
+    return {
+        "test_id": test_id,
+        "status": "running",
+        "duration_days": body.duration_days,
+        "message": "A/B test created, signals will be randomly assigned 50/50.",
+    }
+
+
+@router.get("/ab-tests/{test_id}/results")
+async def get_ab_test_results(test_id: str):
+    """A/B 测试结果"""
+    db = get_db()
+    res = db.table("agent_ab_tests").select("*").eq("id", test_id).execute()
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="A/B test not found")
+
+    test = res.data[0]
+    return {
+        "test_id": test["id"],
+        "status": test["status"],
+        "config_a": test.get("config_a"),
+        "config_b": test.get("config_b"),
+        "results_a": test.get("results_a"),
+        "results_b": test.get("results_b"),
+        "winner": test.get("winner"),
+        "started_at": test.get("started_at"),
+        "ends_at": test.get("ends_at"),
+        "completed_at": test.get("completed_at"),
     }

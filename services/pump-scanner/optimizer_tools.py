@@ -1332,3 +1332,528 @@ def tool_read_risk_events(days: int = 7) -> dict:
         "missed_opportunity_rate": missed_opp,
         "by_block_reason": reason_summary,
     }
+
+
+# ══════════════════════════════════════════════════════
+# PRD-010: 5 种提案 apply 统一接口 (Q16)
+# ══════════════════════════════════════════════════════
+
+def _apply_scorer(changes):
+    """修改 config.py scorer 参数。"""
+    import config
+    applied = []
+    for key, value in changes.items():
+        if hasattr(config, key):
+            old = getattr(config, key)
+            setattr(config, key, value)
+            applied.append({"param": key, "old": old, "new": value})
+    return {"type": "scorer_param", "applied": applied}
+
+
+def _apply_risk(changes):
+    """修改 config.py RISK_* / REGIME_RISK_PARAMS。"""
+    import config
+    applied = []
+    for key, value in changes.items():
+        if hasattr(config, key):
+            old = getattr(config, key)
+            setattr(config, key, value)
+            applied.append({"param": key, "old": old, "new": value})
+    return {"type": "risk_param", "applied": applied}
+
+
+def _apply_agent_config(changes):
+    """修改 Agent 配置（辩论轮数/冷却时间等）。"""
+    import config
+    applied = []
+    for key, value in changes.items():
+        if hasattr(config, key):
+            old = getattr(config, key)
+            setattr(config, key, value)
+            applied.append({"param": key, "old": old, "new": value})
+    return {"type": "agent_config", "applied": applied}
+
+
+def _apply_memory_rule(changes):
+    """
+    PRD-010 Q15: 操作 agent_memory 表（保护机制）。
+    changes: {
+        "add_rules": [{"content": "...", "importance": 5}],
+        "deprecate_rule_ids": ["uuid1", "uuid2"]
+    }
+    - 一次最多废弃 3 条
+    - 废弃 = 软删除（is_active=False，可恢复）
+    - 新增规则 importance <= 5
+    """
+    db = get_db()
+    add_rules = changes.get("add_rules", [])
+    deprecate_ids = changes.get("deprecate_rule_ids", [])
+
+    # 保护：不超过 3 条废弃
+    if len(deprecate_ids) > 3:
+        raise ValueError("Cannot deprecate >3 rules at once (got %d)" % len(deprecate_ids))
+
+    deprecated = []
+    for rule_id in deprecate_ids:
+        db.table("agent_memory").update({
+            "is_active": False,
+        }).eq("id", rule_id).execute()
+        deprecated.append(rule_id)
+
+    added = []
+    for rule in add_rules:
+        row = {
+            "content": rule.get("content", ""),
+            "importance": min(rule.get("importance", 5), 5),
+            "type": "semantic",
+            "is_active": True,
+        }
+        res = db.table("agent_memory").insert(row).execute()
+        if res.data:
+            added.append(res.data[0].get("id"))
+
+    return {
+        "type": "memory_rule",
+        "deprecated_ids": deprecated,
+        "added_ids": added,
+    }
+
+
+def _apply_monitoring(changes):
+    """修改监控口径（命中定义/追踪窗口）。"""
+    import config
+    applied = []
+    for key, value in changes.items():
+        if hasattr(config, key):
+            old = getattr(config, key)
+            setattr(config, key, value)
+            applied.append({"param": key, "old": old, "new": value})
+    return {"type": "monitoring", "applied": applied}
+
+
+APPLY_HANDLERS = {
+    "scorer_param": _apply_scorer,
+    "risk_param": _apply_risk,
+    "agent_config": _apply_agent_config,
+    "memory_rule": _apply_memory_rule,
+    "monitoring": _apply_monitoring,
+}
+
+
+def apply_proposal(proposal):
+    """
+    PRD-010 Q16: 统一 apply 入口。
+    proposal: dict with keys "type" and "changes".
+    """
+    ptype = proposal.get("type", "scorer_param")
+    handler = APPLY_HANDLERS.get(ptype)
+    if not handler:
+        raise ValueError("Unknown proposal type: %s" % ptype)
+    return handler(proposal["changes"])
+
+
+# ══════════════════════════════════════════════════════
+# PRD-010: Agent Memory 读取工具
+# ══════════════════════════════════════════════════════
+
+def tool_read_agent_memory(days: int = 30) -> dict:
+    """读取 agent_memory 表中的 semantic 规则及其有效性统计。"""
+    db = get_db()
+
+    try:
+        rules_res = db.table("agent_memory").select("*") \
+            .eq("type", "semantic").eq("is_active", True) \
+            .order("importance", desc=True).limit(100).execute()
+        rules = rules_res.data or []
+    except Exception as e:
+        return {"error": str(e)}
+
+    rule_list = []
+    for r in rules:
+        cw = r.get("comply_win", 0) or 0
+        cl = r.get("comply_lose", 0) or 0
+        vw = r.get("violate_win", 0) or 0
+        vl = r.get("violate_lose", 0) or 0
+        total = cw + cl + vw + vl
+        comply_total = cw + cl
+        comply_wr = round(cw / comply_total, 3) if comply_total > 0 else 0
+        violate_total = vw + vl
+        violate_wr = round(vw / violate_total, 3) if violate_total > 0 else 0
+
+        rule_list.append({
+            "id": r.get("id"),
+            "content": r.get("content", "")[:200],
+            "importance": r.get("importance"),
+            "total_samples": total,
+            "comply_win_rate": comply_wr,
+            "violate_win_rate": violate_wr,
+            "effective": comply_wr > violate_wr if total >= 5 else None,
+        })
+
+    effective_count = sum(1 for r in rule_list if r["effective"] is True)
+    ineffective_count = sum(1 for r in rule_list if r["effective"] is False)
+    unknown_count = sum(1 for r in rule_list if r["effective"] is None)
+
+    return {
+        "total_active_rules": len(rule_list),
+        "effective": effective_count,
+        "ineffective": ineffective_count,
+        "insufficient_data": unknown_count,
+        "rules": rule_list,
+    }
+
+
+# ══════════════════════════════════════════════════════
+# PRD-010: A/B 测试工具
+# ══════════════════════════════════════════════════════
+
+def tool_propose_ab_test(config_a: dict, config_b: dict, duration_days: int = 7) -> dict:
+    """
+    PRD-010 O10: 提交 A/B 测试提案（双方案并行）。
+    """
+    from agent.ab_test_manager import ABTestManager
+    import asyncio
+
+    manager = ABTestManager()
+    loop = asyncio.new_event_loop()
+    try:
+        test_id = loop.run_until_complete(
+            manager.create_test(config_a, config_b, duration_days)
+        )
+    finally:
+        loop.close()
+
+    return {
+        "test_id": test_id,
+        "status": "running",
+        "duration_days": duration_days,
+        "message": "A/B test created. Signals will be randomly assigned 50/50.",
+    }
+
+
+def tool_read_ab_results(test_id: str) -> dict:
+    """PRD-010 O10: 读取 A/B 测试结果。"""
+    db = get_db()
+    res = db.table("agent_ab_tests").select("*").eq("id", test_id).execute()
+    if not res.data:
+        return {"error": "Test not found: %s" % test_id}
+
+    test = res.data[0]
+    return {
+        "test_id": test["id"],
+        "status": test["status"],
+        "config_a": test.get("config_a"),
+        "config_b": test.get("config_b"),
+        "results_a": test.get("results_a"),
+        "results_b": test.get("results_b"),
+        "winner": test.get("winner"),
+        "started_at": test.get("started_at"),
+        "ends_at": test.get("ends_at"),
+        "completed_at": test.get("completed_at"),
+    }
+
+
+# ══════════════════════════════════════════════════════
+# PRD-010: Agent Tool Definitions (JSON Schema)
+# ══════════════════════════════════════════════════════
+
+# ══════════════════════════════════════════════════════
+# PRD-009: O8 执行质量审计工具
+# ══════════════════════════════════════════════════════
+
+def tool_read_execution_quality(days: int = 7) -> dict:
+    """
+    O8: 读取执行质量 — DEX 路由表现
+
+    按 DEX 统计滑点/失败率，fallback/split 触发次数，
+    估算 vs 全部走 OKX 的节省金额。
+    """
+    db = get_db()
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    try:
+        rows = db.table("agent_executions") \
+            .select("*") \
+            .gte("created_at", f"{cutoff}T00:00:00Z") \
+            .execute().data
+    except Exception as e:
+        log.warning(f"execution_quality query error: {e}")
+        rows = []
+
+    if not rows:
+        return {
+            "period_days": days,
+            "total_trades": 0,
+            "by_dex": {},
+            "fallback_triggered": 0,
+            "split_triggered": 0,
+            "estimated_savings_usd": 0,
+            "note": "No execution data in this period",
+        }
+
+    # 按 DEX 统计
+    by_dex = {}
+    fallback_count = 0
+    split_count = 0
+    total_slippage_okx = 0.0
+    total_slippage_other = 0.0
+    okx_trade_count = 0
+    other_trade_count = 0
+
+    for row in rows:
+        dex = row.get("dex_used", "okx") or "okx"
+        if dex not in by_dex:
+            by_dex[dex] = {
+                "trades": 0,
+                "success": 0,
+                "failed": 0,
+                "total_slippage": 0.0,
+                "total_amount_usd": 0.0,
+            }
+
+        stats = by_dex[dex]
+        stats["trades"] += 1
+        if row.get("status") == "confirmed":
+            stats["success"] += 1
+        else:
+            stats["failed"] += 1
+
+        slippage = float(row.get("actual_slippage", 0) or 0)
+        stats["total_slippage"] += slippage
+        stats["total_amount_usd"] += float(row.get("amount_usd", 0) or 0)
+
+        # fallback / split 统计
+        if row.get("fallback_used"):
+            fallback_count += 1
+        sc = row.get("split_count")
+        if sc and int(sc) > 1:
+            split_count += 1
+
+        # 滑点对比（OKX vs 其他）
+        if dex == "okx":
+            total_slippage_okx += slippage
+            okx_trade_count += 1
+        else:
+            total_slippage_other += slippage
+            other_trade_count += 1
+
+    # 计算每个 DEX 的平均值
+    result_by_dex = {}
+    for dex, stats in by_dex.items():
+        n = stats["trades"]
+        result_by_dex[dex] = {
+            "trades": n,
+            "success": stats["success"],
+            "failed": stats["failed"],
+            "avg_slippage": round(stats["total_slippage"] / n, 3) if n > 0 else 0,
+            "fail_rate": round(stats["failed"] / n * 100, 1) if n > 0 else 0,
+            "total_amount_usd": round(stats["total_amount_usd"], 2),
+        }
+
+    # 估算节省金额（假设 OKX 平均滑点 vs 其他 DEX 平均滑点的差值）
+    avg_okx = total_slippage_okx / okx_trade_count if okx_trade_count > 0 else 1.5
+    avg_other = total_slippage_other / other_trade_count if other_trade_count > 0 else 0
+    # 如果其他 DEX 滑点更低，节省 = (okx_avg - other_avg) * other_total_amount / 100
+    other_total_amount = sum(
+        by_dex[d]["total_amount_usd"] for d in by_dex if d != "okx"
+    )
+    savings = max(0, (avg_okx - avg_other) / 100 * other_total_amount)
+
+    return {
+        "period_days": days,
+        "total_trades": len(rows),
+        "by_dex": result_by_dex,
+        "fallback_triggered": fallback_count,
+        "split_triggered": split_count,
+        "estimated_savings_usd": round(savings, 2),
+        "avg_slippage_okx": round(avg_okx, 3),
+        "avg_slippage_primary": round(avg_other, 3),
+    }
+
+
+AGENT_TOOL_DEFINITIONS = [
+    # 继承已有的分析工具
+    {
+        "name": "read_agent_performance",
+        "description": "读取交易 Agent 表现：胜率/PNL/按链/策略类型/时段/持仓时长 + 记忆系统效果。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "read_risk_events",
+        "description": "读取风控拦截/警告事件，评估风控准确率。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "read_agent_memory",
+        "description": "读取 semantic 记忆规则及其有效性统计（comply_win_rate vs violate_win_rate）。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "数据范围", "default": 30},
+            },
+        },
+    },
+    {
+        "name": "read_regime_history",
+        "description": "读取 Regime 检测历史：切换记录 + 各 regime 下交易表现 + 检测延迟 + 误报代价。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 14},
+            },
+        },
+    },
+    {
+        "name": "read_metrics",
+        "description": "读取最近 N 天的 pump 监控指标，包括漏斗数据、推荐表现、命中率/召回率。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+    {
+        "name": "read_config",
+        "description": "读取 config.py 的所有配置参数。",
+        "input_schema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "backtest",
+        "description": "用修改后的参数对历史数据回测，验证优化方案是否有效。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "param_changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "param": {"type": "string"},
+                            "old": {"type": "number"},
+                            "new": {"type": "number"},
+                        },
+                        "required": ["param", "new"],
+                    },
+                },
+                "days": {"type": "integer", "default": 7},
+                "top_n": {"type": "integer", "default": 10},
+            },
+            "required": ["param_changes"],
+        },
+    },
+    {
+        "name": "propose_change",
+        "description": (
+            "提交优化方案到数据库。支持 5 种 type: "
+            "scorer_param / risk_param / agent_config / memory_rule / monitoring。"
+            "memory_rule 一次最多废弃 3 条。审批后自动 apply。"
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "run_id": {"type": "integer"},
+                "title": {"type": "string", "description": "方案标题（中文，简短）"},
+                "rationale": {"type": "string", "description": "分析推理过程（中文）"},
+                "proposal_type": {
+                    "type": "string",
+                    "enum": ["scorer_param", "risk_param", "agent_config", "memory_rule", "monitoring"],
+                    "description": "提案类型",
+                },
+                "changes": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "file": {"type": "string"},
+                            "type": {"type": "string"},
+                            "param": {"type": "string"},
+                            "old": {},
+                            "new": {},
+                            "reason": {"type": "string"},
+                        },
+                        "required": ["param", "new", "reason"],
+                    },
+                },
+                "backtest_before": {"type": "object"},
+                "backtest_after": {"type": "object"},
+            },
+            "required": ["run_id", "title", "rationale", "changes", "backtest_before", "backtest_after"],
+        },
+    },
+    # A/B 测试工具
+    {
+        "name": "propose_ab_test",
+        "description": "提交 A/B 测试：双方案 50/50 随机分流，7 天后自动统计。优于直接修改。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "config_a": {"type": "object", "description": "方案 A 配置"},
+                "config_b": {"type": "object", "description": "方案 B 配置"},
+                "duration_days": {"type": "integer", "description": "测试天数", "default": 7},
+            },
+            "required": ["config_a", "config_b"],
+        },
+    },
+    {
+        "name": "read_ab_results",
+        "description": "读取 A/B 测试结果：两组胜率/PNL/夏普率对比 + 获胜方。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "test_id": {"type": "string", "description": "A/B 测试 ID"},
+            },
+            "required": ["test_id"],
+        },
+    },
+    {
+        "name": "read_execution_quality",
+        "description": "PRD-009 O8: 读取执行质量 — 按 DEX 统计滑点/失败率，fallback/split 触发次数，估算节省金额。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "days": {"type": "integer", "description": "查看最近几天", "default": 7},
+            },
+        },
+    },
+]
+
+
+AGENT_TOOL_MAP = {
+    "read_agent_performance": lambda args: tool_read_agent_performance(days=args.get("days", 7)),
+    "read_risk_events": lambda args: tool_read_risk_events(days=args.get("days", 7)),
+    "read_agent_memory": lambda args: tool_read_agent_memory(days=args.get("days", 30)),
+    "read_regime_history": lambda args: tool_read_regime_history(days=args.get("days", 14)),
+    "read_metrics": lambda args: tool_read_metrics(days=args.get("days", 7)),
+    "read_config": lambda args: tool_read_config(),
+    "backtest": lambda args: tool_backtest(
+        param_changes=args.get("param_changes", []),
+        days=args.get("days", 7),
+        top_n=args.get("top_n", 10),
+    ),
+    "propose_change": lambda args: tool_propose_change(
+        run_id=args["run_id"],
+        title=args["title"],
+        rationale=args["rationale"],
+        changes=args["changes"],
+        backtest_before=args["backtest_before"],
+        backtest_after=args["backtest_after"],
+    ),
+    "propose_ab_test": lambda args: tool_propose_ab_test(
+        config_a=args["config_a"],
+        config_b=args["config_b"],
+        duration_days=args.get("duration_days", 7),
+    ),
+    "read_ab_results": lambda args: tool_read_ab_results(test_id=args["test_id"]),
+    "read_execution_quality": lambda args: tool_read_execution_quality(days=args.get("days", 7)),
+}

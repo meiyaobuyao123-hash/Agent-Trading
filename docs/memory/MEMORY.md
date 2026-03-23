@@ -177,6 +177,11 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - PRD-003 胜率定义统一：20/20 测试通过，已上线
   - PRD-004 中等问题合集：16/16 测试通过，已上线
   - **总计 64 个测试全部通过**
+- ✅ **Agent 优化全景规划**：
+  - 6 Phase 29 模块（交易Agent 18 + 优化Agent 11）
+  - 深度调研：TradingAgents/FinMem/CryptoTrade/Walbi + 用户痛点 + DEX 对比
+  - PRD-005 v1.1：记忆+反思系统（17项审查修订），TECH-005 + TEST-005 完成
+  - Claude API 总月费预估：~$48/月（含记忆注入$5）
 - ✅ **Supabase 优化**：
   - db_cleanup.py 每 6h 清理
   - token_trades 95% 缩减（只存信号池+毕业代币）

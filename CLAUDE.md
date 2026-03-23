@@ -156,6 +156,7 @@ Claude LLM → 策略DSL → 规则引擎 → 风控 → OKX DEX（quote→swap�
   - PRD-004 中等问题合集：16/16 测试通过
   - **总计 64 个测试 ALL PASSED**
 - ✅ **Supabase 优化**：db_cleanup + token_trades 95%缩减 + 节流，预计可用 2 年+
+- ✅ **Agent 优化规划**：6 Phase 29 模块，PRD-005(记忆+反思) v1.1 + TECH + TEST 完成
 
 ---
 

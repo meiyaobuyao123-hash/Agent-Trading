@@ -679,6 +679,24 @@
 | PRD-004 中等问题 | 16 | ALL PASSED |
 | **总计** | **64** | **ALL PASSED** |
 
+### PRD-005 记忆与反思系统（Phase 1 设计）
+- PRD-005 v1.1 需求文档：4 个模块（M12记忆+M13反思+O4表现分析+O5风控审计）
+- TECH-005 技术方案：5 个新模块 + 6 个修改文件
+- TEST-005 测试用例：19 单元 + 5 集成 + 6 性能指标
+- 17 项审查修订：成本$15.75→$5/月、Haiku→Sonnet、全量→Top10注入、规则结构化
+- Agent 优化全景规划：6 Phase 29 模块（交易Agent 18 + 优化Agent 11）
+
+### 深度调研完成
+- 竞品分析：Walbi/3Commas/Cryptohopper/TradingAgents/Polystrat 6 产品对比
+- 学术论文：TradingAgents(夏普5.6)/FinMem(三层记忆)/CryptoTrade(反思机制) 3 篇
+- 用户痛点：97%系统失败、执行滑点、不适应市场变化、缺乏可解释性
+- DEX 执行对比：OKX vs Jupiter vs 1inch，MEME 场景 Jupiter 滑点少 50%
+- Agent 代码全量审计：~7000 行 16 模块完整分析
+
 ### 被否定的方案
 - ~~pump hit 只看 graduated~~：毕业后可能暴涨也可能归零，D3 涨幅更贴近实际
 - ~~单一胜率指标~~：actual 和 theoretical 含义不同，必须都展示
+- ~~Haiku 做反思~~：质量不够，改 Sonnet
+- ~~Semantic 规则全量注入~~：50条×50tokens=$15.75/月，改 Top10 注入=$4.68/月
+- ~~每日清零短期记忆~~：跨日交易丢失上下文，改 24h 滑动窗口
+- ~~自由文本规则~~：无法匹配"同一规则"，改结构化 condition/action JSON

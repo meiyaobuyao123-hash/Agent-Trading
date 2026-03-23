@@ -122,8 +122,21 @@ async def execute_with_routing(chain, token, action, amount, slippage):
 
 ---
 
+## 六、v1.1 审查修订
+
+| # | 修订 | 原因 |
+|---|------|------|
+| Q8 | EVM 地址需 EIP-55 checksum 转换（to_checksum_address） | 1inch 需要 checksum address |
+| Q9 | 1inch Key 可选配置，未配置跳过不阻塞 | 不应因 Key 缺失导致功能不可用 |
+| Q10 | 并行报价总超时 2s，慢的不等直接用快的 | MEME 行情不等人 |
+| Q11 | 大单拆分用 price_impact>2% 判断（不依赖流动性数据） | 流动性数据可能缺失 |
+| Q12 | 每笔交易记录 dex_used/quote/actual_slippage + 优化 Agent 可读 | 路由决策需要可审计 |
+
+---
+
 ## 版本历史
 
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | v1.0 | 2026-03-23 | 初始版本 |
+| v1.1 | 2026-03-24 | 审查修订：5 项优化 |

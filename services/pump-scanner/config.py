@@ -122,6 +122,22 @@ WIN_RATE_HOT_D3_PCT = 20        # 热币：D3 涨幅 ≥ 20% 算 hit
 WIN_RATE_BTCETH_PNL_PCT = 2     # BTC/ETH：PnL ≥ 2% 算 hit
 WIN_RATE_AGENT_BREAK_EVEN = 0   # Agent 策略：PnL ≥ 0% 就算 win
 
+# ── PRD-009: 多 DEX 执行路由 ─────────────────────────────────────
+# Jupiter (SOL) — 免费，无需 API Key
+JUPITER_BASE_URL = "https://quote-api.jup.ag/v6"
+JUPITER_QUOTE_TIMEOUT = float(os.getenv("JUPITER_QUOTE_TIMEOUT", "5"))
+
+# 1inch (EVM) — 可选，需 API Key (v1.1 Q9: 未配置则跳过)
+ONEINCH_API_KEY = os.getenv("ONEINCH_API_KEY", "")
+ONEINCH_BASE_URL = "https://api.1inch.dev/swap/v6.0"
+ONEINCH_QUOTE_TIMEOUT = float(os.getenv("ONEINCH_QUOTE_TIMEOUT", "5"))
+
+# DEX 路由参数
+DEX_PARALLEL_QUOTE_TIMEOUT = float(os.getenv("DEX_PARALLEL_QUOTE_TIMEOUT", "2.0"))  # v1.1 Q10
+DEX_SPLIT_IMPACT_THRESHOLD = float(os.getenv("DEX_SPLIT_IMPACT_THRESHOLD", "0.02"))  # v1.1 Q11: 2%
+DEX_MIN_SPLIT_AMOUNT_USD = float(os.getenv("DEX_MIN_SPLIT_AMOUNT_USD", "20"))
+DEX_SPLIT_INTERVAL_S = float(os.getenv("DEX_SPLIT_INTERVAL_S", "2"))
+
 # ── PRD-006: Regime 检测配置 ─────────────────────────────────────
 CUSUM_WINDOW = int(os.getenv("CUSUM_WINDOW", "24"))
 CUSUM_K_FACTOR = float(os.getenv("CUSUM_K_FACTOR", "0.5"))

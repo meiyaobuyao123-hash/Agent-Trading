@@ -192,7 +192,10 @@ class TradeExecutor:
         private_key: Optional[str] = None,
     ) -> TradeResult:
         """
-        执行买入或卖出交易
+        执行买入或卖出交易 — PRD-009: 通过 DexRouter 多 DEX 路由
+
+        优先走 Jupiter(SOL)/1inch(EVM)，失败自动 fallback 到 OKX。
+        大单自动拆分（price_impact > 2%）。
 
         Args:
             chain: 链名 (solana/eth/bsc/base)
@@ -202,6 +205,67 @@ class TradeExecutor:
             slippage_pct: 滑点百分比
             wallet_address: 钱包地址（不传则从环境变量读取）
             private_key: 私钥（不传则从环境变量读取）
+
+        Returns:
+            TradeResult
+        """
+        try:
+            from agent.dex_router import get_dex_router
+
+            router = get_dex_router()
+            route_result = await router.execute(
+                chain=chain,
+                token_address=token_address,
+                action=action,
+                amount_usd=amount_usd,
+                slippage_pct=slippage_pct,
+                wallet_address=wallet_address,
+                private_key=private_key,
+            )
+
+            # 转换 RouteResult → TradeResult
+            result = TradeResult(
+                success=route_result.success,
+                tx_hash=route_result.tx_hash,
+                from_amount=route_result.from_amount,
+                to_amount=route_result.to_amount,
+                price=route_result.price,
+                gas_fee=route_result.gas_fee,
+                error=route_result.error,
+                chain=chain,
+                token_address=token_address,
+                action=action,
+            )
+
+            if result.success:
+                log.info(
+                    f"Trade SUCCESS via {route_result.dex_used}: "
+                    f"{action} {token_address[:10]}.. tx={result.tx_hash}"
+                    f"{' (fallback)' if route_result.fallback_used else ''}"
+                    f"{f' (split x{route_result.split_count})' if route_result.split_count > 1 else ''}"
+                )
+
+            return result
+
+        except Exception as e:
+            log.error(f"Trade execution error: {e}", exc_info=True)
+            return TradeResult(
+                success=False, error=str(e),
+                chain=chain, token_address=token_address, action=action,
+            )
+
+    async def execute_trade_okx_direct(
+        self,
+        chain: str,
+        token_address: str,
+        action: str,
+        amount_usd: float,
+        slippage_pct: float = 1.0,
+        wallet_address: Optional[str] = None,
+        private_key: Optional[str] = None,
+    ) -> TradeResult:
+        """
+        OKX 直连执行（保留原始路径，供 DexRouter fallback 使用）
 
         Returns:
             TradeResult
@@ -243,7 +307,7 @@ class TradeExecutor:
                     chain=chain, token_address=token_address, action=action,
                 )
 
-            log.info(f"Executing {action}: {from_token[:10]}.. → {to_token[:10]}.. amount_raw={amount_raw} on {chain}")
+            log.info(f"Executing OKX direct {action}: {from_token[:10]}.. → {to_token[:10]}.. amount_raw={amount_raw} on {chain}")
 
             # Step 1: 获取 swap 数据
             swap_data = await self.get_swap_data(
@@ -319,10 +383,7 @@ class TradeExecutor:
                 action=action,
             )
 
-            log.info(f"Trade SUCCESS: {action} {token_address[:10]}.. tx={tx_hash}")
-
-            # Step 4: 记录到 DB
-            await self._record_execution(result)
+            log.info(f"Trade SUCCESS (OKX direct): {action} {token_address[:10]}.. tx={tx_hash}")
 
             return result
 

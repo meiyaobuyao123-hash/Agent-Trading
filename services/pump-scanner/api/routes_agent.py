@@ -546,6 +546,73 @@ async def backtest(
 
 # ── PRD-006: Regime 端点 ─────────────────────────────────────────
 
+# ── PRD-007: 辩论记录端点 ──────────────────────────────────────
+
+@router.get("/debates")
+async def list_debates(
+    limit: int = Query(50, ge=1, le=200),
+    token_address: Optional[str] = Query(None, description="按代币过滤"),
+    level: Optional[int] = Query(None, description="按辩论级别过滤 (1/2/3)"),
+    user_id: str = Depends(get_current_user),
+):
+    """
+    获取 Agent 辩论记录（PRD-007）
+
+    返回多角色辩论的完整记录：分析师报告、辩论过程、结论、风控审查。
+    """
+    from database import get_db
+
+    try:
+        query = (
+            get_db()
+            .table("agent_debates")
+            .select("*")
+            .order("created_at", desc=True)
+            .limit(limit)
+        )
+
+        if token_address:
+            query = query.eq("token_address", token_address)
+        if level is not None:
+            query = query.eq("debate_level", level)
+
+        result = query.execute()
+        rows = result.data or []
+    except Exception as e:
+        log.warning("Failed to fetch debates: %s", e)
+        rows = []
+
+    # 统计
+    total = len(rows)
+    l3_count = sum(1 for r in rows if r.get("debate_level") == 3)
+    bull_wins = sum(1 for r in rows if r.get("conclusion_winner") == "bull")
+    bear_wins = sum(1 for r in rows if r.get("conclusion_winner") == "bear")
+    avg_confidence = 0.0
+    if rows:
+        confs = [float(r.get("conclusion_confidence") or 0) for r in rows]
+        avg_confidence = sum(confs) / len(confs) if confs else 0
+
+    # 编排器统计
+    orchestrator_stats = {}
+    try:
+        from agent.multi_role_orchestrator import get_orchestrator
+        orchestrator_stats = get_orchestrator().get_stats()
+    except Exception:
+        pass
+
+    return {
+        "debates": rows,
+        "total": total,
+        "stats": {
+            "l3_count": l3_count,
+            "bull_wins": bull_wins,
+            "bear_wins": bear_wins,
+            "avg_confidence": round(avg_confidence, 3),
+            "orchestrator": orchestrator_stats,
+        },
+    }
+
+
 @router.get("/regime")
 async def get_regime_status(
     user_id: str = Depends(get_current_user),

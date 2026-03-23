@@ -26,6 +26,7 @@ from agent.strategy_manager import StrategyManager
 from agent.action_dispatcher import ActionDispatcher
 from agent.event_bus import get_event_bus
 from agent.memory import get_memory_manager
+from agent.multi_role_orchestrator import get_orchestrator
 
 log = logging.getLogger(__name__)
 
@@ -263,7 +264,7 @@ async def _on_kol_event(event_data: Dict[str, Any]):
 async def _process_event_driven(
     events: List[DataEvent], source: str
 ) -> int:
-    """事件驱动版策略评估"""
+    """事件驱动版策略评估（PRD-007: 集成多角色编排器）"""
     if not events:
         return 0
 
@@ -283,7 +284,21 @@ async def _process_event_driven(
                 continue
 
             actions = strategy.get("actions", [])
-            await _dispatcher.dispatch(trigger_event, actions)
+
+            # PRD-007: 检查是否有交易动作需要多角色评估
+            trade_actions = [a for a in actions if a.get("type") in ("buy", "sell")]
+            non_trade_actions = [a for a in actions if a.get("type") not in ("buy", "sell")]
+
+            # 非交易动作直接分发（alert/push/webhook）
+            if non_trade_actions:
+                await _dispatcher.dispatch(trigger_event, non_trade_actions)
+
+            # 交易动作走多角色编排器
+            if trade_actions:
+                await _dispatch_via_orchestrator(
+                    trigger_event, trade_actions, strategy, event,
+                )
+
             _strategy_mgr.record_trigger(trigger_event.strategy_id)
 
             await get_event_bus().publish("strategy.triggered", {
@@ -298,6 +313,87 @@ async def _process_event_driven(
 
     _stats["event_driven"] += triggered_count
     return triggered_count
+
+
+async def _dispatch_via_orchestrator(
+    trigger_event: Any,
+    trade_actions: List[Dict[str, Any]],
+    strategy: Dict[str, Any],
+    data_event: DataEvent,
+) -> None:
+    """
+    PRD-007: 通过多角色编排器处理交易动作
+
+    L1 = 纯规则（直接 dispatch）
+    L2 = 单 Agent 快速评估
+    L3 = 全流程多角色（分析师+辩论+决策+风控）
+    """
+    orchestrator = get_orchestrator()
+    token_data = data_event.data or {}
+    market_data = token_data.copy()  # 当前数据即市场数据
+
+    for action in trade_actions:
+        amount_usd = float(action.get("amount_usd", 0))
+        score = float(token_data.get("score", 0))
+        token_address = data_event.token_address or ""
+        has_trade = action.get("type") in ("buy", "sell")
+
+        level = orchestrator.determine_level(
+            amount_usd=amount_usd,
+            score=score,
+            token_address=token_address,
+            has_trade_action=has_trade,
+        )
+
+        if level == 1:
+            # L1: 直接走原有 dispatcher
+            await _dispatcher.dispatch(trigger_event, [action])
+        else:
+            # L2/L3: 走编排器
+            try:
+                result = await orchestrator.execute(
+                    level=level,
+                    token_data=token_data,
+                    market_data=market_data,
+                    strategy=strategy,
+                    trade_action=action,
+                )
+
+                final_action = result.get("action", "hold")
+                if final_action in ("buy", "sell"):
+                    # 编排器通过 → 用调整后的金额执行
+                    adjusted_action = dict(action)
+                    adjusted_action["amount_usd"] = result.get("amount_usd", amount_usd)
+                    await _dispatcher.dispatch(trigger_event, [adjusted_action])
+
+                    log.info(
+                        "[PRD-007] L%d %s: %s $%.2f (conf=%.2f, tokens=%d) %s",
+                        level, final_action,
+                        data_event.token_name or token_address[:10],
+                        result.get("amount_usd", 0),
+                        result.get("confidence", 0),
+                        result.get("tokens_used", 0),
+                        result.get("reason", "")[:80],
+                    )
+                elif final_action == "blocked":
+                    log.warning(
+                        "[PRD-007] L%d BLOCKED: %s — %s",
+                        level,
+                        data_event.token_name or token_address[:10],
+                        result.get("reason", "")[:120],
+                    )
+                else:
+                    log.info(
+                        "[PRD-007] L%d HOLD: %s (conf=%.2f) — %s",
+                        level,
+                        data_event.token_name or token_address[:10],
+                        result.get("confidence", 0),
+                        result.get("reason", "")[:80],
+                    )
+            except Exception as e:
+                log.error("[PRD-007] Orchestrator error (fallback to direct dispatch): %s", e)
+                # 编排器异常 → fallback 到直接 dispatch
+                await _dispatcher.dispatch(trigger_event, [action])
 
 
 # ── 辅助 ─────────────────────────────────────────────

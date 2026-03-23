@@ -101,6 +101,7 @@ class BtcEthManager:
             asyncio.create_task(self._low_freq_loop()),
             asyncio.create_task(self._daily_loop()),
             asyncio.create_task(self._persist_loop()),
+            asyncio.create_task(self._paper_exit_loop()),
         ]
 
         log.info(
@@ -222,6 +223,23 @@ class BtcEthManager:
                                   asset, snapshot.get("_stale_count", 0))
             except Exception as e:
                 log.warning("[BTC/ETH] 持久化错误: %s", e)
+
+    async def _paper_exit_loop(self) -> None:
+        """每 60s 检查模拟盘止盈止损（PRD-004 M-05）"""
+        while self._running:
+            await asyncio.sleep(60)
+            try:
+                from btc_eth.paper_trading.engine import get_paper_engine
+                engine = get_paper_engine()
+                prices = {
+                    "BTC": self._indicator_engine.get_snapshot("BTC").get("price_usd", 0),
+                    "ETH": self._indicator_engine.get_snapshot("ETH").get("price_usd", 0),
+                }
+                closed = await engine.check_all_exits(prices)
+                if closed > 0:
+                    log.info("[BTC/ETH] Paper trading: %d positions closed by SL/TP", closed)
+            except Exception as e:
+                log.debug("[BTC/ETH] Paper exit check: %s", e)
 
     def get_health(self) -> Dict[str, Any]:
         """返回模块健康状态"""

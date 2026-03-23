@@ -330,59 +330,71 @@ class LLMParser:
         if not self.api_key:
             return None, "API 密钥未配置，无法解析策略。请设置 ANTHROPIC_API_KEY。"
 
-        try:
-            client = self._get_client()
+        # PRD-004 M-02: 重试逻辑（429/5xx 自动退避重试）
+        MAX_RETRIES = 3
+        RETRY_DELAYS = [5, 10, 20]
 
-            messages = [
-                {"role": "user", "content": user_message},
-            ]
+        client = self._get_client()
 
-            # 如果有上下文，添加到消息前
-            if context:
-                context_str = json.dumps(context, ensure_ascii=False, indent=2)
-                messages.insert(0, {
-                    "role": "user",
-                    "content": f"上下文信息：\n{context_str}",
-                })
-                messages.insert(1, {
-                    "role": "assistant",
-                    "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？",
-                })
+        messages = [
+            {"role": "user", "content": user_message},
+        ]
+        if context:
+            context_str = json.dumps(context, ensure_ascii=False, indent=2)
+            messages.insert(0, {
+                "role": "user",
+                "content": f"上下文信息：\n{context_str}",
+            })
+            messages.insert(1, {
+                "role": "assistant",
+                "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？",
+            })
 
-            # 在线程池中运行同步 API 调用，避免阻塞 async 事件循环
-            response = await asyncio.to_thread(
-                client.messages.create,
-                model=MODEL,
-                max_tokens=2048,
-                system=SYSTEM_PROMPT,
-                tools=[STRATEGY_TOOL],
-                messages=messages,
-            )
+        last_error = None
+        for attempt in range(MAX_RETRIES):
+            try:
+                response = await asyncio.to_thread(
+                    client.messages.create,
+                    model=MODEL,
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT,
+                    tools=[STRATEGY_TOOL],
+                    messages=messages,
+                )
 
-            # 提取结果
-            strategy_spec = None
-            ai_message = ""
+                strategy_spec = None
+                ai_message = ""
 
-            for block in response.content:
-                if block.type == "tool_use" and block.name == "create_strategy":
-                    strategy_spec = self._normalize_spec(block.input)
-                elif block.type == "text":
-                    ai_message = block.text
+                for block in response.content:
+                    if block.type == "tool_use" and block.name == "create_strategy":
+                        strategy_spec = self._normalize_spec(block.input)
+                    elif block.type == "text":
+                        ai_message = block.text
 
-            if strategy_spec and not ai_message:
-                ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
+                if strategy_spec and not ai_message:
+                    ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
 
-            if not strategy_spec and not ai_message:
-                ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
+                if not strategy_spec and not ai_message:
+                    ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
 
-            return strategy_spec, ai_message
+                return strategy_spec, ai_message
 
-        except anthropic.APIError as e:
-            log.error(f"Claude API error: {e}")
-            return None, f"AI 服务暂时不可用，请稍后再试。错误：{str(e)[:100]}"
-        except Exception as e:
-            log.error(f"LLM parser error: {e}")
-            return None, f"策略解析出错，请重新描述。"
+            except (anthropic.RateLimitError, anthropic.InternalServerError) as e:
+                last_error = e
+                if attempt < MAX_RETRIES - 1:
+                    delay = RETRY_DELAYS[attempt]
+                    log.warning(f"LLM Parser retry {attempt+1}/{MAX_RETRIES}: {e}, wait {delay}s")
+                    await asyncio.sleep(delay)
+                else:
+                    log.error(f"LLM Parser all {MAX_RETRIES} retries failed: {e}")
+            except anthropic.APIError as e:
+                log.error(f"Claude API error: {e}")
+                return None, f"AI 服务暂时不可用，请稍后再试。错误：{str(e)[:100]}"
+            except Exception as e:
+                log.error(f"LLM parser error: {e}")
+                return None, f"策略解析出错，请重新描述。"
+
+        return None, f"AI 服务繁忙，已重试 {MAX_RETRIES} 次。请稍后再试。"
 
     def _normalize_spec(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """

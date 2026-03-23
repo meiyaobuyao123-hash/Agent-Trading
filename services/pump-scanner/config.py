@@ -98,6 +98,24 @@ HOT_MAX_TOP10_PCT    = 0.80        # Top10 持仓 > 80% 标记为风险
 # ── Hot Coin Optimizer Agent ─────────────────────────────────────
 HOT_OPTIMIZER_API_KEY = os.getenv("HOT_OPTIMIZER_API_KEY", "")
 
+# ── Agent 配置（PRD-004 M-03）─────────────────────────────────
+SIGNAL_POOL_MIN_SCORE = int(os.getenv("SIGNAL_POOL_MIN_SCORE", "55"))
+SIGNAL_POOL_BC_MIN = float(os.getenv("SIGNAL_POOL_BC_MIN", "3"))
+SIGNAL_POOL_BC_MAX = float(os.getenv("SIGNAL_POOL_BC_MAX", "35"))
+AGENT_MONTHLY_QUOTA = int(os.getenv("AGENT_MONTHLY_QUOTA", "20"))
+
+# ── 风控配置（PRD-004 M-03）─────────────────────────────────
+RISK_DAILY_LOSS_LIMIT = float(os.getenv("RISK_DAILY_LOSS_LIMIT", "50"))
+RISK_WEEKLY_LOSS_LIMIT = float(os.getenv("RISK_WEEKLY_LOSS_LIMIT", "200"))
+RISK_MAX_POSITION_USD = float(os.getenv("RISK_MAX_POSITION_USD", "100"))
+RISK_MAX_DRAWDOWN_PCT = float(os.getenv("RISK_MAX_DRAWDOWN_PCT", "20"))
+RISK_BTC_CRISIS_PCT = float(os.getenv("RISK_BTC_CRISIS_PCT", "3"))
+RISK_TRAILING_STOP_ACTIVATION = float(os.getenv("RISK_TRAILING_STOP_ACTIVATION", "15"))
+
+# ── BTC/ETH 信号配置（PRD-004 M-03）─────────────────────────
+SIGNAL_COOLDOWN_HOURS = int(os.getenv("SIGNAL_COOLDOWN_HOURS", "4"))
+DEPTH_IMBALANCE_THRESHOLD = float(os.getenv("DEPTH_IMBALANCE_THRESHOLD", "0.3"))
+
 # ── 胜率统一定义（PRD-003）─────────────────────────────────────
 WIN_RATE_PUMP_D3_PCT = 30       # Pump 内盘：D3 涨幅 ≥ 30% 算 hit
 WIN_RATE_HOT_D3_PCT = 20        # 热币：D3 涨幅 ≥ 20% 算 hit

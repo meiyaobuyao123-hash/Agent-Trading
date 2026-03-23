@@ -23,14 +23,14 @@ log = logging.getLogger(__name__)
 
 @dataclass
 class RiskConfig:
-    """风控参数配置"""
-    max_position_usd: float = 100.0
+    """风控参数配置 — 从 config.py 读取默认值（PRD-004 M-03）"""
+    max_position_usd: float = 0      # 从 config.RISK_MAX_POSITION_USD
     max_portfolio_pct: float = 0.10
     max_open_positions: int = 20
     max_loss_per_trade_pct: float = 0.30
-    max_daily_loss_usd: float = 50.0
-    max_weekly_loss_usd: float = 200.0
-    max_drawdown_pct: float = 0.20
+    max_daily_loss_usd: float = 0    # 从 config.RISK_DAILY_LOSS_LIMIT
+    max_weekly_loss_usd: float = 0   # 从 config.RISK_WEEKLY_LOSS_LIMIT
+    max_drawdown_pct: float = 0      # 从 config.RISK_MAX_DRAWDOWN_PCT
     max_trades_per_hour: int = 5
     max_trades_per_day: int = 20
     min_trade_interval_sec: int = 60
@@ -46,6 +46,20 @@ class RiskConfig:
     default_take_profit_pct: float = 1.00
     trailing_stop_pct: float = 0.15
     trailing_stop_activation: float = 0.50
+
+    def __post_init__(self):
+        from config import (
+            RISK_MAX_POSITION_USD, RISK_DAILY_LOSS_LIMIT,
+            RISK_WEEKLY_LOSS_LIMIT, RISK_MAX_DRAWDOWN_PCT,
+        )
+        if self.max_position_usd == 0:
+            self.max_position_usd = RISK_MAX_POSITION_USD
+        if self.max_daily_loss_usd == 0:
+            self.max_daily_loss_usd = RISK_DAILY_LOSS_LIMIT
+        if self.max_weekly_loss_usd == 0:
+            self.max_weekly_loss_usd = RISK_WEEKLY_LOSS_LIMIT
+        if self.max_drawdown_pct == 0:
+            self.max_drawdown_pct = RISK_MAX_DRAWDOWN_PCT / 100
 
 
 @dataclass
@@ -422,7 +436,8 @@ class RiskManager:
                 return RiskCheckResult.ok()
 
             change_pct = (btc_price - oldest_price) / oldest_price
-            if change_pct < -0.03:
+            from config import RISK_BTC_CRISIS_PCT
+            if change_pct < -(RISK_BTC_CRISIS_PCT / 100):
                 return RiskCheckResult.block(
                     f"BTC 10min 跌 {change_pct*100:.1f}%，暂停买入"
                 )

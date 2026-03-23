@@ -168,6 +168,62 @@ class PaperTradingEngine:
 
         return closed
 
+    async def check_all_exits(self, current_prices: Dict[str, float]) -> int:
+        """检查所有用户的 open 交易止盈止损（PRD-004 M-05）"""
+        from database import get_db
+        try:
+            res = (get_db().table("btc_eth_paper_trades")
+                   .select("*").eq("status", "open").execute())
+            open_trades = res.data or []
+        except Exception:
+            return 0
+
+        closed_count = 0
+        for trade in open_trades:
+            user_id = trade.get("user_id", "")
+            asset = trade.get("asset", "BTC")
+            price = current_prices.get(asset, 0)
+            if price <= 0:
+                continue
+
+            entry = float(trade.get("entry_price", 0))
+            sl = float(trade.get("stop_loss", 0))
+            tp = float(trade.get("take_profit", 0))
+            side = trade.get("side", "long")
+            quantity = float(trade.get("quantity", 0))
+
+            should_close = False
+            reason = ""
+
+            if side == "long":
+                if sl > 0 and price <= sl:
+                    should_close, reason = True, "hit_stop"
+                elif tp > 0 and price >= tp:
+                    should_close, reason = True, "hit_target"
+            else:
+                if sl > 0 and price >= sl:
+                    should_close, reason = True, "hit_stop"
+                elif tp > 0 and price <= tp:
+                    should_close, reason = True, "hit_target"
+
+            if should_close:
+                pnl_usd = (price - entry) * quantity if side == "long" else (entry - price) * quantity
+                pnl_pct = (price / entry - 1) * 100 if side == "long" else (1 - price / entry) * 100
+                updates = {
+                    "exit_price": price, "pnl_usd": round(pnl_usd, 2),
+                    "pnl_pct": round(pnl_pct, 2), "status": reason,
+                    "closed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                try:
+                    get_db().table("btc_eth_paper_trades").update(updates).eq("id", trade["id"]).execute()
+                    closed_count += 1
+                    log.info("[PaperTrading] Auto-close %s %s: PNL $%.2f (%.1f%%)",
+                             asset, reason, pnl_usd, pnl_pct)
+                except Exception as e:
+                    log.warning("[PaperTrading] close failed: %s", e)
+
+        return closed_count
+
     async def get_metrics(self, user_id: str) -> Dict[str, Any]:
         """计算绩效指标"""
         from database import get_db

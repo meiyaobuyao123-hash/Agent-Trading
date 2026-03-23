@@ -415,6 +415,83 @@ async def main():
     except Exception as e:
         log.warning(f"BTC/ETH 模块启动失败: {e}")
 
+    # ══════════════════════════════════════════════════════════
+    # PRD-006: Regime 检测器
+    # ══════════════════════════════════════════════════════════
+    try:
+        from agent.regime_detector import get_regime_detector
+        regime_detector = get_regime_detector()
+
+        # 启动时加载历史特征（避免冷启动 12h 空白）
+        asyncio.create_task(regime_detector.load_historical_features())
+
+        # EventBus 订阅（数据管道：kline_close → CUSUM + HMM）
+        event_bus.subscribe("btc_eth.kline_close", regime_detector.on_kline_close)
+        event_bus.subscribe("btc_eth.indicator_update", regime_detector.on_indicator_update)
+
+        # CRISIS 清仓订阅
+        async def _on_crisis_for_positions(event_data):
+            data = event_data.get("data", event_data) if isinstance(event_data, dict) else event_data
+            if hasattr(data, "data"):
+                data = data.data
+            if isinstance(data, dict) and data.get("new_regime") == "CRISIS":
+                from agent.position_monitor import get_position_monitor
+                closed = await get_position_monitor().execute_crisis_close_all()
+                log.warning("[CRISIS] Auto-closed %d positions", closed)
+
+        event_bus.subscribe("market.regime_change", _on_crisis_for_positions)
+
+        # CRISIS 检测（每 1 分钟）
+        scheduler.add_job(
+            regime_detector.check_crisis,
+            trigger="interval",
+            minutes=1,
+            id="crisis_check",
+            name="CRISIS Check (1min)",
+            misfire_grace_time=30,
+            max_instances=1,
+        )
+
+        # HMM 定时分类（每 30 分钟 — BTC/SOL/ETH）
+        async def _hmm_periodic():
+            for asset in ("BTC", "SOL", "ETH"):
+                await regime_detector.update_hmm(asset)
+
+        scheduler.add_job(
+            _hmm_periodic,
+            trigger="interval",
+            minutes=30,
+            id="hmm_periodic",
+            name="HMM 30min (BTC/SOL/ETH)",
+            misfire_grace_time=60,
+            max_instances=1,
+        )
+
+        # Regime 快照（每 30 分钟）
+        scheduler.add_job(
+            regime_detector.save_periodic_snapshot,
+            trigger="interval",
+            minutes=30,
+            id="regime_snapshot",
+            name="Regime Snapshot (30min)",
+            misfire_grace_time=60,
+            max_instances=1,
+        )
+
+        # HMM 每日重训练（UTC 04:00）
+        scheduler.add_job(
+            regime_detector.retrain_hmm,
+            trigger=CronTrigger(hour=4, minute=0, timezone="UTC"),
+            id="hmm_retrain",
+            name="HMM Daily Retrain",
+            misfire_grace_time=3600,
+            max_instances=1,
+        )
+
+        log.info("PRD-006 Regime Detector started (CUSUM event-driven + HMM 30min + CRISIS 1min)")
+    except Exception as e:
+        log.warning(f"PRD-006 Regime Detector 启动失败: {e}")
+
     # 启动 FastAPI（如果启用）
     if ENABLE_API:
         from api.app import start_api_server

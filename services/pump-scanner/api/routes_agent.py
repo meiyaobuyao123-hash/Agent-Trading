@@ -542,3 +542,66 @@ async def backtest(
     days = (req.context or {}).get("days", 7)
     result = await backtest_strategy(spec, days=days)
     return result
+
+
+# ── PRD-006: Regime 端点 ─────────────────────────────────────────
+
+@router.get("/regime")
+async def get_regime_status(
+    user_id: str = Depends(get_current_user),
+):
+    """获取当前市场 Regime 状态"""
+    try:
+        from agent.regime_detector import get_regime_detector
+        detector = get_regime_detector()
+        return detector.get_stats()
+    except Exception as e:
+        log.warning("Regime status error: %s", e)
+        return {"global_regime": "RANGING", "error": str(e)}
+
+
+@router.get("/regime/history")
+async def get_regime_history(
+    days: int = Query(14, ge=1, le=90),
+    asset: Optional[str] = Query(None, description="BTC/SOL/ETH"),
+    transitions_only: bool = Query(False, description="只看切换记录"),
+    user_id: str = Depends(get_current_user),
+):
+    """获取 Regime 历史记录"""
+    from database import get_db
+    from datetime import date, timedelta
+
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+
+    try:
+        query = get_db().table("agent_regime_history").select("*") \
+            .gte("created_at", f"{cutoff}T00:00:00Z") \
+            .order("created_at", desc=True) \
+            .limit(500)
+
+        if asset:
+            query = query.eq("asset", asset)
+        if transitions_only:
+            query = query.eq("is_transition", True)
+
+        res = query.execute()
+        rows = res.data or []
+    except Exception as e:
+        log.warning("Regime history error: %s", e)
+        rows = []
+
+    return {
+        "data": rows,
+        "total": len(rows),
+        "period_days": days,
+    }
+
+
+@router.get("/regime/audit")
+async def get_regime_audit(
+    days: int = Query(14, ge=1, le=90),
+    user_id: str = Depends(get_current_user),
+):
+    """获取 Regime 审计报告（O7 工具数据）"""
+    from optimizer_tools import tool_read_regime_history
+    return tool_read_regime_history(days=days)

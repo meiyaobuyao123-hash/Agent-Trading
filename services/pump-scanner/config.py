@@ -121,3 +121,22 @@ WIN_RATE_PUMP_D3_PCT = 30       # Pump 内盘：D3 涨幅 ≥ 30% 算 hit
 WIN_RATE_HOT_D3_PCT = 20        # 热币：D3 涨幅 ≥ 20% 算 hit
 WIN_RATE_BTCETH_PNL_PCT = 2     # BTC/ETH：PnL ≥ 2% 算 hit
 WIN_RATE_AGENT_BREAK_EVEN = 0   # Agent 策略：PnL ≥ 0% 就算 win
+
+# ── PRD-006: Regime 检测配置 ─────────────────────────────────────
+CUSUM_WINDOW = int(os.getenv("CUSUM_WINDOW", "24"))
+CUSUM_K_FACTOR = float(os.getenv("CUSUM_K_FACTOR", "0.5"))
+CUSUM_H_BTC = float(os.getenv("CUSUM_H_BTC", "3.0"))
+CUSUM_H_SOL = float(os.getenv("CUSUM_H_SOL", "2.5"))
+CUSUM_H_ETH = float(os.getenv("CUSUM_H_ETH", "3.0"))
+REGIME_SHADOW_MODE = os.getenv("REGIME_SHADOW_MODE", "true").lower() == "true"
+
+# ── PRD-006: Regime 风控参数（可被优化 Agent 提案修改）──────────────
+REGIME_RISK_PARAMS = {
+    "TRENDING_UP":     {"position_pct": 1.0, "sl_mult": 1.0, "tp_mult": 1.5, "new_trades": True,  "force_close": False},
+    "TRENDING_DOWN":   {"position_pct": 0.3, "sl_mult": 0.7, "tp_mult": 0.8, "new_trades": False, "force_close": False},
+    "RANGING":         {"position_pct": 0.5, "sl_mult": 0.8, "tp_mult": 0.8, "new_trades": True,  "force_close": False},
+    "HIGH_VOLATILITY": {"position_pct": 0.5, "sl_mult": 1.5, "tp_mult": 1.0, "new_trades": True,  "force_close": False},
+    "BREAKOUT":        {"position_pct": 0.8, "sl_mult": 1.2, "tp_mult": 2.0, "new_trades": True,  "force_close": False},
+    "CRISIS":          {"position_pct": 0.0, "sl_mult": 0.5, "tp_mult": 0.0, "new_trades": False, "force_close": True},
+    "RECOVERY":        {"position_pct": 0.3, "sl_mult": 0.8, "tp_mult": 1.0, "new_trades": True,  "force_close": False},
+}

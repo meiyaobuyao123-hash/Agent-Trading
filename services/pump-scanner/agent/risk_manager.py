@@ -169,6 +169,7 @@ class RiskManager:
             ("honeypot", lambda: self._check_honeypot(token_data)),
             ("market_regime", lambda: self._check_market_regime(action)),
             ("chain_concentration", lambda: self._check_chain_concentration(chain, action)),
+            ("regime_adjustment", lambda: self._check_regime_adjustment(chain, action, amount_usd, token_data)),
         ]
         warnings: List[str] = []
         token_symbol = token_data.get("symbol", token_address[:10] if token_address else "")
@@ -486,6 +487,89 @@ class RiskManager:
         except Exception:
             pass
         return RiskCheckResult.ok()
+
+    # ── PRD-006: Regime 感知风控 ─────────────────────
+
+    def _check_regime_adjustment(self, chain: str, action: str,
+                                  amount_usd: float, token_data: Dict[str, Any]) -> RiskCheckResult:
+        """PRD-006: Regime 感知风控参数 — 链级 regime 驱动"""
+        try:
+            from agent.regime_detector import get_regime_detector
+            from config import REGIME_RISK_PARAMS, REGIME_SHADOW_MODE
+
+            detector = get_regime_detector()
+            regime = detector.get_chain_regime(chain)
+            params = REGIME_RISK_PARAMS.get(regime, REGIME_RISK_PARAMS["RANGING"])
+
+            if REGIME_SHADOW_MODE:
+                log.info("[SHADOW] chain=%s regime=%s: position_pct=%.0f%% new_trades=%s "
+                         "sl_mult=%.1f force_close=%s",
+                         chain, regime, params["position_pct"] * 100, params["new_trades"],
+                         params["sl_mult"], params["force_close"])
+                return RiskCheckResult.ok()
+
+            if action == "buy" and not params.get("new_trades", True):
+                return RiskCheckResult.block(f"Regime={regime}: no new buys on {chain}")
+            if params.get("force_close", False):
+                return RiskCheckResult.block(f"CRISIS: force close all")
+
+            position_mult = params.get("position_pct", 1.0)
+            if position_mult < 1.0:
+                adjusted = amount_usd * position_mult
+                return RiskCheckResult(passed=True,
+                    reason=f"Regime={regime}: position {position_mult*100:.0f}% (${amount_usd:.0f}→${adjusted:.0f})",
+                    risk_level="medium")
+        except Exception as e:
+            log.debug("[Regime] check_regime_adjustment error: %s", e)
+        return RiskCheckResult.ok()
+
+    def calculate_dynamic_position(self, base_usd: float, atr_14: float,
+                                    avg_atr_30d: float, regime: str) -> float:
+        """PRD-006: ATR 动态仓位 — 高波动自动缩小，有硬上限
+
+        dynamic_position = base_position / atr_ratio * regime_mult
+        硬上限: single_max=$200, total_max=50%, daily_buy_max=30%
+        """
+        from config import REGIME_RISK_PARAMS
+        mult = REGIME_RISK_PARAMS.get(regime, {}).get("position_pct", 1.0)
+        atr_ratio = atr_14 / avg_atr_30d if avg_atr_30d > 0 else 1.0
+        dynamic = base_usd / max(atr_ratio, 0.3) * mult
+
+        # 硬上限
+        single_max = min(dynamic, 200.0)
+        total_max = self._portfolio_value * 0.5
+        daily_buy_max = self._portfolio_value * 0.3
+
+        return min(single_max, total_max, daily_buy_max)
+
+    def calculate_dynamic_stop_loss(self, entry_price: float, atr_14: float,
+                                     regime: str) -> float:
+        """PRD-006: ATR 动态止损 — stop_loss = entry - (ATR × 2.0 × regime_sl_mult)"""
+        from config import REGIME_RISK_PARAMS
+        sl_mult = REGIME_RISK_PARAMS.get(regime, {}).get("sl_mult", 1.0)
+        return entry_price - (atr_14 * 2.0 * sl_mult)
+
+    def apply_time_decay_stop(self, stop_loss: float, entry_price: float,
+                               peak_price: float, current_pnl_pct: float,
+                               hold_hours: float, token_type: str) -> float:
+        """PRD-006: 时间衰减止损 — MEME 专用
+
+        >8h 盈利 → 追踪止损替代时间衰减
+        >8h 亏损 >10% → 收紧 0.8×
+        >12h 任何状态 → 收紧 0.7×
+        """
+        if token_type != "meme":
+            return stop_loss
+        if hold_hours > 8 and current_pnl_pct > 0:
+            # 盈利中 → 用追踪止损替代时间衰减
+            return max(entry_price, peak_price * 0.85)
+        elif hold_hours > 8 and current_pnl_pct < -10:
+            # 亏损中 → 收紧止损
+            return stop_loss * 0.8
+        elif hold_hours > 12:
+            # 无论盈亏都收紧
+            return stop_loss * 0.7
+        return stop_loss
 
     def _check_chain_concentration(self, chain: str, action: str) -> RiskCheckResult:
         """同链持仓集中度检查：同一链 > 5 个持仓时警告"""

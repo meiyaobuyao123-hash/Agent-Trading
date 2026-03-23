@@ -47,6 +47,9 @@ _strategy_cache: Dict[str, tuple] = {}
 # 统计
 _stats = {"event_driven": 0, "deduped": 0, "errors": 0}
 
+# PRD-006: 缓存当前 regime
+_cached_regime: Dict[str, str] = {"global": "RANGING", "chain": {}}
+
 
 async def start_event_listener():
     """启动事件监听，订阅 EventBus 数据事件"""
@@ -57,9 +60,59 @@ async def start_event_listener():
     bus.subscribe("data.kol_signal", _on_kol_event)
     bus.subscribe("data.hot_coin_update", _on_price_for_positions)
 
+    # PRD-006: 订阅 regime_change 事件
+    bus.subscribe("market.regime_change", _on_regime_change)
+
     log.info(
-        "Agent EventListener 已启动: 订阅 hot_coin_update / pump_snapshot / kol_signal + 持仓监控"
+        "Agent EventListener 已启动: 订阅 hot_coin_update / pump_snapshot / kol_signal + 持仓监控 + regime_change"
     )
+
+
+# ── PRD-006: Regime 注入 ─────────────────────────────
+
+def _inject_regime(data: Dict[str, Any], chain: str = "solana"):
+    """注入 regime 信息到 DataEvent 数据"""
+    try:
+        from agent.regime_detector import get_regime_detector
+        detector = get_regime_detector()
+        data["_market_regime"] = detector.get_regime()
+        data["_chain_regime"] = detector.get_chain_regime(chain)
+    except Exception:
+        data["_market_regime"] = _cached_regime.get("global", "RANGING")
+        data["_chain_regime"] = _cached_regime.get("chain", {}).get(chain, "RANGING")
+
+
+async def _on_regime_change(event_data: Dict[str, Any]):
+    """处理 regime 变化事件 — 更新缓存 + 写入短期记忆"""
+    try:
+        data = event_data.get("data", event_data)
+        new_regime = data.get("new_regime", "")
+        old_regime = data.get("old_regime", "")
+        asset = data.get("asset", "")
+
+        # 更新缓存
+        if asset == "GLOBAL" or not asset:
+            _cached_regime["global"] = new_regime
+        else:
+            _cached_regime["global"] = new_regime  # 简化：任何切换都更新
+
+        # 写入短期记忆
+        try:
+            get_memory_manager().add_event({
+                "type": "regime_change",
+                "source": "regime_detector",
+                "asset": asset,
+                "old_regime": old_regime,
+                "new_regime": new_regime,
+                "confidence": data.get("confidence", 0),
+                "summary": f"Regime {asset}: {old_regime} → {new_regime} (conf={data.get('confidence', 0):.2f})",
+            })
+        except Exception:
+            pass
+
+        log.info("[EventListener] Regime change: %s %s → %s", asset, old_regime, new_regime)
+    except Exception as e:
+        log.debug("[EventListener] regime_change error: %s", e)
 
 
 # ── 事件处理器 ───────────────────────────────────────
@@ -88,6 +141,9 @@ async def _on_hot_coin_event(event_data: Dict[str, Any]):
             })
         except Exception:
             pass
+
+        # PRD-006: 注入 regime 信息
+        _inject_regime(data, chain=data.get("chain", "solana"))
 
         de = DataEvent(
             source="hot_coins",
@@ -133,6 +189,9 @@ async def _on_pump_event(event_data: Dict[str, Any]):
         except Exception:
             pass
 
+        # PRD-006: 注入 regime 信息
+        _inject_regime(data, chain="solana")
+
         de = DataEvent(
             source="pump_tokens",
             data=data,
@@ -176,6 +235,9 @@ async def _on_kol_event(event_data: Dict[str, Any]):
             })
         except Exception:
             pass
+
+        # PRD-006: 注入 regime 信息
+        _inject_regime(data, chain=data.get("chain", "solana"))
 
         de = DataEvent(
             source="kol_signals",

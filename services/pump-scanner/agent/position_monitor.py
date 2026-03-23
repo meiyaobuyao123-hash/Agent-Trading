@@ -121,6 +121,43 @@ class PositionMonitor:
 
             pnl_pct = (price - pos.entry_price) / pos.entry_price * 100
 
+            # PRD-006: 时间衰减止损接入
+            try:
+                from agent.risk_manager import get_risk_manager
+                rm = get_risk_manager()
+                # 估算持仓时间（从 DB row 的 created_at）
+                hold_hours = 0.0
+                try:
+                    from database import get_db
+                    exec_row = get_db().table("agent_executions").select(
+                        "created_at"
+                    ).eq("id", eid).limit(1).execute()
+                    if exec_row.data:
+                        created_str = exec_row.data[0].get("created_at", "")
+                        if created_str:
+                            created_dt = datetime.fromisoformat(created_str.replace("Z", "+00:00"))
+                            hold_hours = (datetime.now(timezone.utc) - created_dt).total_seconds() / 3600
+                except Exception:
+                    pass
+
+                if hold_hours > 8:
+                    sl_price = pos.entry_price * (1 - pos.stop_loss_pct / 100)
+                    adjusted_sl_price = rm.apply_time_decay_stop(
+                        stop_loss=sl_price,
+                        entry_price=pos.entry_price,
+                        peak_price=peak,
+                        current_pnl_pct=pnl_pct,
+                        hold_hours=hold_hours,
+                        token_type="meme",
+                    )
+                    # 用 adjusted_sl_price 检查：如果当前价低于调整后的止损价
+                    adjusted_sl_pct = (pos.entry_price - adjusted_sl_price) / pos.entry_price * 100
+                    if price <= adjusted_sl_price and adjusted_sl_price > 0:
+                        await self._execute_exit(eid, pos, price, "time_decay_stop", pnl_pct)
+                        continue
+            except Exception as e:
+                log.debug("[PositionMonitor] Time decay check error: %s", e)
+
             # 止盈检查
             if pos.take_profit_pct > 0 and pnl_pct >= pos.take_profit_pct:
                 await self._execute_exit(eid, pos, price, "take_profit", pnl_pct)
@@ -264,6 +301,93 @@ class PositionMonitor:
             log.error(f"[PositionMonitor] 退出执行异常: {e}")
         finally:
             self._selling.discard(eid)
+
+    async def execute_crisis_close_all(self) -> int:
+        """PRD-006: CRISIS 清仓 — 按金额大到小逐个卖出
+
+        策略：
+        1. 按持仓金额从大到小排序
+        2. 每笔卖出间隔 3s（避免并发踩踏）
+        3. 滑点放宽到 5%（优先成交）
+        4. 失败 → 重试 1 次 → 仍失败记录 pending
+        5. 总超时 60s
+        """
+        await self.load_positions()
+        if not self._positions:
+            return 0
+
+        # 按金额从大到小排序
+        sorted_positions = sorted(
+            self._positions.items(),
+            key=lambda x: x[1].amount_usd,
+            reverse=True,
+        )
+
+        closed = 0
+        start_time = time.time()
+        timeout = 60.0
+
+        for eid, pos in sorted_positions:
+            if time.time() - start_time > timeout:
+                log.warning("[CRISIS] Close timeout after %ds, %d/%d closed",
+                           int(time.time() - start_time), closed, len(sorted_positions))
+                break
+
+            if eid in self._selling:
+                continue
+
+            self._selling.add(eid)
+            try:
+                from agent.trade_executor import get_trade_executor
+                executor = get_trade_executor()
+
+                success = False
+                for attempt in range(2):  # 最多重试 1 次
+                    try:
+                        result = await executor.execute_trade(
+                            chain=pos.chain,
+                            token_address=pos.token_address,
+                            action="sell",
+                            amount_usd=1.0,  # 全仓卖出
+                            slippage_pct=5.0,  # CRISIS 滑点放宽
+                            wallet_address=pos.wallet_address or None,
+                            private_key=pos.private_key or None,
+                        )
+                        if result.success:
+                            success = True
+                            break
+                        log.warning("[CRISIS] Close attempt %d failed for %s: %s",
+                                   attempt + 1, pos.token_address[:10], result.error)
+                    except Exception as e:
+                        log.warning("[CRISIS] Close attempt %d error for %s: %s",
+                                   attempt + 1, pos.token_address[:10], e)
+
+                if success:
+                    closed += 1
+                    # 更新 DB
+                    try:
+                        now_iso = datetime.now(timezone.utc).isoformat()
+                        get_db().table("agent_executions").update({
+                            "exit_trigger": "crisis_close",
+                            "exited_at": now_iso,
+                            "status": "closed",
+                        }).eq("id", eid).execute()
+                    except Exception:
+                        pass
+                    self._positions.pop(eid, None)
+                    self._peak_prices.pop(eid, None)
+
+                # 间隔 3s
+                await asyncio.sleep(3)
+
+            except Exception as e:
+                log.error("[CRISIS] Close error for %s: %s", pos.token_address[:10], e)
+            finally:
+                self._selling.discard(eid)
+
+        log.warning("[CRISIS] Close all done: %d/%d closed in %.1fs",
+                   closed, len(sorted_positions), time.time() - start_time)
+        return closed
 
     def get_stats(self) -> dict:
         """返回监控状态"""

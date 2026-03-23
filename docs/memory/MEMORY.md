@@ -182,6 +182,10 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 深度调研：TradingAgents/FinMem/CryptoTrade/Walbi + 用户痛点 + DEX 对比
   - PRD-005 v1.1：记忆+反思系统（17项审查修订），TECH-005 + TEST-005 完成
   - Claude API 总月费预估：~$48/月（含记忆注入$5）
+  - ✅ **PRD-005 Phase 1 已开发上线**：29/29 测试通过，7新文件+8修改=2424行
+  - ✅ PRD-006 Phase 2 文档完成（PRD+TECH+TEST），待开发
+  - ✅ PRD-007 Phase 3 文档完成，待开发
+  - migration 028 已执行（agent_memory + agent_risk_events 表）
 - ✅ **Supabase 优化**：
   - db_cleanup.py 每 6h 清理
   - token_trades 95% 缩减（只存信号池+毕业代币）

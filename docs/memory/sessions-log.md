@@ -700,3 +700,15 @@
 - ~~Semantic 规则全量注入~~：50条×50tokens=$15.75/月，改 Top10 注入=$4.68/月
 - ~~每日清零短期记忆~~：跨日交易丢失上下文，改 24h 滑动窗口
 - ~~自由文本规则~~：无法匹配"同一规则"，改结构化 condition/action JSON
+
+### PRD-005 Phase 1 开发完成
+- 7 个新文件：memory/__init__.py + working/episodic/semantic/reflection.py + cron_tasks.py + migration 028
+- 8 个修改：event_listener + action_dispatcher + position_monitor + risk_manager + strategy_manager + optimizer_tools + main + routes_agent
+- 总计 2,424 行新代码
+- 29/29 pytest 测试全部通过
+- 已部署上线，migration 028 已执行
+
+### PRD-007 Phase 3 文档完成
+- 6 角色：策略解析 + 3分析师(Haiku并行) + 辩论(Sonnet 3轮) + 风控(规则+AI)
+- 分级触发：L1免费(200/天) → L2 $0.003(50/天) → L3 $0.015(15/天)
+- 月成本 ~$10.4，性能预期提升 2-3 倍（TradingAgents 数据支撑）

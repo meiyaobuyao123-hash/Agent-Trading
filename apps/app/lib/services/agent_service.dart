@@ -204,6 +204,21 @@ class AgentService {
     }
   }
 
+  Future<bool> renameStrategy(String id, String newName) async {
+    try {
+      final resp = await _client
+          .put(
+            Uri.parse('$_apiBase/api/agent/strategies/$id/rename'),
+            headers: _headers,
+            body: json.encode({'name': newName}),
+          )
+          .timeout(_timeout);
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
   // ═══════════════════════════════════════════════════════
   // 交易记录
   // ═══════════════════════════════════════════════════════

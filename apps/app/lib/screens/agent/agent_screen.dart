@@ -886,20 +886,24 @@ class _ConfirmCardState extends State<_ConfirmCard> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── 策略名称 ──
-            Row(
-              children: [
-                Icon(Icons.auto_graph_rounded, color: c.primary, size: 18),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(name,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      )),
-                ),
-              ],
+            // ── 策略名称（点击可编辑） ──
+            GestureDetector(
+              onTap: () => _showRenameDialog(context, c, id, name),
+              child: Row(
+                children: [
+                  Icon(Icons.auto_graph_rounded, color: c.primary, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(name,
+                        style: TextStyle(
+                          color: c.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                        )),
+                  ),
+                  Icon(Icons.edit_outlined, color: c.textTertiary, size: 14),
+                ],
+              ),
             ),
             if (desc.isNotEmpty) ...[
               const SizedBox(height: 6),
@@ -1108,6 +1112,48 @@ class _ConfirmCardState extends State<_ConfirmCard> {
         Text(value, style: TextStyle(
             color: c.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
       ],
+    );
+  }
+
+  void _showRenameDialog(BuildContext ctx, AppColorScheme c, String strategyId, String currentName) {
+    final controller = TextEditingController(text: currentName);
+    showDialog(
+      context: ctx,
+      barrierColor: Colors.black87,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1F2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('修改策略名称', style: TextStyle(color: Colors.white, fontSize: 16)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          style: const TextStyle(color: Colors.white),
+          maxLength: 50,
+          decoration: InputDecoration(
+            hintText: '输入新名称',
+            hintStyle: TextStyle(color: Colors.white38),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.border)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.primary)),
+            counterStyle: TextStyle(color: Colors.white38),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('取消', style: TextStyle(color: Colors.white54)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final newName = controller.text.trim();
+              if (newName.isNotEmpty && newName != currentName) {
+                await AgentService.instance.renameStrategy(strategyId, newName);
+              }
+              Navigator.pop(dialogCtx);
+            },
+            child: Text('确定', style: TextStyle(color: c.primary)),
+          ),
+        ],
+      ),
     );
   }
 

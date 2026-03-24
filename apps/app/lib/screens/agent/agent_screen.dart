@@ -943,7 +943,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
                     (v) => setState(() => _stopLoss = v), '%'),
                 _slider(c, S.of(context).takeProfit, _takeProfit, 10, 1000,
                     (v) => setState(() => _takeProfit = v), '%'),
-                _slider(c, S.of(context).slippageLabel, _slippage, 0.1, 10,
+                _slider(c, S.of(context).slippageLabel, _slippage, 0.1, 100,
                     (v) => setState(() => _slippage = v), '%'),
                 _slider(c, S.of(context).priorityFee, _priorityFee, 0.0001, 0.01,
                     (v) => setState(() => _priorityFee = v), ' SOL'),
@@ -1135,16 +1135,78 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               ),
             ),
           ),
-          SizedBox(
-            width: 60,
-            child: Text(
-              suffix == '%'
-                  ? '${value.toStringAsFixed(value < 1 ? 1 : 0)}$suffix'
-                  : '${value.toStringAsFixed(4)}$suffix',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                  color: c.textPrimary, fontSize: 11, fontWeight: FontWeight.w600),
+          GestureDetector(
+            onTap: () => _showValueEditor(c, label, value, min, max, onChanged, suffix),
+            child: Container(
+              width: 68,
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: BoxDecoration(
+                color: c.surfaceAlt,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: c.border, width: 0.5),
+              ),
+              child: Text(
+                suffix == '%'
+                    ? '${value.toStringAsFixed(value < 1 ? 1 : 0)}$suffix'
+                    : '${value.toStringAsFixed(4)}$suffix',
+                textAlign: TextAlign.right,
+                style: TextStyle(
+                    color: c.primary, fontSize: 11, fontWeight: FontWeight.w600),
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showValueEditor(AppColorScheme c, String label, double current,
+      double min, double max, ValueChanged<double> onChanged, String suffix) {
+    final controller = TextEditingController(
+      text: suffix == '%'
+          ? current.toStringAsFixed(current < 1 ? 1 : 0)
+          : current.toStringAsFixed(4),
+    );
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: c.surface,
+        title: Text('$label', style: TextStyle(color: c.textPrimary, fontSize: 15)),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          style: TextStyle(color: c.textPrimary, fontSize: 16),
+          decoration: InputDecoration(
+            suffixText: suffix.trim(),
+            suffixStyle: TextStyle(color: c.textSecondary, fontSize: 14),
+            hintText: '${min.toStringAsFixed(suffix == '%' ? 0 : 4)} - ${max.toStringAsFixed(suffix == '%' ? 0 : 4)}',
+            hintStyle: TextStyle(color: c.textTertiary, fontSize: 13),
+            enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.border)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.primary)),
+          ),
+          onSubmitted: (v) {
+            final parsed = double.tryParse(v);
+            if (parsed != null) {
+              onChanged(parsed.clamp(min, max));
+            }
+            Navigator.of(ctx).pop();
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: Text(S.of(context).cancel, style: TextStyle(color: c.textTertiary)),
+          ),
+          TextButton(
+            onPressed: () {
+              final parsed = double.tryParse(controller.text);
+              if (parsed != null) {
+                onChanged(parsed.clamp(min, max));
+              }
+              Navigator.of(ctx).pop();
+            },
+            child: Text(S.of(context).confirm, style: TextStyle(color: c.primary)),
           ),
         ],
       ),

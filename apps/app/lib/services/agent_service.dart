@@ -419,7 +419,10 @@ class AgentService {
       final resp = await _client.post(
         Uri.parse('$_apiBase/api/agent/backtest'),
         headers: _headers,
-        body: jsonEncode({'strategy_id': strategyId, 'days': days}),
+        body: jsonEncode({
+          'message': strategyId,
+          'context': {'strategy_id': strategyId, 'days': days},
+        }),
       ).timeout(const Duration(seconds: 120));
       if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
       return {};

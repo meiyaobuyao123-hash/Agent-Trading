@@ -226,20 +226,26 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
               ),
             ],
           ),
-          if (_backtestResult != null && _backtestResult!.isNotEmpty) ...[
+          if (_backtestResult != null && (_backtestResult!['trigger_count'] ?? _backtestResult!['triggers'] ?? 0) > 0) ...[
             const SizedBox(height: 12),
             Row(
               children: [
-                _statItem('触发', '${_backtestResult!['triggers'] ?? 0}次', Colors.white),
-                _statItem('胜率', '${((_backtestResult!['win_rate'] as num?)?.toDouble() ?? 0) * 100 ~/ 1}%',
-                    ((_backtestResult!['win_rate'] as num?)?.toDouble() ?? 0) >= 0.5 ? Colors.green : Colors.red),
-                _statItem('收益', '${((_backtestResult!['total_pnl'] as num?)?.toDouble() ?? 0) * 100 ~/ 1}%',
-                    ((_backtestResult!['total_pnl'] as num?)?.toDouble() ?? 0) >= 0 ? Colors.green : Colors.red),
+                _statItem('触发', '${_backtestResult!['trigger_count'] ?? _backtestResult!['triggers'] ?? 0}次', Colors.white),
+                _statItem('胜率', '${((_backtestResult!['simulated_win_rate'] ?? _backtestResult!['win_rate'] ?? 0) as num).toDouble() * 100 ~/ 1}%',
+                    ((_backtestResult!['simulated_win_rate'] ?? _backtestResult!['win_rate'] ?? 0) as num).toDouble() >= 0.5 ? Colors.green : Colors.red),
+                _statItem('收益', '${((_backtestResult!['avg_return_pct'] ?? _backtestResult!['total_pnl'] ?? 0) as num).toDouble() ~/ 1}%',
+                    ((_backtestResult!['avg_return_pct'] ?? _backtestResult!['total_pnl'] ?? 0) as num).toDouble() >= 0 ? Colors.green : Colors.red),
               ],
             ),
+            if (_backtestResult!['sample_triggers'] != null) ...[
+              const SizedBox(height: 8),
+              Text('样本：${(_backtestResult!['sample_triggers'] as List).take(3).map((t) => t['token'] ?? '').join(', ')}',
+                  style: const TextStyle(color: Colors.white38, fontSize: 11)),
+            ],
           ] else if (_backtestResult != null) ...[
             const SizedBox(height: 8),
-            const Text('过去 7 天未触发任何信号', style: TextStyle(color: Colors.white38, fontSize: 13)),
+            Text('过去 ${_backtestResult!['period_days'] ?? 7} 天未触发任何信号',
+                style: const TextStyle(color: Colors.white38, fontSize: 13)),
           ],
         ],
       ),

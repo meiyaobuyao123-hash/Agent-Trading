@@ -589,24 +589,66 @@ async def backtest(
     user_id: str = Depends(get_current_user),
 ):
     """
-    回测策略：输入策略规范，返回历史模拟结果
+    回测策略：支持 strategy_id 或 strategy spec JSON
 
-    请求体示例: {"message": "策略 JSON spec"}
+    请求体示例:
+      {"message": "strategy_id_uuid", "context": {"days": 7}}
+      或 {"message": "策略 JSON spec"}
     """
     from agent.backtester import backtest_strategy
     import json
 
-    # 尝试解析为 JSON spec
-    try:
-        spec = json.loads(req.message)
-    except (json.JSONDecodeError, TypeError):
-        # 不是 JSON，先用 LLM 解析
-        result = await _llm_parser.parse_strategy(req.message)
-        if result is None:
-            return {"error": "无法解析策略", "trigger_count": 0}
-        spec, _ = result
+    days = 7
+    spec = None
 
-    days = (req.context or {}).get("days", 7)
+    # 先尝试从 context 或 message 中提取 strategy_id
+    strategy_id = None
+    context = req.context or {}
+    if isinstance(context, dict):
+        strategy_id = context.get("strategy_id")
+        days = context.get("days", 7)
+
+    # 如果 message 看起来像 UUID（strategy_id），从 DB 查
+    msg = (req.message or "").strip()
+    if not strategy_id and len(msg) == 36 and "-" in msg:
+        strategy_id = msg
+
+    # 尝试从请求体直接解析 strategy_id
+    if not strategy_id:
+        try:
+            body = json.loads(msg) if msg.startswith("{") else {}
+            strategy_id = body.get("strategy_id")
+            days = body.get("days", days)
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    if strategy_id:
+        # 从 DB 查策略 spec
+        try:
+            db = get_db()
+            res = db.table("agent_strategies").select("*").eq("id", strategy_id).single().execute()
+            if res.data:
+                spec = {
+                    "name": res.data.get("name", ""),
+                    "conditions": res.data.get("conditions", {}),
+                    "filters": res.data.get("filters", {}),
+                    "actions": res.data.get("actions", []),
+                    "data_sources": res.data.get("data_sources", []),
+                }
+        except Exception as e:
+            log.warning(f"查询策略 {strategy_id}: {e}")
+
+    if spec is None:
+        # 尝试解析为 JSON spec
+        try:
+            spec = json.loads(msg)
+        except (json.JSONDecodeError, TypeError):
+            # 不是 JSON，先用 LLM 解析
+            result = await _llm_parser.parse_strategy(msg)
+            if result is None:
+                return {"error": "无法解析策略", "trigger_count": 0}
+            spec, _ = result
+
     result = await backtest_strategy(spec, days=days)
     return result
 

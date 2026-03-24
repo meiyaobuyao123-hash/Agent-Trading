@@ -290,6 +290,141 @@ class AgentService {
       return 0;
     }
   }
+
+  // ═══════════════════════════════════════════════════════
+  // 模拟盘 + 表现 + 回测 + 模板
+  // ═══════════════════════════════════════════════════════
+
+  /// 获取模拟盘交易记录
+  Future<List<Map<String, dynamic>>> getPaperTrades(String strategyId) async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/paper-trades?strategy_id=$strategyId'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        return (data is List ? data : data['trades'] ?? []).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (_) { return []; }
+  }
+
+  /// 获取模拟盘统计
+  Future<Map<String, dynamic>> getPaperStats(String strategyId) async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/paper-stats/$strategyId'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
+
+  /// 切换到实盘
+  Future<bool> goLive(String strategyId) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/strategies/$strategyId/go-live'),
+        headers: _headers,
+      ).timeout(_timeout);
+      return resp.statusCode == 200;
+    } catch (_) { return false; }
+  }
+
+  /// 模拟 vs 实盘对比
+  Future<Map<String, dynamic>> getComparison(String strategyId) async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/compare/$strategyId'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
+
+  /// 获取策略模板列表
+  Future<List<Map<String, dynamic>>> getTemplates() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/templates'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        return (data is List ? data : data['templates'] ?? []).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (_) { return []; }
+  }
+
+  /// 从模板创建策略
+  Future<AgentStrategy?> createFromTemplate(String templateId, {Map<String, dynamic>? overrides}) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/templates/$templateId/create'),
+        headers: _headers,
+        body: jsonEncode(overrides ?? {}),
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final s = data['strategy'] as Map<String, dynamic>?;
+        if (s != null) return AgentStrategy.fromJson(s);
+      }
+      return null;
+    } catch (_) { return null; }
+  }
+
+  /// 获取 Agent 表现分析
+  Future<Map<String, dynamic>> getPerformance() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/performance'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
+
+  /// 获取 Agent 记忆数据
+  Future<Map<String, dynamic>> getMemory() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/memory'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
+
+  /// 获取 Regime 状态
+  Future<Map<String, dynamic>> getRegime() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/regime'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
+
+  /// 回测策略
+  Future<Map<String, dynamic>> backtest(String strategyId, {int days = 7}) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/backtest'),
+        headers: _headers,
+        body: jsonEncode({'strategy_id': strategyId, 'days': days}),
+      ).timeout(const Duration(seconds: 120));
+      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
+      return {};
+    } catch (_) { return {}; }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

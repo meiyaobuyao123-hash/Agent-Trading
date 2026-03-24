@@ -6,8 +6,10 @@ import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
+import 'strategy_detail_page.dart';
+import 'ai_insights_tab.dart';
 
-/// Agent 策略中心 — 对话 + 策略管理 + 数据源
+/// Agent 策略中心 — 对话 + 策略管理 + AI 洞察
 class AgentScreen extends StatefulWidget {
   const AgentScreen({super.key});
 
@@ -150,7 +152,7 @@ class _AgentScreenState extends State<AgentScreen>
               tabs: [
                 Tab(text: S.of(context).chatTab),
                 Tab(text: S.of(context).myStrategyTab),
-                Tab(text: S.of(context).dataSourceTab),
+                const Tab(text: 'AI 洞察'),
               ],
             ),
           ),
@@ -160,7 +162,7 @@ class _AgentScreenState extends State<AgentScreen>
           children: const [
             _ChatTab(),
             _MyStrategiesTab(),
-            _DataSourcesTab(),
+            const AiInsightsTab(),
           ],
         ),
       ),
@@ -1311,7 +1313,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
           return _StrategyCard(
             key: ValueKey(s.id),
             strategy: s,
-            onTap: () => showStrategyDetailSheet(ctx, s),
+            onTap: () => Navigator.push(ctx, MaterialPageRoute(builder: (_) => StrategyDetailPage(strategy: s))),
             onToggle: () async {
               final newStatus = s.isActive ? 'paused' : 'active';
 

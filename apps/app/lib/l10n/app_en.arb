@@ -73,7 +73,7 @@
   "chatTab": "Chat",
   "myStrategyTab": "My Strategies",
   "dataSourceTab": "Data Source",
-  "agentIntro": "Hi! I'm your trading Agent.\n\nTell me your strategy ideas, for example:\n• \"Find tokens with BC 10%-25% and buy/sell ratio > 2\"\n• \"Alert me when 3 smart wallets buy a token\"\n• \"Auto-buy hot tokens scoring >85, stop loss 20%, take profit 3x\"\n\nI'll turn your ideas into automated strategies.",
+  "agentIntro": "Hi! I'm your AI trading assistant.\n\nI can help you:\n\n📊 Create automated strategies\n• \"Buy BTC when it drops to $60K\"\n• \"Auto-buy hot tokens scoring >70 for $50\"\n• \"Follow smart money buys\"\n\n🔍 Backtest with real data\n• Test strategies against last 7 days\n\n📋 Use preset templates\n• MEME Sniper / Hot Breakout / Smart Money Follow\n\n💡 Try: \"Recommend a beginner-friendly strategy\"",
   "strategyCreated": "Strategy \"{name}\" created and activated!\nSystem checks conditions every 30s.\nManage in \"My Strategies\" tab.",
   "cancelled": "Cancelled. You can continue describing other strategy ideas.",
   "usageNotice": "Terms of Use",

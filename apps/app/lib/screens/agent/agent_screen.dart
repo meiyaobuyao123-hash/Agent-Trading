@@ -18,8 +18,11 @@ class AgentScreen extends StatefulWidget {
 }
 
 class _AgentScreenState extends State<AgentScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
   late final TabController _tab;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
@@ -124,7 +127,9 @@ class _AgentScreenState extends State<AgentScreen>
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    super.build(context); // AutomaticKeepAliveClientMixin
     final c = context.colors;
     return Scaffold(
       backgroundColor: Colors.transparent,

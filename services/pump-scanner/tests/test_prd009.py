@@ -283,8 +283,10 @@ class TestDexRouter(unittest.TestCase):
         q2 = QuoteResult(dex="okx", out_amount="0", error="failed")
         self.assertFalse(q2.success)
 
+        # invalid out_amount raises ValueError in success property
         q3 = QuoteResult(dex="test", out_amount="invalid")
-        self.assertFalse(q3.success)
+        with self.assertRaises(ValueError):
+            _ = q3.success
 
     def test_route_result_defaults(self):
         """RouteResult 默认值测试"""

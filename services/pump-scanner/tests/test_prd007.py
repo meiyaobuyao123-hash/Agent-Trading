@@ -82,7 +82,7 @@ class TestTechnicalAnalyst:
         assert "1h 涨跌幅" in text
         assert "综合评分" in text
 
-    @patch("agent.analysts.technical.anthropic")
+    @patch("anthropic.Anthropic")
     def test_api_call_success(self, mock_anthropic):
         from agent.analysts.technical import TechnicalAnalyst
 
@@ -98,7 +98,7 @@ class TestTechnicalAnalyst:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_anthropic.return_value = mock_client
 
         analyst = TechnicalAnalyst(api_key="test-key")
         result = _run(analyst.analyze(SAMPLE_TOKEN_DATA, SAMPLE_MARKET_DATA))
@@ -108,7 +108,7 @@ class TestTechnicalAnalyst:
         assert len(result["points"]) == 2
         assert result["_tokens_used"] == 300
 
-    @patch("agent.analysts.technical.anthropic")
+    @patch("anthropic.Anthropic")
     def test_api_json_error_returns_neutral(self, mock_anthropic):
         from agent.analysts.technical import TechnicalAnalyst
 
@@ -119,7 +119,7 @@ class TestTechnicalAnalyst:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_anthropic.return_value = mock_client
 
         analyst = TechnicalAnalyst(api_key="test-key")
         result = _run(analyst.analyze(SAMPLE_TOKEN_DATA, SAMPLE_MARKET_DATA))
@@ -178,7 +178,7 @@ class TestDebateEngine:
         assert result["conclusion"]["action"] == "hold"
         assert result["rounds"] == 0
 
-    @patch("agent.debate.anthropic")
+    @patch("anthropic.Anthropic")
     def test_full_debate_flow(self, mock_anthropic):
         from agent.debate import DebateEngine
 
@@ -204,7 +204,7 @@ class TestDebateEngine:
 
         mock_client = MagicMock()
         mock_client.messages.create.side_effect = fake_create
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_anthropic.return_value = mock_client
 
         engine = DebateEngine(api_key="test-key")
         reports = {
@@ -359,7 +359,7 @@ class TestRiskReviewer:
         ))
         assert result["decision"] == "APPROVE"
 
-    @patch("agent.risk_reviewer.anthropic")
+    @patch("anthropic.Anthropic")
     def test_reject_decision(self, mock_anthropic):
         from agent.risk_reviewer import RiskReviewer
 
@@ -374,7 +374,7 @@ class TestRiskReviewer:
 
         mock_client = MagicMock()
         mock_client.messages.create.return_value = mock_response
-        mock_anthropic.Anthropic.return_value = mock_client
+        mock_anthropic.return_value = mock_client
 
         reviewer = RiskReviewer(api_key="test-key")
         result = _run(reviewer.review(

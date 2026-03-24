@@ -166,12 +166,17 @@ class TestHMMClassifier:
         h._scaler = None
         h._use_hmm = False
         h._label_map = {}
-        # 高波动
-        features = np.zeros((50, 4))
-        features[:24, 0] = 0.001  # 早期稳定
-        features[-24:, 0] = np.random.normal(0, 0.05, 24)  # 近期剧烈波动
+        # 高波动检测条件: recent_vol > 2 * full_vol
+        # 需要 full_vol 很小，recent_vol 很大
+        # full_vol 计算包含所有 50 行，所以用 100 行（更多稳定数据稀释）
+        features = np.zeros((100, 4))
+        features[:76, 0] = 0.0001  # 76 行极稳定
+        np.random.seed(42)
+        volatiles = np.random.normal(0, 0.10, 24)
+        volatiles -= np.mean(volatiles)
+        features[-24:, 0] = volatiles
         result = h._rule_fallback(features)
-        assert result["regime"] == "HIGH_VOLATILITY"
+        assert result["regime"] == "HIGH_VOLATILITY", f"got {result['regime']}"
 
     def test_rule_fallback_ranging(self):
         from agent.regime_detector import HMMClassifier
@@ -276,18 +281,17 @@ class TestCrisisDetector:
         c.check(70000, liquidation_1h=600e6)
         assert c.is_crisis is True
 
-        # 模拟恢复条件稳定持续
-        # 直接设置 recovery_start 到过去
-        c._recovery_start = time.time() - 1900  # >30min ago
+        # 填充 _btc_15min 使其 >= 8 条，价格稳定上升（recent_min >= older_min）
+        for i in range(14):
+            c.check(70000 + i * 10, liquidation_1h=10e6)  # 稳定微涨
 
-        # 再检查一次，应恢复
-        for _ in range(10):
-            c.check(70000, liquidation_1h=10e6)
-        result = c.check(70000, liquidation_1h=10e6)
-        # 如果恢复条件满足，应该 recovered
-        # (需要 btc_15min 有足够数据)
-        if len(c._btc_15min) >= 8:
-            assert result.get("just_recovered") or not c.is_crisis
+        assert len(c._btc_15min) >= 8
+        # 设置 recovery_start 到 31 分钟前
+        c._recovery_start = time.time() - 1900
+
+        # 再检查一次，应触发恢复
+        result = c.check(70200, liquidation_1h=10e6)
+        assert result.get("just_recovered") is True or not c.is_crisis
 
 
 # ═══════════════════════════════════════════════════

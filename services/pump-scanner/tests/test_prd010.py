@@ -211,12 +211,16 @@ class TestApplyHandlers:
 
     def test_apply_proposal_routes_correctly(self):
         """apply_proposal routes to correct handler."""
-        from optimizer_tools import apply_proposal
+        from optimizer_tools import apply_proposal, APPLY_HANDLERS
 
-        with patch("optimizer_tools._apply_scorer") as mock_scorer:
-            mock_scorer.return_value = {"type": "scorer_param", "applied": []}
-            result = apply_proposal({"type": "scorer_param", "changes": {}})
-            mock_scorer.assert_called_once_with({})
+        mock_handler = MagicMock(return_value={"type": "scorer_param", "applied": []})
+        original = APPLY_HANDLERS["scorer_param"]
+        APPLY_HANDLERS["scorer_param"] = mock_handler
+        try:
+            result = apply_proposal({"type": "scorer_param", "changes": {"X": 1}})
+            mock_handler.assert_called_once_with({"X": 1})
+        finally:
+            APPLY_HANDLERS["scorer_param"] = original
 
     def test_apply_proposal_unknown_type(self):
         from optimizer_tools import apply_proposal
@@ -225,31 +229,43 @@ class TestApplyHandlers:
 
     def test_apply_scorer(self):
         from optimizer_tools import _apply_scorer
-        with patch("optimizer_tools.config") as mock_config:
-            mock_config.SOME_PARAM = 10
-            result = _apply_scorer({"SOME_PARAM": 20})
-            assert result["type"] == "scorer_param"
+        import config
+        # 临时设置一个参数
+        old = getattr(config, "SCORE_M_WEIGHT", None)
+        config.SCORE_M_WEIGHT = 50
+        result = _apply_scorer({"SCORE_M_WEIGHT": 55})
+        assert result["type"] == "scorer_param"
+        assert len(result["applied"]) == 1
+        # 恢复
+        if old is not None:
+            config.SCORE_M_WEIGHT = old
 
     def test_apply_risk(self):
         from optimizer_tools import _apply_risk
-        with patch("optimizer_tools.config") as mock_config:
-            mock_config.RISK_SL = 5.0
-            result = _apply_risk({"RISK_SL": 7.0})
-            assert result["type"] == "risk_param"
+        import config
+        old = getattr(config, "REGIME_SHADOW_MODE", None)
+        config.REGIME_SHADOW_MODE = True
+        result = _apply_risk({"REGIME_SHADOW_MODE": False})
+        assert result["type"] == "risk_param"
+        if old is not None:
+            config.REGIME_SHADOW_MODE = old
 
     def test_apply_agent_config(self):
         from optimizer_tools import _apply_agent_config
-        with patch("optimizer_tools.config") as mock_config:
-            mock_config.DEBATE_ROUNDS = 3
-            result = _apply_agent_config({"DEBATE_ROUNDS": 5})
-            assert result["type"] == "agent_config"
+        import config
+        config.DEBATE_ROUNDS = 3
+        result = _apply_agent_config({"DEBATE_ROUNDS": 5})
+        assert result["type"] == "agent_config"
+        assert config.DEBATE_ROUNDS == 5
+        config.DEBATE_ROUNDS = 3  # restore
 
     def test_apply_monitoring(self):
         from optimizer_tools import _apply_monitoring
-        with patch("optimizer_tools.config") as mock_config:
-            mock_config.WIN_RATE_PUMP_D3_PCT = 30
-            result = _apply_monitoring({"WIN_RATE_PUMP_D3_PCT": 40})
-            assert result["type"] == "monitoring"
+        import config
+        config.HOT_TRACK_DAYS = 7
+        result = _apply_monitoring({"HOT_TRACK_DAYS": 10})
+        assert result["type"] == "monitoring"
+        config.HOT_TRACK_DAYS = 7  # restore
 
 
 # ═══════════════════════════════════════════════════
@@ -624,8 +640,8 @@ class TestRoutes:
     def test_router_has_ab_test_endpoints(self):
         from api.routes_optimizer import router
         paths = [r.path for r in router.routes]
-        assert "/ab-tests" in paths
-        assert "/ab-tests/{test_id}/results" in paths
+        assert "/api/optimizer/ab-tests" in paths
+        assert "/api/optimizer/ab-tests/{test_id}/results" in paths
 
     def test_trigger_supports_agent_mode(self):
         """The trigger endpoint should accept mode='agent'."""

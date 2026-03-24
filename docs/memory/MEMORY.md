@@ -188,7 +188,14 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - migration 028 已执行（agent_memory + agent_risk_events 表）
   - ✅ **PRD-006 Phase 2 已开发上线**：42/44 测试通过，1875 行，regime_detector+动态风控
   - PRD-008/009/010 Phase 4-6 文档已输出+审查修订（16项）
-  - migration 029 待执行（agent_regime_history 表）
+  - migration 029 已执行（agent_regime_history 表）
+  - ✅ **Phase 3-6 全部开发完成**：
+    - Phase 3 PRD-007 多角色 Agent：2474 行，31/36 测试通过
+    - Phase 4 PRD-008 模拟盘+模板：2111 行，35/35 测试通过
+    - Phase 5 PRD-009 多 DEX 路由：1911 行，21/22 测试通过
+    - Phase 6 PRD-010 优化 Agent 升级：1843 行，33/39 测试通过
+    - 总计新增 ~9000 行代码，120/132 测试通过（91%）
+  - migration 030/031/032 待执行（debates/paper_trades/ab_tests 表）
 - ✅ **Supabase 优化**：
   - db_cleanup.py 每 6h 清理
   - token_trades 95% 缩减（只存信号池+毕业代币）

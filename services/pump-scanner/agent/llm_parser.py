@@ -327,6 +327,30 @@ STRATEGY_TOOL = {
 }
 
 
+BACKTEST_TOOL = {
+    "name": "run_backtest",
+    "description": "对策略进行7天历史数据回测，返回触发次数、胜率、平均收益、最大回撤",
+    "input_schema": {
+        "type": "object",
+        "required": ["strategy_id"],
+        "properties": {
+            "strategy_id": {
+                "type": "string",
+                "description": "要回测的策略 ID（UUID）",
+            },
+            "days": {
+                "type": "integer",
+                "description": "回测天数，默认7",
+                "minimum": 1,
+                "maximum": 30,
+            },
+        },
+    },
+}
+
+TOOLS = [STRATEGY_TOOL, BACKTEST_TOOL]
+
+
 class LLMParser:
     """LLM 策略解析器"""
 
@@ -393,18 +417,29 @@ class LLMParser:
                     model=MODEL,
                     max_tokens=2048,
                     system=SYSTEM_PROMPT,
-                    tools=[STRATEGY_TOOL],
+                    tools=TOOLS,
                     messages=messages,
                 )
 
                 strategy_spec = None
+                backtest_request = None
                 ai_message = ""
 
                 for block in response.content:
                     if block.type == "tool_use" and block.name == "create_strategy":
                         strategy_spec = self._normalize_spec(block.input)
+                    elif block.type == "tool_use" and block.name == "run_backtest":
+                        backtest_request = block.input
                     elif block.type == "text":
                         ai_message = block.text
+
+                # 处理回测请求
+                if backtest_request:
+                    backtest_result = await self._execute_backtest(backtest_request)
+                    if not ai_message:
+                        ai_message = backtest_result
+                    else:
+                        ai_message += "\n\n" + backtest_result
 
                 if strategy_spec and not ai_message:
                     ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
@@ -467,7 +502,7 @@ class LLMParser:
                     model=MODEL,
                     max_tokens=2048,
                     system=SYSTEM_PROMPT,
-                    tools=[STRATEGY_TOOL],
+                    tools=TOOLS,
                     messages=messages,
                 ) as stream:
                     for event in stream:
@@ -488,7 +523,7 @@ class LLMParser:
                         model=MODEL,
                         max_tokens=2048,
                         system=SYSTEM_PROMPT,
-                        tools=[STRATEGY_TOOL],
+                        tools=TOOLS,
                         messages=messages,
                     ) as stream:
                         for event in stream:
@@ -547,8 +582,15 @@ class LLMParser:
                             yield {"type": "strategy", "data": strategy_spec}
                         except json.JSONDecodeError:
                             log.warning("Stream tool JSON parse error: %s", tool_json[:100])
-                        in_tool = False
-                        tool_json = ""
+                    elif in_tool and tool_name == "run_backtest":
+                        try:
+                            tool_input = json.loads(tool_json)
+                            backtest_result = await self._execute_backtest(tool_input)
+                            yield {"type": "delta", "text": "\n\n" + backtest_result}
+                        except json.JSONDecodeError:
+                            log.warning("Stream backtest JSON parse error: %s", tool_json[:100])
+                    in_tool = False
+                    tool_json = ""
 
             if stream_error:
                 raise stream_error
@@ -558,6 +600,32 @@ class LLMParser:
         except Exception as e:
             log.error("Stream error: %s", e)
             yield {"type": "error", "message": str(e)[:200]}
+
+    async def _execute_backtest(self, request: Dict[str, Any]) -> str:
+        """执行回测并返回格式化结果"""
+        try:
+            strategy_id = request.get("strategy_id", "")
+            days = request.get("days", 7)
+
+            from agent.backtester import Backtester
+            bt = Backtester()
+            result = await asyncio.to_thread(bt.run, strategy_id, days=days)
+
+            if result and result.get("triggers", 0) > 0:
+                return (
+                    f"## 📊 回测结果（{days}天）\n"
+                    f"- 触发次数：{result.get('triggers', 0)}\n"
+                    f"- 胜率：{result.get('win_rate', 0)*100:.1f}%\n"
+                    f"- 平均收益：{result.get('avg_pnl', 0)*100:.1f}%\n"
+                    f"- 最大回撤：{result.get('max_drawdown', 0)*100:.1f}%\n"
+                    f"- 累计PNL：{result.get('total_pnl', 0)*100:.1f}%\n"
+                    f"- 夏普率：{result.get('sharpe', 0):.2f}"
+                )
+            else:
+                return f"## 📊 回测结果（{days}天）\n过去{days}天该策略未触发任何交易信号。建议放宽条件或增加回测时间范围。"
+        except Exception as e:
+            log.warning("Backtest execution error: %s", e)
+            return f"回测执行出错：{str(e)[:100]}。请确保策略已创建成功后再进行回测。"
 
     def _normalize_spec(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """

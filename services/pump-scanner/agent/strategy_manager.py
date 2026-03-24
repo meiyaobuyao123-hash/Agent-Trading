@@ -259,6 +259,20 @@ class StrategyManager:
             return strategy.get("mode", "paper")
         return "paper"
 
+    # ── 重命名 ──────────────────────────────────────────────────
+
+    def rename_strategy(self, strategy_id: str, new_name: str) -> bool:
+        """修改策略名称"""
+        try:
+            get_db().table("agent_strategies").update({
+                "name": new_name.strip()[:100],
+            }).eq("id", strategy_id).execute()
+            log.info(f"Renamed strategy {strategy_id} to '{new_name}'")
+            return True
+        except Exception as e:
+            log.error(f"rename_strategy error: {e}")
+            return False
+
     # ── 删除 ──────────────────────────────────────────────────
 
     def delete_strategy(self, strategy_id: str) -> bool:

@@ -57,6 +57,8 @@ async def start_event_listener():
     bus = get_event_bus()
 
     bus.subscribe("data.hot_coin_update", _on_hot_coin_event)
+    bus.subscribe("data.hot_coin_entered", _on_hot_coin_entered)
+    bus.subscribe("data.hot_coin_exited", _on_hot_coin_exited)
     bus.subscribe("data.pump_snapshot", _on_pump_event)
     bus.subscribe("data.kol_signal", _on_kol_event)
     bus.subscribe("data.hot_coin_update", _on_price_for_positions)
@@ -163,6 +165,63 @@ async def _on_hot_coin_event(event_data: Dict[str, Any]):
     except Exception as e:
         _stats["errors"] += 1
         log.debug(f"[EventDriven] hot_coin error: {e}")
+
+
+async def _on_hot_coin_entered(event_data: Dict[str, Any]):
+    """热币入榜事件 → 评估策略（可触发"新币入榜时买入"类策略）"""
+    try:
+        data = event_data.get("data", event_data)
+        data["_event_type"] = "entered"
+        token_addr = data.get("address", "")
+        if not token_addr:
+            return
+        # 入榜不做去重（每个代币只入榜一次）
+        _inject_regime(data, chain=data.get("chain", "solana"))
+        de = DataEvent(
+            source="hot_coins",
+            data=data,
+            timestamp=data.get("entered_at") or "",
+            chain=data.get("chain", ""),
+            token_address=token_addr,
+            token_name=data.get("name", data.get("symbol", "")),
+        )
+        count = await _process_event_driven([de], "hot_coins")
+        if count > 0:
+            log.info(
+                f"[EventDriven] hot_coin ENTERED {data.get('symbol', token_addr[:8])} "
+                f"→ {count} strategies triggered"
+            )
+    except Exception as e:
+        _stats["errors"] += 1
+        log.debug(f"[EventDriven] hot_coin_entered error: {e}")
+
+
+async def _on_hot_coin_exited(event_data: Dict[str, Any]):
+    """热币退出事件 → 评估策略（可触发"退出时卖出"类策略）"""
+    try:
+        data = event_data.get("data", event_data)
+        data["_event_type"] = "exited"
+        token_addr = data.get("address", "")
+        if not token_addr:
+            return
+        _inject_regime(data, chain=data.get("chain", "solana"))
+        de = DataEvent(
+            source="hot_coins",
+            data=data,
+            timestamp="",
+            chain=data.get("chain", ""),
+            token_address=token_addr,
+            token_name=data.get("name", data.get("symbol", "")),
+        )
+        count = await _process_event_driven([de], "hot_coins")
+        if count > 0:
+            log.info(
+                f"[EventDriven] hot_coin EXITED {data.get('symbol', token_addr[:8])} "
+                f"→ {count} strategies triggered (reason: {data.get('_exit_reason', '?')})"
+            )
+    except Exception as e:
+        _stats["errors"] += 1
+        log.debug(f"[EventDriven] hot_coin_exited error: {e}")
 
 
 async def _on_pump_event(event_data: Dict[str, Any]):

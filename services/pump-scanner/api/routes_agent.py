@@ -866,6 +866,29 @@ async def go_live(
     return {"strategy": result, "message": "已切换到实盘模式"}
 
 
+@router.put("/strategies/{strategy_id}/rename")
+async def rename_strategy(
+    strategy_id: str,
+    request: Request,
+    user_id: str = Depends(get_current_user),
+):
+    """修改策略名称"""
+    body = await request.json()
+    new_name = body.get("name", "").strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="名称不能为空")
+
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+
+    ok = _strategy_mgr.rename_strategy(strategy_id, new_name)
+    if not ok:
+        raise HTTPException(status_code=500, detail="重命名失败")
+
+    return {"success": True, "name": new_name}
+
+
 # ── 策略模板端点 ──────────────────────────────────────────────
 
 @router.get("/templates")

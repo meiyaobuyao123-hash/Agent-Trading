@@ -301,7 +301,10 @@ class HotCoinManager:
             loop.create_task(self._collect_top_holders(addr, chain))
             # 事件驱动：入榜时通知 Agent 策略评估
             from agent.event_bus import get_event_bus
-            loop.create_task(get_event_bus().publish("data.hot_coin_update", dict(coin)))
+            entry_data = dict(coin)
+            entry_data["_event_type"] = "entered"  # 标记为入榜事件
+            loop.create_task(get_event_bus().publish("data.hot_coin_update", entry_data))
+            loop.create_task(get_event_bus().publish("data.hot_coin_entered", entry_data))
         except RuntimeError:
             try:
                 asyncio.ensure_future(self._collect_top_holders(addr, chain))
@@ -362,6 +365,18 @@ class HotCoinManager:
                     ).execute()
                 except Exception as e:
                     log.debug(f"[HotCoin] 退出更新 performance 失败: {e}")
+
+            # 发布退出事件 → Agent 可触发卖出策略
+            try:
+                from agent.event_bus import get_event_bus
+                exit_data = dict(coin)
+                exit_data["_event_type"] = "exited"
+                exit_data["_exit_reason"] = reason
+                exit_data["_exit_pct"] = round(exit_pct, 2)
+                loop = asyncio.get_running_loop()
+                loop.create_task(get_event_bus().publish("data.hot_coin_exited", exit_data))
+            except Exception:
+                pass
 
     # ═══════════════════════════════════════════════════════════
     # 退出判定

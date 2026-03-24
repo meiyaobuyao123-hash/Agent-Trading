@@ -42,6 +42,8 @@ SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自�
 ### hot_coins（外盘热币 SOL/BSC/Base/ETH）
 | 字段 | 类型 | 说明 |
 |------|------|------|
+| _event_type | string | entered=新入榜 / exited=退出 / 空=价格更新 |
+| _exit_reason | string | 退出原因（仅 exited 时有值） |
 | score | 0-100 | 综合评分 |
 | score_m | 0-50 | 动量分 |
 | score_q | 0-30 | 质量分 |
@@ -59,6 +61,14 @@ SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自�
 | buys_1h / sells_1h | int | 1小时买/卖笔数 |
 | recommendation | string | strong/normal/skip |
 | chain | string | solana/bsc/base/eth |
+
+**热币特殊事件条件**：
+- `_event_type == "entered"`: 代币刚入榜时触发（可用于"新币入榜自动买入"）
+- `_event_type == "exited"`: 代币退出时触发（可用于"退出时卖出"）
+- 不设 _event_type: 匹配所有热币更新（价格变动+入榜+退出）
+
+示例："热币新入榜评分>70时买入" →
+  条件: [{"field":"_event_type","operator":"==","value":"entered"}, {"field":"score","operator":">","value":70}]
 
 ### pump_tokens（内盘 pump.fun）
 | 字段 | 类型 | 说明 |

@@ -1208,7 +1208,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               }
               Navigator.of(ctx).pop();
             },
-            child: Text(S.of(context).confirm, style: TextStyle(color: c.primary)),
+            child: Text('OK', style: TextStyle(color: c.primary)),
           ),
         ],
       ),

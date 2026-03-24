@@ -574,6 +574,10 @@ class TestEventListenerIntegration:
             ]
         }
 
+        # dispatcher.dispatch is async
+        mock_dispatcher.dispatch = AsyncMock()
+        mock_strat_mgr.record_trigger = MagicMock()
+
         mock_orch = MagicMock()
         mock_orch.determine_level.return_value = 3
         mock_orch.execute = AsyncMock(return_value={

@@ -217,6 +217,10 @@ class _ChatTabState extends State<_ChatTab>
   final _messages = <_ChatMessage>[];
   bool _sending = false;
 
+  /// 流式消息专用 — 避免 setState 全局 rebuild 导致闪烁
+  final ValueNotifier<String> _streamText = ValueNotifier('');
+  bool _isStreamingActive = false;
+
   /// 待确认的策略规范
   Map<String, dynamic>? _pendingStrategy;
   String? _pendingPrompt;
@@ -243,6 +247,7 @@ class _ChatTabState extends State<_ChatTab>
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+    _streamText.dispose();
     super.dispose();
   }
 
@@ -250,17 +255,16 @@ class _ChatTabState extends State<_ChatTab>
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
 
+    // 1. 添加用户消息 + 开启流式状态
     setState(() {
       _messages.add(_ChatMessage(isUser: true, text: text));
       _sending = true;
-      // 添加一个空的 AI 消息用于流式填充
-      _messages.add(_ChatMessage(isUser: false, text: '', isStreaming: true));
+      _isStreamingActive = true;
+      _streamText.value = '';
     });
     _controller.clear();
     _scrollToBottom();
 
-    final streamIdx = _messages.length - 1;
-    String accumulated = '';
     Map<String, dynamic>? strategyData;
 
     try {
@@ -268,37 +272,31 @@ class _ChatTabState extends State<_ChatTab>
         if (!mounted) return;
 
         if (event.isDelta && event.text != null) {
-          accumulated += event.text!;
-          setState(() {
-            _messages[streamIdx] = _ChatMessage(
-              isUser: false,
-              text: accumulated,
-              isStreaming: true,
-            );
-          });
+          // 只更新 ValueNotifier，不触发 setState → 零闪烁
+          _streamText.value += event.text!;
           _scrollToBottom();
         } else if (event.isStrategy && event.strategyData != null) {
           strategyData = event.strategyData;
         } else if (event.isDone) {
           break;
         } else if (event.isError) {
-          accumulated += event.text ?? 'Unknown error';
+          _streamText.value += event.text ?? 'Unknown error';
           break;
         }
       }
     } catch (e) {
-      if (accumulated.isEmpty) {
-        accumulated = 'Network error';
+      if (_streamText.value.isEmpty) {
+        _streamText.value = 'Network error';
       }
     }
 
     if (!mounted) return;
+
+    // 2. 流式结束 → 固化为普通消息
+    final finalText = _streamText.value;
     setState(() {
-      _messages[streamIdx] = _ChatMessage(
-        isUser: false,
-        text: accumulated,
-        isStreaming: false,
-      );
+      _isStreamingActive = false;
+      _messages.add(_ChatMessage(isUser: false, text: finalText));
       if (strategyData != null) {
         _pendingStrategy = strategyData;
         _pendingPrompt = text;
@@ -380,8 +378,8 @@ class _ChatTabState extends State<_ChatTab>
             controller: _scrollController,
             padding: const EdgeInsets.all(16),
             itemCount: _messages.length +
-                (_pendingStrategy != null ? 1 : 0) +
-                (_sending ? 1 : 0),
+                (_isStreamingActive ? 1 : 0) +
+                (_pendingStrategy != null ? 1 : 0),
             itemBuilder: (ctx, i) {
               if (i < _messages.length) {
                 final msg = _messages[i];
@@ -389,10 +387,23 @@ class _ChatTabState extends State<_ChatTab>
                   padding: const EdgeInsets.only(bottom: 12),
                   child: msg.isUser
                       ? _UserBubble(text: msg.text)
-                      : _AiBubble(text: msg.text, isStreaming: msg.isStreaming),
+                      : _AiBubble(text: msg.text),
                 );
               }
-              if (_pendingStrategy != null && i == _messages.length) {
+              // 流式消息（用 ValueListenableBuilder 避免闪烁）
+              if (_isStreamingActive && i == _messages.length) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: ValueListenableBuilder<String>(
+                    valueListenable: _streamText,
+                    builder: (ctx, text, _) => _AiBubble(
+                      text: text,
+                      isStreaming: true,
+                    ),
+                  ),
+                );
+              }
+              if (_pendingStrategy != null) {
                 return _ConfirmCard(
                   strategy: _pendingStrategy!,
                   error: _strategyError,
@@ -400,7 +411,7 @@ class _ChatTabState extends State<_ChatTab>
                   onCancel: _cancelStrategy,
                 );
               }
-              return const _TypingIndicator();
+              return const SizedBox.shrink();
             },
           ),
         ),

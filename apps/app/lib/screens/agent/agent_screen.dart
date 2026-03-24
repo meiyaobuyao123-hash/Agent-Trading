@@ -253,29 +253,59 @@ class _ChatTabState extends State<_ChatTab>
     setState(() {
       _messages.add(_ChatMessage(isUser: true, text: text));
       _sending = true;
+      // 添加一个空的 AI 消息用于流式填充
+      _messages.add(_ChatMessage(isUser: false, text: '', isStreaming: true));
     });
     _controller.clear();
     _scrollToBottom();
 
+    final streamIdx = _messages.length - 1;
+    String accumulated = '';
+    Map<String, dynamic>? strategyData;
+
     try {
-      final response = await AgentService.instance.chat(text);
-      if (!mounted) return;
-      setState(() {
-        _messages.add(_ChatMessage(isUser: false, text: response.message));
-        if (response.requiresConfirmation && response.strategy != null) {
-          _pendingStrategy = response.strategy;
-          _pendingPrompt = text;
-          _strategyError = null;
+      await for (final event in AgentService.instance.chatStream(text)) {
+        if (!mounted) return;
+
+        if (event.isDelta && event.text != null) {
+          accumulated += event.text!;
+          setState(() {
+            _messages[streamIdx] = _ChatMessage(
+              isUser: false,
+              text: accumulated,
+              isStreaming: true,
+            );
+          });
+          _scrollToBottom();
+        } else if (event.isStrategy && event.strategyData != null) {
+          strategyData = event.strategyData;
+        } else if (event.isDone) {
+          break;
+        } else if (event.isError) {
+          accumulated += event.text ?? 'Unknown error';
+          break;
         }
-        _sending = false;
-      });
-    } on AgentException catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _messages.add(_ChatMessage(isUser: false, text: e.message));
-        _sending = false;
-      });
+      }
+    } catch (e) {
+      if (accumulated.isEmpty) {
+        accumulated = 'Network error';
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _messages[streamIdx] = _ChatMessage(
+        isUser: false,
+        text: accumulated,
+        isStreaming: false,
+      );
+      if (strategyData != null) {
+        _pendingStrategy = strategyData;
+        _pendingPrompt = text;
+        _strategyError = null;
+      }
+      _sending = false;
+    });
     if (mounted) _scrollToBottom();
   }
 
@@ -359,7 +389,7 @@ class _ChatTabState extends State<_ChatTab>
                   padding: const EdgeInsets.only(bottom: 12),
                   child: msg.isUser
                       ? _UserBubble(text: msg.text)
-                      : _AiBubble(text: msg.text),
+                      : _AiBubble(text: msg.text, isStreaming: msg.isStreaming),
                 );
               }
               if (_pendingStrategy != null && i == _messages.length) {
@@ -387,12 +417,14 @@ class _ChatTabState extends State<_ChatTab>
 class _ChatMessage {
   final bool isUser;
   final String text;
-  const _ChatMessage({required this.isUser, required this.text});
+  final bool isStreaming;
+  const _ChatMessage({required this.isUser, required this.text, this.isStreaming = false});
 }
 
 class _AiBubble extends StatelessWidget {
   final String text;
-  const _AiBubble({required this.text});
+  final bool isStreaming;
+  const _AiBubble({required this.text, this.isStreaming = false});
 
   @override
   Widget build(BuildContext context) {
@@ -423,17 +455,66 @@ class _AiBubble extends StatelessWidget {
               ),
               border: Border.all(color: c.glassBorder, width: 0.5),
             ),
-            child: Text(
-              text,
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 14,
-                height: 1.6,
+            child: RichText(
+              text: TextSpan(
+                style: TextStyle(
+                  color: c.textPrimary,
+                  fontSize: 14,
+                  height: 1.6,
+                ),
+                children: [
+                  TextSpan(text: text),
+                  if (isStreaming)
+                    WidgetSpan(
+                      child: _BlinkingCursor(color: c.primary),
+                    ),
+                ],
               ),
             ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class _BlinkingCursor extends StatefulWidget {
+  final Color color;
+  const _BlinkingCursor({required this.color});
+
+  @override
+  State<_BlinkingCursor> createState() => _BlinkingCursorState();
+}
+
+class _BlinkingCursorState extends State<_BlinkingCursor>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      duration: const Duration(milliseconds: 600),
+      vsync: this,
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _ctrl,
+      child: Container(
+        width: 2,
+        height: 16,
+        margin: const EdgeInsets.only(left: 1),
+        color: widget.color,
+      ),
     );
   }
 }

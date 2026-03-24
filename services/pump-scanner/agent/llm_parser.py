@@ -396,6 +396,134 @@ class LLMParser:
 
         return None, f"AI 服务繁忙，已重试 {MAX_RETRIES} 次。请稍后再试。"
 
+    async def parse_strategy_stream(
+        self,
+        user_message: str,
+        context: Optional[Dict[str, Any]] = None,
+    ):
+        """
+        流式版本：yield SSE 事件字典
+        {"type":"delta","text":"..."} | {"type":"strategy","data":{...}} | {"type":"done"} | {"type":"error","message":"..."}
+        """
+        if not self.api_key:
+            yield {"type": "error", "message": "API 密钥未配置"}
+            return
+
+        client = self._get_client()
+        messages = [{"role": "user", "content": user_message}]
+        if context:
+            context_str = json.dumps(context, ensure_ascii=False, indent=2)
+            messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
+            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？"})
+
+        yield {"type": "start"}
+
+        try:
+            # Claude streaming — 在线程池中运行（阻塞调用）
+            collected_text = ""
+            tool_name = ""
+            tool_json = ""
+            in_tool = False
+
+            def _run_stream():
+                """同步生成器，在线程中运行"""
+                events = []
+                with client.messages.stream(
+                    model=MODEL,
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT,
+                    tools=[STRATEGY_TOOL],
+                    messages=messages,
+                ) as stream:
+                    for event in stream:
+                        events.append(event)
+                return events
+
+            # 在线程池运行，但我们需要逐个处理事件
+            # 用 queue 实现线程→异步的桥接
+            import queue
+            event_queue = queue.Queue()  # type: queue.Queue
+            stream_done = False
+            stream_error = None
+
+            def _run_stream_to_queue():
+                nonlocal stream_done, stream_error
+                try:
+                    with client.messages.stream(
+                        model=MODEL,
+                        max_tokens=2048,
+                        system=SYSTEM_PROMPT,
+                        tools=[STRATEGY_TOOL],
+                        messages=messages,
+                    ) as stream:
+                        for event in stream:
+                            event_queue.put(event)
+                    event_queue.put(None)  # sentinel
+                except Exception as e:
+                    stream_error = e
+                    event_queue.put(None)
+
+            # 启动线程
+            import threading
+            thread = threading.Thread(target=_run_stream_to_queue, daemon=True)
+            thread.start()
+
+            # 异步消费事件
+            while True:
+                # 非阻塞轮询 queue
+                try:
+                    event = await asyncio.to_thread(event_queue.get, timeout=0.1)
+                except Exception:
+                    if stream_error:
+                        raise stream_error
+                    await asyncio.sleep(0.05)
+                    continue
+
+                if event is None:
+                    break  # stream 结束
+
+                etype = getattr(event, "type", "")
+
+                if etype == "content_block_start":
+                    cb = getattr(event, "content_block", None)
+                    if cb and getattr(cb, "type", "") == "tool_use":
+                        in_tool = True
+                        tool_name = getattr(cb, "name", "")
+                        tool_json = ""
+
+                elif etype == "content_block_delta":
+                    delta = getattr(event, "delta", None)
+                    if delta:
+                        delta_type = getattr(delta, "type", "")
+                        if delta_type == "text_delta":
+                            text = getattr(delta, "text", "")
+                            if text:
+                                collected_text += text
+                                yield {"type": "delta", "text": text}
+                        elif delta_type == "input_json_delta":
+                            partial = getattr(delta, "partial_json", "")
+                            tool_json += partial
+
+                elif etype == "content_block_stop":
+                    if in_tool and tool_name == "create_strategy":
+                        try:
+                            tool_input = json.loads(tool_json)
+                            strategy_spec = self._normalize_spec(tool_input)
+                            yield {"type": "strategy", "data": strategy_spec}
+                        except json.JSONDecodeError:
+                            log.warning("Stream tool JSON parse error: %s", tool_json[:100])
+                        in_tool = False
+                        tool_json = ""
+
+            if stream_error:
+                raise stream_error
+
+            yield {"type": "done", "full_text": collected_text}
+
+        except Exception as e:
+            log.error("Stream error: %s", e)
+            yield {"type": "error", "message": str(e)[:200]}
+
     def _normalize_spec(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """
         规范化 LLM 输出的策略规范

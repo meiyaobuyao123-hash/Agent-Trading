@@ -15,6 +15,7 @@ Agent API 路由
 Python 3.9 兼容。
 """
 import asyncio
+import json
 import logging
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -72,7 +73,7 @@ async def chat(
     user_id: str = Depends(get_current_user),
 ):
     """
-    对话创建策略
+    对话创建策略（非流式，保留兼容）
 
     用户发送自然语言，Claude 解析为 StrategySpec。
     返回策略规范和 AI 回复，用户确认后调 POST /strategies 创建。
@@ -93,6 +94,44 @@ async def chat(
         strategy=strategy_spec,
         message=ai_message,
         requires_confirmation=strategy_spec is not None,
+    )
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    req: ChatRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """
+    流式对话（打字机效果）— SSE 端点
+
+    返回 text/event-stream，逐 token 推送 Claude 回复。
+    消息格式：data: {"type":"delta","text":"..."}\n\n
+    """
+    from fastapi.responses import StreamingResponse
+
+    # 配额检查
+    quota_ok, quota_resp = await _check_and_consume_quota(user_id)
+    if quota_resp is not None:
+        async def _quota_error():
+            yield f"data: {json.dumps({'type': 'error', 'message': '月度 API 配额已用完'})}\n\n"
+        return StreamingResponse(_quota_error(), media_type="text/event-stream")
+
+    async def _event_generator():
+        import json as _json
+        try:
+            async for event in _llm_parser.parse_strategy_stream(req.message, req.context):
+                yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {_json.dumps({'type': 'error', 'message': str(e)[:200]})}\n\n"
+
+    return StreamingResponse(
+        _event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # nginx 禁用缓冲
+        },
     )
 
 

@@ -11,7 +11,7 @@ class AgentService {
   final _client = http.Client();
 
   static const _apiBase = AppConfig.backendBaseUrl;
-  static const _timeout = Duration(seconds: 30);
+  static const _timeout = Duration(seconds: 90);
 
   String? get _token =>
       Supabase.instance.client.auth.currentSession?.accessToken;
@@ -59,6 +59,62 @@ class AgentService {
       rethrow;
     } catch (e) {
       throw AgentException('Network error');
+    }
+  }
+
+  /// 流式对话（打字机效果）— 返回 Stream<StreamEvent>
+  /// 每个 event: {"type":"delta","text":"..."} | {"type":"strategy","data":{...}} | {"type":"done"}
+  Stream<StreamEvent> chatStream(String message,
+      {Map<String, dynamic>? context}) async* {
+    try {
+      final request = http.Request(
+        'POST',
+        Uri.parse('$_apiBase/api/agent/chat/stream'),
+      );
+      request.headers.addAll(_headers);
+      request.body = jsonEncode({
+        'message': message,
+        if (context != null) 'context': context,
+      });
+
+      final response = await _client.send(request).timeout(_timeout);
+
+      if (response.statusCode != 200) {
+        yield StreamEvent(type: 'error', text: 'Server error (${response.statusCode})');
+        return;
+      }
+
+      String buffer = '';
+      await for (final chunk in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        // 按行分割 SSE
+        while (buffer.contains('\n')) {
+          final idx = buffer.indexOf('\n');
+          final line = buffer.substring(0, idx).trim();
+          buffer = buffer.substring(idx + 1);
+
+          if (line.startsWith('data: ')) {
+            try {
+              final data = jsonDecode(line.substring(6)) as Map<String, dynamic>;
+              yield StreamEvent.fromJson(data);
+            } catch (_) {
+              // 忽略 JSON 解析错误
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // 流式失败 → 尝试非流式 fallback
+      try {
+        final fallback = await chat(message, context: context);
+        yield StreamEvent(type: 'delta', text: fallback.message);
+        if (fallback.strategy != null) {
+          yield StreamEvent(type: 'strategy', strategyData: fallback.strategy);
+        }
+        yield StreamEvent(type: 'done');
+      } catch (e2) {
+        yield StreamEvent(type: 'error', text: e2.toString());
+      }
     }
   }
 
@@ -536,4 +592,24 @@ class ExecutionsResponse {
         summary: ExecutionSummary.fromJson(
             json['summary'] as Map<String, dynamic>? ?? {}),
       );
+}
+
+/// 流式事件模型
+class StreamEvent {
+  final String type; // start, delta, strategy, done, error
+  final String? text;
+  final Map<String, dynamic>? strategyData;
+
+  const StreamEvent({required this.type, this.text, this.strategyData});
+
+  factory StreamEvent.fromJson(Map<String, dynamic> json) => StreamEvent(
+        type: json['type'] as String? ?? 'unknown',
+        text: json['text'] as String?,
+        strategyData: json['data'] as Map<String, dynamic>?,
+      );
+
+  bool get isDelta => type == 'delta';
+  bool get isDone => type == 'done';
+  bool get isError => type == 'error';
+  bool get isStrategy => type == 'strategy';
 }

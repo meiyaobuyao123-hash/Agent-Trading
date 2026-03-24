@@ -348,16 +348,25 @@ STRATEGY_TOOL = {
 }
 
 
+LIST_STRATEGIES_TOOL = {
+    "name": "list_strategies",
+    "description": "查看用户已创建的所有策略列表，返回策略ID、名称、状态、模式",
+    "input_schema": {
+        "type": "object",
+        "properties": {},
+    },
+}
+
 BACKTEST_TOOL = {
     "name": "run_backtest",
-    "description": "对策略进行7天历史数据回测，返回触发次数、胜率、平均收益、最大回撤",
+    "description": "对策略进行7天历史数据回测，返回触发次数、胜率、平均收益、最大回撤。需要先用 list_strategies 获取策略ID",
     "input_schema": {
         "type": "object",
         "required": ["strategy_id"],
         "properties": {
             "strategy_id": {
                 "type": "string",
-                "description": "要回测的策略 ID（UUID）",
+                "description": "要回测的策略 ID（UUID），从 list_strategies 结果中获取",
             },
             "days": {
                 "type": "integer",
@@ -369,7 +378,7 @@ BACKTEST_TOOL = {
     },
 }
 
-TOOLS = [STRATEGY_TOOL, BACKTEST_TOOL]
+TOOLS = [STRATEGY_TOOL, LIST_STRATEGIES_TOOL, BACKTEST_TOOL]
 
 
 class LLMParser:
@@ -397,41 +406,27 @@ class LLMParser:
         context: Optional[Dict[str, Any]] = None,
     ) -> Tuple[Optional[Dict[str, Any]], str]:
         """
-        解析用户自然语言为策略规范
-
-        Args:
-            user_message: 用户输入
-            context: 可选的上下文信息
+        多轮 tool use 循环：Claude 可以连续调用多个工具（list→backtest→回复）
 
         Returns:
             (strategy_spec_dict, ai_message)
-            strategy_spec_dict 可能为 None（如果解析失败或用户意图不明确）
         """
         if not self.api_key:
             return None, "API 密钥未配置，无法解析策略。请设置 ANTHROPIC_API_KEY。"
 
-        # PRD-004 M-02: 重试逻辑（429/5xx 自动退避重试）
-        MAX_RETRIES = 3
-        RETRY_DELAYS = [5, 10, 20]
-
         client = self._get_client()
 
-        messages = [
-            {"role": "user", "content": user_message},
-        ]
+        messages = [{"role": "user", "content": user_message}]
         if context:
             context_str = json.dumps(context, ensure_ascii=False, indent=2)
-            messages.insert(0, {
-                "role": "user",
-                "content": f"上下文信息：\n{context_str}",
-            })
-            messages.insert(1, {
-                "role": "assistant",
-                "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？",
-            })
+            messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
+            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？"})
 
-        last_error = None
-        for attempt in range(MAX_RETRIES):
+        strategy_spec = None
+        ai_message = ""
+        MAX_TURNS = 5  # 最多 5 轮 tool use 循环
+
+        for turn in range(MAX_TURNS):
             try:
                 response = await asyncio.to_thread(
                     client.messages.create,
@@ -441,51 +436,67 @@ class LLMParser:
                     tools=TOOLS,
                     messages=messages,
                 )
-
-                strategy_spec = None
-                backtest_request = None
-                ai_message = ""
-
-                for block in response.content:
-                    if block.type == "tool_use" and block.name == "create_strategy":
-                        strategy_spec = self._normalize_spec(block.input)
-                    elif block.type == "tool_use" and block.name == "run_backtest":
-                        backtest_request = block.input
-                    elif block.type == "text":
-                        ai_message = block.text
-
-                # 处理回测请求
-                if backtest_request:
-                    backtest_result = await self._execute_backtest(backtest_request)
-                    if not ai_message:
-                        ai_message = backtest_result
-                    else:
-                        ai_message += "\n\n" + backtest_result
-
-                if strategy_spec and not ai_message:
-                    ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
-
-                if not strategy_spec and not ai_message:
-                    ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
-
-                return strategy_spec, ai_message
-
             except (anthropic.RateLimitError, anthropic.InternalServerError) as e:
-                last_error = e
-                if attempt < MAX_RETRIES - 1:
-                    delay = RETRY_DELAYS[attempt]
-                    log.warning(f"LLM Parser retry {attempt+1}/{MAX_RETRIES}: {e}, wait {delay}s")
-                    await asyncio.sleep(delay)
-                else:
-                    log.error(f"LLM Parser all {MAX_RETRIES} retries failed: {e}")
+                log.warning(f"LLM Parser error turn {turn}: {e}")
+                await asyncio.sleep(5)
+                continue
             except anthropic.APIError as e:
-                log.error(f"Claude API error: {e}")
-                return None, f"AI 服务暂时不可用，请稍后再试。错误：{str(e)[:100]}"
+                return None, f"AI 服务暂时不可用：{str(e)[:100]}"
             except Exception as e:
-                log.error(f"LLM parser error: {e}")
                 return None, f"策略解析出错，请重新描述。"
 
-        return None, f"AI 服务繁忙，已重试 {MAX_RETRIES} 次。请稍后再试。"
+            # 收集本轮的文本和工具调用
+            tool_calls = []
+            for block in response.content:
+                if block.type == "text":
+                    ai_message += block.text
+                elif block.type == "tool_use":
+                    tool_calls.append(block)
+
+            # 没有工具调用 → 对话结束
+            if not tool_calls:
+                break
+
+            # 处理工具调用，构建 tool_result 消息
+            # 先把 assistant 的完整 response 加入 messages
+            messages.append({"role": "assistant", "content": response.content})
+
+            tool_results = []
+            for tc in tool_calls:
+                result_text = ""
+                if tc.name == "create_strategy":
+                    strategy_spec = self._normalize_spec(tc.input)
+                    result_text = json.dumps({
+                        "success": True,
+                        "strategy_id": "pending_confirmation",
+                        "name": strategy_spec.get("name", ""),
+                        "message": f"策略「{strategy_spec.get('name', '')}」已创建。"
+                    }, ensure_ascii=False)
+                elif tc.name == "list_strategies":
+                    result_text = await self._execute_list_strategies()
+                elif tc.name == "run_backtest":
+                    result_text = await self._execute_backtest(tc.input)
+                else:
+                    result_text = json.dumps({"error": f"Unknown tool: {tc.name}"})
+
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc.id,
+                    "content": result_text,
+                })
+
+            messages.append({"role": "user", "content": tool_results})
+
+            # 如果 Claude 还想继续调用工具，循环继续
+            if response.stop_reason == "end_turn":
+                break
+
+        if not ai_message and strategy_spec:
+            ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
+        if not ai_message and not strategy_spec:
+            ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
+
+        return strategy_spec, ai_message
 
     async def parse_strategy_stream(
         self,
@@ -493,8 +504,10 @@ class LLMParser:
         context: Optional[Dict[str, Any]] = None,
     ):
         """
-        流式版本：yield SSE 事件字典
-        {"type":"delta","text":"..."} | {"type":"strategy","data":{...}} | {"type":"done"} | {"type":"error","message":"..."}
+        流式版本：多轮 tool use + 最终回复流式输出
+
+        策略：先用非流式完成多轮 tool use，然后最后一轮用流式输出文本。
+        中间 tool 执行过程通过 delta 事件通知用户"正在执行..."
         """
         if not self.api_key:
             yield {"type": "error", "message": "API 密钥未配置"}
@@ -505,122 +518,105 @@ class LLMParser:
         if context:
             context_str = json.dumps(context, ensure_ascii=False, indent=2)
             messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
-            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？"})
+            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。"})
 
         yield {"type": "start"}
 
-        try:
-            # Claude streaming — 在线程池中运行（阻塞调用）
-            collected_text = ""
-            tool_name = ""
-            tool_json = ""
-            in_tool = False
+        strategy_spec = None
+        MAX_TURNS = 5
 
-            def _run_stream():
-                """同步生成器，在线程中运行"""
-                events = []
-                with client.messages.stream(
+        try:
+            for turn in range(MAX_TURNS):
+                # 最后一轮或非 tool_use 停止时，用流式输出
+                # 先用非流式探测是否有 tool 调用
+                response = await asyncio.to_thread(
+                    client.messages.create,
                     model=MODEL,
                     max_tokens=2048,
                     system=SYSTEM_PROMPT,
                     tools=TOOLS,
                     messages=messages,
-                ) as stream:
-                    for event in stream:
-                        events.append(event)
-                return events
+                )
 
-            # 在线程池运行，但我们需要逐个处理事件
-            # 用 queue 实现线程→异步的桥接
-            import queue
-            event_queue = queue.Queue()  # type: queue.Queue
-            stream_done = False
-            stream_error = None
+                tool_calls = []
+                text_parts = []
+                for block in response.content:
+                    if block.type == "text":
+                        text_parts.append(block.text)
+                    elif block.type == "tool_use":
+                        tool_calls.append(block)
 
-            def _run_stream_to_queue():
-                nonlocal stream_done, stream_error
-                try:
-                    with client.messages.stream(
-                        model=MODEL,
-                        max_tokens=2048,
-                        system=SYSTEM_PROMPT,
-                        tools=TOOLS,
-                        messages=messages,
-                    ) as stream:
-                        for event in stream:
-                            event_queue.put(event)
-                    event_queue.put(None)  # sentinel
-                except Exception as e:
-                    stream_error = e
-                    event_queue.put(None)
+                # 有文本 → 逐字推送（模拟打字机效果）
+                for text in text_parts:
+                    # 分成小块推送，模拟流式
+                    chunk_size = 15  # 每次推 15 个字符
+                    for i in range(0, len(text), chunk_size):
+                        yield {"type": "delta", "text": text[i:i + chunk_size]}
+                        await asyncio.sleep(0.02)
 
-            # 启动线程
-            import threading
-            thread = threading.Thread(target=_run_stream_to_queue, daemon=True)
-            thread.start()
+                # 没有工具调用 → 结束
+                if not tool_calls:
+                    break
 
-            # 异步消费事件
-            while True:
-                # 非阻塞轮询 queue
-                try:
-                    event = await asyncio.to_thread(event_queue.get, timeout=0.1)
-                except Exception:
-                    if stream_error:
-                        raise stream_error
-                    await asyncio.sleep(0.05)
-                    continue
+                # 执行工具调用
+                messages.append({"role": "assistant", "content": response.content})
+                tool_results = []
 
-                if event is None:
-                    break  # stream 结束
+                for tc in tool_calls:
+                    if tc.name == "create_strategy":
+                        strategy_spec = self._normalize_spec(tc.input)
+                        yield {"type": "strategy", "data": strategy_spec}
+                        result_text = json.dumps({
+                            "success": True, "name": strategy_spec.get("name", "")
+                        }, ensure_ascii=False)
+                    elif tc.name == "list_strategies":
+                        yield {"type": "delta", "text": "\n\n正在查询策略列表...\n"}
+                        result_text = await self._execute_list_strategies()
+                    elif tc.name == "run_backtest":
+                        yield {"type": "delta", "text": "\n\n正在执行回测...\n"}
+                        result_text = await self._execute_backtest(tc.input)
+                        yield {"type": "delta", "text": result_text}
+                    else:
+                        result_text = json.dumps({"error": "unknown tool"})
 
-                etype = getattr(event, "type", "")
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": result_text,
+                    })
 
-                if etype == "content_block_start":
-                    cb = getattr(event, "content_block", None)
-                    if cb and getattr(cb, "type", "") == "tool_use":
-                        in_tool = True
-                        tool_name = getattr(cb, "name", "")
-                        tool_json = ""
+                messages.append({"role": "user", "content": tool_results})
 
-                elif etype == "content_block_delta":
-                    delta = getattr(event, "delta", None)
-                    if delta:
-                        delta_type = getattr(delta, "type", "")
-                        if delta_type == "text_delta":
-                            text = getattr(delta, "text", "")
-                            if text:
-                                collected_text += text
-                                yield {"type": "delta", "text": text}
-                        elif delta_type == "input_json_delta":
-                            partial = getattr(delta, "partial_json", "")
-                            tool_json += partial
+                if response.stop_reason == "end_turn":
+                    break
 
-                elif etype == "content_block_stop":
-                    if in_tool and tool_name == "create_strategy":
-                        try:
-                            tool_input = json.loads(tool_json)
-                            strategy_spec = self._normalize_spec(tool_input)
-                            yield {"type": "strategy", "data": strategy_spec}
-                        except json.JSONDecodeError:
-                            log.warning("Stream tool JSON parse error: %s", tool_json[:100])
-                    elif in_tool and tool_name == "run_backtest":
-                        try:
-                            tool_input = json.loads(tool_json)
-                            backtest_result = await self._execute_backtest(tool_input)
-                            yield {"type": "delta", "text": "\n\n" + backtest_result}
-                        except json.JSONDecodeError:
-                            log.warning("Stream backtest JSON parse error: %s", tool_json[:100])
-                    in_tool = False
-                    tool_json = ""
-
-            if stream_error:
-                raise stream_error
-
-            yield {"type": "done", "full_text": collected_text}
+            yield {"type": "done"}
 
         except Exception as e:
             log.error("Stream error: %s", e)
             yield {"type": "error", "message": str(e)[:200]}
+
+    async def _execute_list_strategies(self) -> str:
+        """列出所有策略"""
+        try:
+            from database import get_db
+            res = get_db().table("strategies").select(
+                "id, name, status, created_at"
+            ).order("created_at", desc=True).limit(10).execute()
+            strategies = res.data or []
+            if not strategies:
+                return json.dumps({"strategies": [], "message": "暂无策略，请先创建一个"}, ensure_ascii=False)
+            items = []
+            for s in strategies:
+                items.append({
+                    "id": s["id"],
+                    "name": s.get("name", ""),
+                    "status": s.get("status", ""),
+                    "created_at": s.get("created_at", ""),
+                })
+            return json.dumps({"strategies": items}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"error": str(e)[:100]}, ensure_ascii=False)
 
     async def _execute_backtest(self, request: Dict[str, Any]) -> str:
         """执行回测并返回格式化结果"""

@@ -86,8 +86,22 @@ async def chat(
         return quota_resp  # type: ignore[return-value]
     # ─────────────────────────────────────────────────────────────
 
+    # 自动注入最近策略 ID 到上下文（方便回测引用）
+    from database import get_db as _get_db
+    context = dict(req.context) if req.context else {}
+    if "last_strategy_id" not in context:
+        try:
+            last = _get_db().table("strategies").select("id, name").order(
+                "created_at", desc=True
+            ).limit(1).execute()
+            if last.data:
+                context["last_strategy_id"] = last.data[0]["id"]
+                context["last_strategy_name"] = last.data[0]["name"]
+        except Exception:
+            pass
+
     strategy_spec, ai_message = await _llm_parser.parse_strategy(
-        req.message, req.context
+        req.message, context if context else None
     )
 
     return ChatResponse(
@@ -117,10 +131,24 @@ async def chat_stream(
             yield f"data: {json.dumps({'type': 'error', 'message': '月度 API 配额已用完'})}\n\n"
         return StreamingResponse(_quota_error(), media_type="text/event-stream")
 
+    # 自动注入最近策略 ID
+    from database import get_db as _get_db2
+    context = dict(req.context) if req.context else {}
+    if "last_strategy_id" not in context:
+        try:
+            last = _get_db2().table("strategies").select("id, name").order(
+                "created_at", desc=True
+            ).limit(1).execute()
+            if last.data:
+                context["last_strategy_id"] = last.data[0]["id"]
+                context["last_strategy_name"] = last.data[0]["name"]
+        except Exception:
+            pass
+
     async def _event_generator():
         import json as _json
         try:
-            async for event in _llm_parser.parse_strategy_stream(req.message, req.context):
+            async for event in _llm_parser.parse_strategy_stream(req.message, context if context else None):
                 yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {_json.dumps({'type': 'error', 'message': str(e)[:200]})}\n\n"

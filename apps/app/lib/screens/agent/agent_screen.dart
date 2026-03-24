@@ -1483,7 +1483,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                 context: ctx,
                 builder: (dialogCtx) => AlertDialog(
                   title: Text(S.of(dialogCtx).delete),
-                  content: Text(S.of(dialogCtx).deleteWalletConfirm(s.name)),
+                  content: Text('确定删除策略 "${s.name}" 吗？删除后不可恢复。'),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(dialogCtx, false),

@@ -2,6 +2,7 @@ import 'dart:ui';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
@@ -179,7 +180,12 @@ class _MainShellState extends State<MainShell> {
       _TabItem(icon: CupertinoIcons.person, label: t.tabProfile),
     ];
 
-    return Scaffold(
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.light.copyWith(
+        systemNavigationBarColor: c.bg,
+        systemNavigationBarIconBrightness: Brightness.light,
+      ),
+      child: Scaffold(
       backgroundColor: c.bg,
       extendBody: true, // 内容滚动到 Tab Bar 下方
       body: Stack(
@@ -200,6 +206,7 @@ class _MainShellState extends State<MainShell> {
         ],
       ),
       bottomNavigationBar: _buildGlassTabBar(c, bottomPadding, tabItems),
+    ),
     );
   }
 

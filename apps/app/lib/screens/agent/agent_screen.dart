@@ -1169,9 +1169,11 @@ class _ConfirmCardState extends State<_ConfirmCard> {
     );
     showDialog(
       context: context,
+      barrierColor: Colors.black87,
       builder: (ctx) => AlertDialog(
-        backgroundColor: c.surface,
-        title: Text('$label', style: TextStyle(color: c.textPrimary, fontSize: 15)),
+        backgroundColor: const Color(0xFF1A1F2E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(label, style: TextStyle(color: c.textPrimary, fontSize: 15)),
         content: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -1481,13 +1483,17 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
             onDelete: () async {
               final confirmed = await showDialog<bool>(
                 context: ctx,
+                barrierColor: Colors.black87,
                 builder: (dialogCtx) => AlertDialog(
-                  title: Text(S.of(dialogCtx).delete),
-                  content: Text('确定删除策略 "${s.name}" 吗？删除后不可恢复。'),
+                  backgroundColor: const Color(0xFF1A1F2E),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  title: Text(S.of(dialogCtx).delete, style: const TextStyle(color: Colors.white, fontSize: 16)),
+                  content: Text('确定删除策略 "${s.name}" 吗？删除后不可恢复。',
+                      style: const TextStyle(color: Colors.white70, fontSize: 14)),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(dialogCtx, false),
-                      child: Text(S.of(dialogCtx).cancel),
+                      child: Text(S.of(dialogCtx).cancel, style: const TextStyle(color: Colors.white54)),
                     ),
                     TextButton(
                       onPressed: () => Navigator.pop(dialogCtx, true),

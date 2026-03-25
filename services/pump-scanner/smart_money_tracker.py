@@ -179,6 +179,7 @@ class SmartMoneyTracker:
         "6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P",   # Pump.fun
         "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",   # Raydium CLMM
         "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",    # Orca Whirlpool
+        "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",   # Meteora DLMM
     ]
 
     async def _run_sol_dex_monitor(self):
@@ -943,6 +944,19 @@ class SmartMoneyTracker:
             except Exception as e:
                 logger.warning("Upsert txns batch: %s", e)
         logger.info("Upserted %d txns", len(rows))
+
+        # 更新有交易的钱包的 last_seen（防止活跃钱包被误淘汰）
+        active_wallets = {t["wallet_address"] for t in txns if t.get("wallet_address")}
+        if active_wallets:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            for wallet in active_wallets:
+                try:
+                    self.db.table("smart_wallets").update(
+                        {"last_seen": now_iso}
+                    ).eq("wallet", wallet).execute()
+                except Exception:
+                    pass
+            logger.debug("Updated last_seen for %d active wallets", len(active_wallets))
 
     def _cleanup_old_txns(self):
         cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()

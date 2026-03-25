@@ -136,15 +136,15 @@ async def main():
         misfire_grace_time=3600,
     )
 
-    # ── Dune Analytics 聪明钱导入（每周一 UTC 05:00）──────────
+    # ── Dune Analytics 聪明钱导入（每 3 天 UTC 05:00）──────────
     from dune_wallet_importer import run_dune_wallet_import
     scheduler.add_job(
         run_dune_wallet_import,
         trigger="cron",
-        day_of_week="mon",
+        day="*/3",
         hour=5, minute=0,
         id="dune_wallet_import",
-        name="Dune聪明钱导入",
+        name="Dune聪明钱导入(3天)",
         misfire_grace_time=7200,
     )
 

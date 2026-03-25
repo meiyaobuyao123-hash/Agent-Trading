@@ -868,6 +868,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
+    final id = widget.strategy['id'] as String? ?? '';
     final name = widget.strategy['name'] as String? ?? S.of(context).unnamedStrategy;
     final desc = widget.strategy['description'] as String? ?? '';
     final cooldown = widget.strategy['cooldown_minutes'] as int? ?? 30;

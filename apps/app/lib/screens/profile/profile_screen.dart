@@ -1,15 +1,75 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/locale_provider.dart';
 import '../../services/wallet_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
+import '../../services/push_notification_service.dart';
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  bool _notifNewCoin = false;
+  bool _notifHotCoin = false;
+  bool _notifAgent = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotifSettings();
+  }
+
+  Future<void> _loadNotifSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notifNewCoin = prefs.getBool('notif_new_coin') ?? false;
+        _notifHotCoin = prefs.getBool('notif_hot_coin') ?? false;
+        _notifAgent = prefs.getBool('notif_agent') ?? false;
+      });
+    }
+  }
+
+  Future<void> _onToggleNotif(String key, bool value) async {
+    if (value) {
+      // 用户首次开启 → 请求 iOS 推送权限
+      try {
+        final messenger = WidgetsBinding.instance.platformDispatcher;
+        // 触发 Firebase 权限请求（如果未初始化则跳过）
+        // ignore: unused_import
+        await _requestPushPermission();
+      } catch (_) {}
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+    if (mounted) {
+      setState(() {
+        switch (key) {
+          case 'notif_new_coin': _notifNewCoin = value; break;
+          case 'notif_hot_coin': _notifHotCoin = value; break;
+          case 'notif_agent': _notifAgent = value; break;
+        }
+      });
+    }
+  }
+
+  Future<void> _requestPushPermission() async {
+    try {
+      await PushNotificationService.initialize();
+      debugPrint('[Push] Notification permission requested from user toggle');
+    } catch (e) {
+      debugPrint('[Push] Permission request failed: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,22 +117,22 @@ class ProfileScreen extends StatelessWidget {
                     icon: Icons.bolt_rounded,
                     title: S.of(context).newCoinPush,
                     subtitle: S.of(context).newCoinPushDesc,
-                    value: true,
-                    onChanged: (_) => _showComingSoon(context),
+                    value: _notifNewCoin,
+                    onChanged: (v) => _onToggleNotif('notif_new_coin', v),
                   ),
                   _ToggleItem(
                     icon: Icons.local_fire_department_rounded,
                     title: S.of(context).hotCoinAlert,
                     subtitle: S.of(context).hotCoinAlertDesc,
-                    value: false,
-                    onChanged: (_) => _showComingSoon(context),
+                    value: _notifHotCoin,
+                    onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
                   ),
                   _ToggleItem(
                     icon: Icons.smart_toy_rounded,
                     title: S.of(context).agentNotification,
                     subtitle: S.of(context).agentNotificationDesc,
-                    value: true,
-                    onChanged: (_) => _showComingSoon(context),
+                    value: _notifAgent,
+                    onChanged: (v) => _onToggleNotif('notif_agent', v),
                   ),
 
                   const SizedBox(height: 16),

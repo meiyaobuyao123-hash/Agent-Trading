@@ -850,7 +850,9 @@ class SmartMoneyTracker:
     def _calc_heat_score(self, sig: Dict[str, Any]) -> float:
         watching_buy = max(sig.get("buy_count", 0) - sig.get("elite_buy_count", 0) - sig.get("verified_buy_count", 0), 0)
         watching_sell = max(sig.get("sell_count", 0) - sig.get("elite_sell_count", 0) - sig.get("verified_sell_count", 0), 0)
-        score = (
+
+        # 基础 tier 权重分
+        tier_score = (
             sig.get("elite_buy_count", 0) * 5
             + sig.get("verified_buy_count", 0) * 3
             + watching_buy * 1
@@ -858,12 +860,31 @@ class SmartMoneyTracker:
             - sig.get("verified_sell_count", 0) * 2
             - watching_sell * 0.5
         )
-        return round(score, 1)
+
+        # 集中度加成：多个不同钱包买入同一代币 = 强信号
+        unique_buyers = sig.get("unique_buyers", 0)
+        if unique_buyers >= 20:
+            concentration_bonus = 40
+        elif unique_buyers >= 10:
+            concentration_bonus = 20
+        elif unique_buyers >= 5:
+            concentration_bonus = 10
+        elif unique_buyers >= 3:
+            concentration_bonus = 5
+        else:
+            concentration_bonus = 0
+
+        return round(tier_score + concentration_bonus, 1)
 
     def _calc_strength(self, sig: Dict[str, Any]) -> str:
-        if sig.get("elite_buy_count", 0) >= 2 and sig.get("net_flow", 0) >= 3:
+        unique_buyers = sig.get("unique_buyers", 0)
+        elite_buys = sig.get("elite_buy_count", 0)
+        net_flow = sig.get("net_flow", 0)
+
+        # 强信号：elite 多次买入 或 多钱包集中买入
+        if (elite_buys >= 2 and net_flow >= 3) or unique_buyers >= 5:
             return "strong"
-        if sig.get("elite_buy_count", 0) >= 1 or sig.get("net_flow", 0) >= 2:
+        if elite_buys >= 1 or net_flow >= 2 or unique_buyers >= 3:
             return "medium"
         return "weak"
 

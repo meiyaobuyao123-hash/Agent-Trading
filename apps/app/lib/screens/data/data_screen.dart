@@ -216,87 +216,66 @@ class _DataScreenState extends State<DataScreen> {
   Widget _buildPyramid(List<dynamic> tiers, int totalAddr) {
     if (tiers.isEmpty) return const SizedBox.shrink();
 
-    // 金字塔颜色（从顶到底）
     const pyramidColors = [
-      Color(0xFFFF6B00),  // 橙色（顶层 >$1M）
-      Color(0xFF9B59B6),  // 紫色
-      Color(0xFF3498DB),  // 蓝色
-      Color(0xFF5DADE2),  // 浅蓝
-      Color(0xFFAED6F1),  // 更浅蓝
-      Color(0xFFD1D5DB),  // 灰色（盈亏平衡）
-      Color(0xFFE74C3C),  // 红色（亏损）
+      Color(0xFFFF6B00),
+      Color(0xFF9B59B6),
+      Color(0xFF3498DB),
+      Color(0xFF5DADE2),
+      Color(0xFFAED6F1),
+      Color(0xFFD1D5DB),
+      Color(0xFFE74C3C),
     ];
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        // 左侧金字塔
-        Expanded(
-          flex: 4,
-          child: Column(
-            children: List.generate(tiers.length, (i) {
-              final tier = tiers[i] as Map<String, dynamic>;
-              final widthRatio = 0.3 + (i / (tiers.length - 1)) * 0.7; // 从 30% 到 100%
-              final color = i < pyramidColors.length
-                  ? pyramidColors[i]
-                  : Color(int.parse((tier['color'] ?? '#999999').replaceFirst('#', '0xFF')));
+    final n = tiers.length;
+    final pyramidHeight = n * 32.0;
 
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Align(
-                  alignment: Alignment.center,
-                  child: FractionallySizedBox(
-                    widthFactor: widthRatio,
-                    child: Container(
-                      height: 28,
-                      decoration: BoxDecoration(
-                        color: color,
-                        borderRadius: i == 0
-                            ? const BorderRadius.vertical(top: Radius.circular(6))
-                            : i == tiers.length - 1
-                                ? const BorderRadius.vertical(bottom: Radius.circular(6))
-                                : BorderRadius.zero,
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 左侧金字塔（CustomPainter 画梯形，侧边一条斜线）
+        SizedBox(
+          width: 140,
+          height: pyramidHeight,
+          child: CustomPaint(
+            painter: _PyramidPainter(
+              count: n,
+              colors: List.generate(n, (i) => i < pyramidColors.length ? pyramidColors[i] : Colors.grey),
+            ),
           ),
         ),
 
+        const SizedBox(width: 12),
+
         // 右侧标签
         Expanded(
-          flex: 6,
           child: Column(
-            children: List.generate(tiers.length, (i) {
+            children: List.generate(n, (i) {
               final tier = tiers[i] as Map<String, dynamic>;
               final label = tier['label'] ?? '';
               final count = tier['count'] ?? 0;
               final pct = (tier['pct'] ?? 0).toDouble();
               final color = i < pyramidColors.length ? pyramidColors[i] : Colors.grey;
 
-              return Container(
-                height: 30,
-                padding: const EdgeInsets.only(left: 12),
+              return SizedBox(
+                height: 32,
                 child: Row(
                   children: [
                     Container(width: 8, height: 8, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     Expanded(
-                      child: Text(label, style: const TextStyle(fontSize: 13, color: Color(0xFF374151))),
+                      child: Text(label, style: const TextStyle(fontSize: 12, color: Color(0xFF374151))),
                     ),
                     Text(
                       _fmtNum(count),
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
+                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E)),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     SizedBox(
-                      width: 50,
+                      width: 48,
                       child: Text(
-                        '${pct < 0.01 ? "<0.01" : pct.toStringAsFixed(pct < 1 ? 2 : 1)}%',
+                        pct < 0.01 ? '<0.01%' : '${pct.toStringAsFixed(pct < 1 ? 2 : 1)}%',
                         textAlign: TextAlign.right,
-                        style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
                       ),
                     ),
                   ],
@@ -381,4 +360,54 @@ class _DataScreenState extends State<DataScreen> {
     if (v >= 1e3) return '${(v / 1e3).toStringAsFixed(1)}K';
     return v.toStringAsFixed(0);
   }
+}
+
+/// 金字塔画家 — 侧边是一条平滑斜线的梯形
+class _PyramidPainter extends CustomPainter {
+  final int count;
+  final List<Color> colors;
+
+  _PyramidPainter({required this.count, required this.colors});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (count == 0) return;
+
+    final w = size.width;
+    final h = size.height;
+    final rowH = h / count;
+    final gap = 1.5; // 行间距
+
+    // 顶部最窄宽度 30%，底部 100%
+    const topRatio = 0.25;
+
+    for (int i = 0; i < count; i++) {
+      final t1 = i / count;
+      final t2 = (i + 1) / count;
+
+      // 该行顶边和底边的半宽
+      final halfTop = (topRatio + (1 - topRatio) * t1) * w / 2;
+      final halfBot = (topRatio + (1 - topRatio) * t2) * w / 2;
+
+      final cx = w / 2;
+      final y1 = i * rowH + (i > 0 ? gap / 2 : 0);
+      final y2 = (i + 1) * rowH - (i < count - 1 ? gap / 2 : 0);
+
+      final path = Path()
+        ..moveTo(cx - halfTop, y1)
+        ..lineTo(cx + halfTop, y1)
+        ..lineTo(cx + halfBot, y2)
+        ..lineTo(cx - halfBot, y2)
+        ..close();
+
+      final paint = Paint()
+        ..color = i < colors.length ? colors[i] : Colors.grey
+        ..style = PaintingStyle.fill;
+
+      canvas.drawPath(path, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

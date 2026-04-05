@@ -88,6 +88,23 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF0D1117),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0D1117),
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.white, size: 20),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: Text(s.name, style: const TextStyle(color: Colors.white, fontSize: 16)),
+        actions: [
+          if (isPaper)
+            TextButton.icon(
+              onPressed: _goLive,
+              icon: const Icon(Icons.rocket_launch, size: 16, color: Color(0xFF22C55E)),
+              label: const Text('切换实盘', style: TextStyle(color: Color(0xFF22C55E), fontSize: 12)),
+            ),
+        ],
+      ),
+      appBar: AppBar(
         backgroundColor: const Color(0xFF161B22),
         title: Text(s.name, style: const TextStyle(fontSize: 16)),
         actions: [

@@ -9,6 +9,7 @@ import 'providers/locale_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
 import 'theme/gradients.dart';
+import 'screens/data/data_screen.dart';
 import 'screens/market/market_screen.dart';
 import 'screens/agent/agent_screen.dart';
 import 'screens/history/history_screen.dart';
@@ -19,7 +20,7 @@ import 'screens/disclaimer/disclaimer_page.dart';
 //  主题状态管理
 // ══════════════════════════════════════════════════════════════
 class ThemeNotifier extends ChangeNotifier {
-  ThemeMode _mode = ThemeMode.dark; // 默认 Dark
+  ThemeMode _mode = ThemeMode.light; // 默认 Light
 
   ThemeMode get mode => _mode;
 
@@ -161,6 +162,7 @@ class _MainShellState extends State<MainShell> {
   int _currentIndex = 0;
 
   static const _screens = [
+    DataScreen(),
     MarketScreen(),
     AgentScreen(),
     HistoryScreen(),
@@ -174,6 +176,7 @@ class _MainShellState extends State<MainShell> {
     final t = S.of(context);
 
     final tabItems = [
+      _TabItem(icon: CupertinoIcons.graph_square, label: '数据'),
       _TabItem(icon: CupertinoIcons.chart_bar_square, label: t.tabMarket),
       _TabItem(icon: CupertinoIcons.square_grid_2x2, label: t.tabAgent),
       _TabItem(icon: CupertinoIcons.clock, label: t.tabHistory),

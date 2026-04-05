@@ -82,6 +82,10 @@ class _DataScreenState extends State<DataScreen> {
 
                         // 盈亏分布卡片
                         _buildPnlCard(),
+                        const SizedBox(height: 16),
+
+                        // 交易成本拆解卡片
+                        _buildCostCard(),
                       ],
                     ),
                   ),
@@ -349,6 +353,165 @@ class _DataScreenState extends State<DataScreen> {
             const SizedBox(height: 20),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildCostCard() {
+    const costs = [
+      {"label": "Axiom", "value": 200, "color": Color(0xFF3B82F6)},
+      {"label": "Photon", "value": 96, "color": Color(0xFF8B5CF6)},
+      {"label": "GMGN", "value": 85, "color": Color(0xFF22C55E)},
+      {"label": "BullX", "value": 50, "color": Color(0xFFF97316)},
+      {"label": "Trojan", "value": 40, "color": Color(0xFF6366F1)},
+    ];
+    const totalFee = 471; // $471M
+    const mevSlippage = 500; // $500M
+    const totalLoss = 971; // $971M
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 2)),
+        ],
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 头部
+          Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [Color(0xFFEF4444), Color(0xFFF97316)]),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.account_balance_wallet, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('用户真实交易成本', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+                    const Text('Top 5 平台 · DeFiLlama · 2025年数据', style: TextStyle(fontSize: 11, color: Color(0xFF9CA3AF))),
+                  ],
+                ),
+              ),
+              GestureDetector(
+                onTap: () => _showMethodology({
+                  "methodology": "用户亏损 ≈ 平台手续费收入 + MEV/滑点损失 + 代币归零损失。"
+                      "平台收入来自 DeFiLlama 公开数据，MEV/滑点按交易量 2.5% 保守估算（\$20B × 2.5% = \$500M）。"
+                      "代币归零：pump.fun 97% 代币归零，全链估计 80%+，此部分未计入。"
+                      "实际用户总亏损远大于此数字。"
+                }),
+                child: Container(
+                  width: 28, height: 28,
+                  decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(14)),
+                  child: const Icon(Icons.help_outline, size: 16, color: Color(0xFF9CA3AF)),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+
+          // 平台手续费条形图
+          const Text('平台手续费收入（= 用户直接损失）', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Color(0xFF374151))),
+          const SizedBox(height: 12),
+          ...costs.map((c) {
+            final val = c["value"] as int;
+            final color = c["color"] as Color;
+            final ratio = val / 200; // 最大值 200
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 52,
+                    child: Text(c["label"] as String, style: const TextStyle(fontSize: 12, color: Color(0xFF6B7280))),
+                  ),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Container(
+                          height: 22,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        FractionallySizedBox(
+                          widthFactor: ratio.clamp(0.05, 1.0),
+                          child: Container(
+                            height: 22,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(
+                              '\$${val}M',
+                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }).toList(),
+          const SizedBox(height: 16),
+
+          // 汇总
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFECACA)),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text('Top 5 手续费合计', style: TextStyle(fontSize: 13, color: Color(0xFF991B1B))),
+                    Text('\$471M', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text('MEV + 滑点损失（估）', style: TextStyle(fontSize: 13, color: Color(0xFF991B1B))),
+                    Text('\$500M', style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFFEF4444))),
+                  ],
+                ),
+                const Divider(height: 16, color: Color(0xFFFECACA)),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: const [
+                    Text('用户确定性损失合计', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: Color(0xFF991B1B))),
+                    Text('\$971M', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: Color(0xFFDC2626))),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  '* 不含代币归零损失（pump.fun 97% 代币归零），实际亏损远大于此',
+                  style: TextStyle(fontSize: 10, color: Color(0xFFB91C1C)),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

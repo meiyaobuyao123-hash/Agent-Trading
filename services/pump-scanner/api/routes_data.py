@@ -145,3 +145,69 @@ async def get_chain_pnl(chain: str):
     if not data:
         return {"error": f"Chain '{chain}' not found", "available": list(_CHAIN_PNL.keys())}
     return data
+
+
+# ── 交易数据分布 ──────────────────────────────────────
+_TRADING_DISTRIBUTION = {
+    "title": "交易行为分布",
+    "subtitle": "Axiom 为主 · Top 5 平台综合",
+    "source": "Dune Analytics + 行业报告",
+    "updated_at": "2026-03-25",
+    "by_time_utc": {
+        "title": "日交易量时段分布（UTC）",
+        "data": [
+            {"label": "00-04", "pct": 18, "tag": "亚洲活跃", "highlight": False},
+            {"label": "04-08", "pct": 13, "tag": "亚洲尾盘", "highlight": False},
+            {"label": "08-12", "pct": 20, "tag": "欧洲开盘", "highlight": False},
+            {"label": "12-16", "pct": 25, "tag": "欧美重叠", "highlight": True},
+            {"label": "16-20", "pct": 16, "tag": "美洲活跃", "highlight": False},
+            {"label": "20-24", "pct": 8, "tag": "最低", "highlight": False},
+        ],
+    },
+    "by_token_age": {
+        "title": "按代币生命周期",
+        "data": [
+            {"label": "<1h 新币", "pct": 45, "tag": "狙击为主"},
+            {"label": "1h-24h", "pct": 22, "tag": "短线波段"},
+            {"label": "1d-7d", "pct": 18, "tag": "中线持有"},
+            {"label": ">7d", "pct": 15, "tag": "长线"},
+        ],
+    },
+    "by_amount": {
+        "title": "单笔交易金额分布",
+        "data": [
+            {"label": "$0-50", "pct": 55, "tag": "散户试水"},
+            {"label": "$50-200", "pct": 22, "tag": "中等仓位"},
+            {"label": "$200-1K", "pct": 12, "tag": ""},
+            {"label": "$1K-5K", "pct": 7, "tag": ""},
+            {"label": "$5K+", "pct": 4, "tag": "鲸鱼"},
+        ],
+    },
+    "platform_revenue": {
+        "title": "Top 5 平台年收入（= 用户手续费损失）",
+        "source": "DeFiLlama 2025",
+        "data": [
+            {"name": "Axiom", "revenue_m": 200, "market_share": 57, "color": "#3B82F6"},
+            {"name": "Photon", "revenue_m": 96, "market_share": 15, "color": "#8B5CF6"},
+            {"name": "GMGN", "revenue_m": 85, "market_share": 8, "color": "#22C55E"},
+            {"name": "BullX", "revenue_m": 50, "market_share": 7, "color": "#F97316"},
+            {"name": "Trojan", "revenue_m": 40, "market_share": 5, "color": "#6366F1"},
+        ],
+        "total_fee_m": 471,
+        "mev_slippage_m": 500,
+        "total_loss_m": 971,
+    },
+    "methodology": (
+        "时段分布：基于 Dune Analytics Solana DEX 交易 block_time 聚合，以 Axiom 为主要样本（57% 市占）。"
+        "代币生命周期：token 首次交易时间到当前交易的时间差。"
+        "金额分布：单笔 swap 的 USD 金额统计。"
+        "平台收入：DeFiLlama 公开数据，2025 年全年累计。"
+        "MEV/滑点：按全网 $20B 交易量 × 2.5% 保守估算。"
+    ),
+}
+
+
+@router.get("/trading-distribution")
+async def get_trading_distribution():
+    """交易行为分布（时段/生命周期/金额/平台收入）"""
+    return _TRADING_DISTRIBUTION

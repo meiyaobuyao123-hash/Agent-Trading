@@ -11,6 +11,7 @@ class DataScreen extends StatefulWidget {
 
 class _DataScreenState extends State<DataScreen> {
   Map<String, dynamic>? _data;
+  Map<String, dynamic>? _tradingData;
   bool _loading = true;
   int _chainTab = 0; // 0=全链, 1=SOL, 2=BSC, 3=ETH, 4=Base
 
@@ -28,17 +29,15 @@ class _DataScreenState extends State<DataScreen> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final resp = await http
-          .get(Uri.parse('$_apiBase/api/data/pnl-distribution'))
-          .timeout(const Duration(seconds: 10));
-      if (resp.statusCode == 200) {
-        setState(() {
-          _data = jsonDecode(resp.body);
-          _loading = false;
-        });
-      } else {
-        setState(() => _loading = false);
-      }
+      final results = await Future.wait([
+        http.get(Uri.parse('$_apiBase/api/data/pnl-distribution')).timeout(const Duration(seconds: 10)),
+        http.get(Uri.parse('$_apiBase/api/data/trading-distribution')).timeout(const Duration(seconds: 10)),
+      ]);
+      setState(() {
+        if (results[0].statusCode == 200) _data = jsonDecode(results[0].body);
+        if (results[1].statusCode == 200) _tradingData = jsonDecode(results[1].body);
+        _loading = false;
+      });
     } catch (e) {
       setState(() => _loading = false);
     }
@@ -86,6 +85,29 @@ class _DataScreenState extends State<DataScreen> {
 
                         // 交易成本拆解卡片
                         _buildCostCard(),
+                        const SizedBox(height: 16),
+
+                        // 交易行为分布
+                        if (_tradingData != null) ...[
+                          _buildDistributionCard(
+                            _tradingData!['by_time_utc'] as Map<String, dynamic>? ?? {},
+                            Icons.access_time,
+                            const [Color(0xFF6366F1), Color(0xFF818CF8)],
+                          ),
+                          const SizedBox(height: 16),
+                          _buildDistributionCard(
+                            _tradingData!['by_token_age'] as Map<String, dynamic>? ?? {},
+                            Icons.timer,
+                            const [Color(0xFF059669), Color(0xFF34D399)],
+                          ),
+                          const SizedBox(height: 16),
+                          _buildDistributionCard(
+                            _tradingData!['by_amount'] as Map<String, dynamic>? ?? {},
+                            Icons.attach_money,
+                            const [Color(0xFFD97706), Color(0xFFFBBF24)],
+                          ),
+                        ],
+                        const SizedBox(height: 32),
                       ],
                     ),
                   ),
@@ -511,6 +533,89 @@ class _DataScreenState extends State<DataScreen> {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDistributionCard(Map<String, dynamic> section, IconData icon, List<Color> gradientColors) {
+    final title = section['title'] ?? '';
+    final items = (section['data'] as List<dynamic>?) ?? [];
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    final maxPct = items.fold<double>(0, (m, e) => m > ((e['pct'] ?? 0) as num).toDouble() ? m : ((e['pct'] ?? 0) as num).toDouble());
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 2))],
+        border: Border.all(color: const Color(0xFFE5E7EB), width: 0.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 32, height: 32,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: gradientColors),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(icon, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Color(0xFF1A1A2E))),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...items.map((item) {
+            final label = item['label'] ?? '';
+            final pct = ((item['pct'] ?? 0) as num).toDouble();
+            final tag = item['tag'] ?? '';
+            final isHighlight = item['highlight'] == true;
+            final ratio = maxPct > 0 ? pct / maxPct : 0.0;
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 65,
+                    child: Text(label, style: TextStyle(fontSize: 12, color: isHighlight ? gradientColors[0] : const Color(0xFF6B7280), fontWeight: isHighlight ? FontWeight.w600 : FontWeight.w400)),
+                  ),
+                  Expanded(
+                    child: Stack(
+                      children: [
+                        Container(height: 20, decoration: BoxDecoration(color: const Color(0xFFF3F4F6), borderRadius: BorderRadius.circular(4))),
+                        FractionallySizedBox(
+                          widthFactor: ratio.clamp(0.03, 1.0),
+                          child: Container(
+                            height: 20,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(colors: isHighlight ? gradientColors : [gradientColors[0].withOpacity(0.7), gradientColors[1].withOpacity(0.7)]),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  SizedBox(
+                    width: 35,
+                    child: Text('${pct.toStringAsFixed(0)}%', textAlign: TextAlign.right, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: isHighlight ? gradientColors[0] : const Color(0xFF374151))),
+                  ),
+                  if (tag.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(tag, style: TextStyle(fontSize: 10, color: isHighlight ? gradientColors[0] : const Color(0xFF9CA3AF))),
+                  ],
+                ],
+              ),
+            );
+          }).toList(),
         ],
       ),
     );

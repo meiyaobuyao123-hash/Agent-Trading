@@ -223,6 +223,7 @@ class _DataScreenState extends State<DataScreen> {
       Color(0xFF3498DB),  // 蓝色
       Color(0xFF5DADE2),  // 浅蓝
       Color(0xFFAED6F1),  // 更浅蓝
+      Color(0xFFD1D5DB),  // 灰色（盈亏平衡）
       Color(0xFFE74C3C),  // 红色（亏损）
     ];
 

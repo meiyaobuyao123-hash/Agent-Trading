@@ -31,6 +31,7 @@ from api.routes_webhook import router as webhook_router
 from api.routes_token import router as token_router
 from api.routes_btc_eth import router as btc_eth_router
 from api.routes_data import router as data_router
+from api.routes_backtest import router as backtest_router
 
 log = logging.getLogger(__name__)
 
@@ -74,6 +75,7 @@ app.include_router(token_router)
 app.include_router(webhook_router)
 app.include_router(btc_eth_router)
 app.include_router(data_router)
+app.include_router(backtest_router)
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

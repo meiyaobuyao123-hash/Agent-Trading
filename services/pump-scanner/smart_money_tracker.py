@@ -805,6 +805,18 @@ class SmartMoneyTracker:
         # 实时 bot 检测：同代币60秒内买卖 → 立即黑名单
         self._realtime_bot_detect(txns, chain)
 
+        # 模拟盘：用 enriched 价格检查止盈止损（毫秒级）
+        try:
+            from hot_sim_trader import get_sim_trader
+            sim = get_sim_trader()
+            for sig in signals.values():
+                price = sig.get("price_usd", 0)
+                addr = sig.get("token_address", "")
+                if price > 0 and addr:
+                    sim.on_price_update(addr, price)
+        except Exception:
+            pass
+
         logger.info("Smart money [%s]: %d signals, %d txns saved", chain, len(signals), len(txns))
 
     async def _enrich_dexscreener(self, chain: str, sigs: List[Dict[str, Any]]):

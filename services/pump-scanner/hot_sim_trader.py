@@ -13,7 +13,7 @@ Python 3.9 兼容。
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Set
 
 from database import get_db
@@ -64,6 +64,8 @@ class HotSimTrader:
             log.info("[HotSim] 初始化: unique已买=%d, open仓位=%d",
                      len(self._bought_unique), len(self._open_positions))
             self._initialized = True
+            # 启动时清理过期仓位
+            self.cleanup_stale_positions()
         except Exception as e:
             log.warning("[HotSim] 初始化失败: %s", e)
 
@@ -116,6 +118,22 @@ class HotSimTrader:
                 self._bought_unique.add(key)
             except Exception as e:
                 log.debug("[HotSim] unique insert: %s", e)
+
+    def cleanup_stale_positions(self):
+        """清理已死代币的仓位（价格归零或长期无更新）→ 按止损平仓"""
+        if not self._initialized:
+            self.init_from_db()
+        now = datetime.now(timezone.utc)
+        stale_cutoff = (now - timedelta(days=3)).isoformat()  # 3天没价格更新=死币
+        to_close = []
+        for pid, pos in self._open_positions.items():
+            entered = pos.get("entered_at", "")
+            if entered and entered < stale_cutoff:
+                to_close.append(pid)
+        for pid in to_close:
+            self._close_position(pid, "sl", 0, -SL_PCT)
+        if to_close:
+            log.info("[HotSim] 清理 %d 个过期仓位（3天+无价格更新）", len(to_close))
 
     def on_price_update(self, address: str, price: float):
         """价格更新时检查止盈止损"""

@@ -18,7 +18,7 @@ class RiskDashboard extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.3),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -27,11 +27,11 @@ class RiskDashboard extends StatelessWidget {
           // 标题
           Row(
             children: [
-              const Icon(Icons.dashboard, color: Colors.white54, size: 14),
+              const Icon(Icons.dashboard, color: const Color(0xFF8E8E93), size: 14),
               const SizedBox(width: 6),
               Text('$asset Market Status',
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.7), fontSize: 13, fontWeight: FontWeight.w600)),
+                      color: const Color(0xFF3C3C43), fontSize: 13, fontWeight: FontWeight.w600)),
             ],
           ),
           const SizedBox(height: 12),
@@ -138,7 +138,7 @@ class RiskDashboard extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.03),
+                color: const Color(0xFFF2F2F7),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Row(
@@ -150,7 +150,7 @@ class RiskDashboard extends StatelessWidget {
                       children: [
                         Text(label,
                             style: TextStyle(
-                                color: Colors.white.withValues(alpha: 0.5),
+                                color: const Color(0xFF8E8E93),
                                 fontSize: 10)),
                         const SizedBox(height: 4),
                         SizedBox(
@@ -162,7 +162,7 @@ class RiskDashboard extends StatelessWidget {
                               CircularProgressIndicator(
                                 value: e.value / 100,
                                 strokeWidth: 3,
-                                backgroundColor: Colors.white.withValues(alpha: 0.08),
+                                backgroundColor: const Color(0xFFE5E5EA),
                                 valueColor: AlwaysStoppedAnimation(color),
                               ),
                               Text('${e.value}',
@@ -209,7 +209,7 @@ class RiskDashboard extends StatelessWidget {
                 children: [
                   Icon(icon, color: color, size: 14),
                   const SizedBox(width: 2),
-                  Icon(Icons.info_outline, color: Colors.white.withValues(alpha: 0.3), size: 10),
+                  Icon(Icons.info_outline, color: const Color(0xFFC7C7CC), size: 10),
                 ],
               ),
               const SizedBox(height: 4),
@@ -224,7 +224,7 @@ class RiskDashboard extends StatelessWidget {
                 child: LinearProgressIndicator(
                   value: progress.clamp(0, 1),
                   minHeight: 3,
-                  backgroundColor: Colors.white.withValues(alpha: 0.1),
+                  backgroundColor: const Color(0xFFE5E5EA),
                   valueColor: AlwaysStoppedAnimation(color),
                 ),
               ),
@@ -238,7 +238,7 @@ class RiskDashboard extends StatelessWidget {
   void _showExplanation(BuildContext context, String title, String text, Color color) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1A1A2E),
+      backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
@@ -252,7 +252,7 @@ class RiskDashboard extends StatelessWidget {
               child: Container(
                 width: 36, height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.white24,
+                  color: const Color(0xFFD1D1D6),
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -262,7 +262,7 @@ class RiskDashboard extends StatelessWidget {
                 style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 12),
             Text(text,
-                style: const TextStyle(color: Colors.white70, fontSize: 14, height: 1.6)),
+                style: const TextStyle(color: Color(0xFF3C3C43), fontSize: 14, height: 1.6)),
             const SizedBox(height: 20),
           ],
         ),

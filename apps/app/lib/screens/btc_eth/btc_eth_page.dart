@@ -103,14 +103,14 @@ class _BtcEthPageState extends State<BtcEthPage> {
                       decoration: BoxDecoration(
                         color: isSelected
                             ? const Color(0xFF3B82F6)
-                            : Colors.white.withValues(alpha: 0.05),
+                            : const Color(0xFFF2F2F7),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       alignment: Alignment.center,
                       child: Text(
                         asset,
                         style: TextStyle(
-                          color: isSelected ? Colors.white : Colors.white60,
+                          color: isSelected ? Colors.white : const Color(0xFF8E8E93),
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -159,7 +159,7 @@ class _BtcEthPageState extends State<BtcEthPage> {
             child: Text(
               'Trading Signals',
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.7),
+                color: const Color(0xFF3C3C43),
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
               ),
@@ -175,7 +175,7 @@ class _BtcEthPageState extends State<BtcEthPage> {
               child: Center(
                 child: Text(
                   'No signals yet. Agent is analyzing market data...',
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.4)),
+                  style: TextStyle(color: const Color(0xFFC7C7CC)),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -224,7 +224,7 @@ class _BtcEthPageState extends State<BtcEthPage> {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
+          color: const Color(0xFFF2F2F7),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
@@ -232,12 +232,12 @@ class _BtcEthPageState extends State<BtcEthPage> {
           children: [
             Text(asset,
                 style: const TextStyle(
-                    color: Colors.white70, fontSize: 12)),
+                    color: const Color(0xFF8E8E93), fontSize: 12)),
             const SizedBox(height: 2),
             Text(
               '\$${price >= 1000 ? price.toStringAsFixed(0) : price.toStringAsFixed(2)}',
               style: const TextStyle(
-                  color: Colors.white,
+                  color: const Color(0xFF000000),
                   fontSize: 20,
                   fontWeight: FontWeight.bold),
             ),

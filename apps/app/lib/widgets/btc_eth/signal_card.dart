@@ -37,11 +37,11 @@ class BtcEthSignalCard extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(icon, color: Colors.white, size: 14),
+                    Icon(icon, color: const Color(0xFF007AFF), size: 14),
                     const SizedBox(width: 4),
                     Text(label,
                         style: const TextStyle(
-                            color: Colors.white,
+                            color: const Color(0xFF000000),
                             fontSize: 12,
                             fontWeight: FontWeight.bold)),
                   ],
@@ -50,20 +50,20 @@ class BtcEthSignalCard extends StatelessWidget {
               const SizedBox(width: 8),
               Text(signal.asset,
                   style: const TextStyle(
-                      color: Colors.white,
+                      color: const Color(0xFF000000),
                       fontSize: 16,
                       fontWeight: FontWeight.bold)),
               const Spacer(),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: const Color(0xFFE5E5EA),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
                   '${signal.confidence}%',
                   style: TextStyle(
-                    color: signal.confidence >= 70 ? const Color(0xFF22C55E) : Colors.white70,
+                    color: signal.confidence >= 70 ? const Color(0xFF22C55E) : const Color(0xFF8E8E93),
                     fontSize: 12,
                   ),
                 ),
@@ -88,7 +88,7 @@ class BtcEthSignalCard extends StatelessWidget {
             Text(
               signal.reasoning!,
               style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.6),
+                color: const Color(0xFF3C3C43),
                 fontSize: 11,
               ),
               maxLines: 2,
@@ -124,7 +124,7 @@ class BtcEthSignalCard extends StatelessWidget {
               Text(
                 _timeAgo(signal.createdAt),
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.4),
+                  color: const Color(0xFFC7C7CC),
                   fontSize: 10,
                 ),
               ),
@@ -141,7 +141,7 @@ class BtcEthSignalCard extends StatelessWidget {
         children: [
           Text(label,
               style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.5), fontSize: 10)),
+                  color: const Color(0xFF8E8E93), fontSize: 10)),
           const SizedBox(height: 2),
           Text(
             isRatio ? '${value.toStringAsFixed(1)}:1' : '\$${_fmtPrice(value)}',

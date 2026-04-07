@@ -121,10 +121,13 @@ class HotSimTrader:
         """价格更新时检查止盈止损"""
         if price <= 0:
             return
+        if not self._initialized:
+            self.init_from_db()
 
         to_close = []
+        addr_lower = address.lower()
         for pid, pos in self._open_positions.items():
-            if pos.get("address", "").lower() != address.lower():
+            if pos.get("address", "").lower() != addr_lower:
                 continue
 
             tp = float(pos.get("tp_price", 0))

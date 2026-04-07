@@ -163,6 +163,13 @@ class HotCoinManager:
             except RuntimeError:
                 pass
 
+        # 模拟盘：热币价格更新检查止盈止损
+        try:
+            from hot_sim_trader import get_sim_trader
+            get_sim_trader().on_price_update(addr, price)
+        except Exception:
+            pass
+
     # ═══════════════════════════════════════════════════════════
     # 发现层回调：OKX/GeckoTerminal 扫描结果
     # ═══════════════════════════════════════════════════════════

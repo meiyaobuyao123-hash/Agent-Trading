@@ -56,7 +56,7 @@ class _HotSimPageState extends State<HotSimPage> {
           icon: const Icon(CupertinoIcons.back, color: _t1, size: 22),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const Text('热币模拟盘', style: TextStyle(color: _t1, fontSize: 17, fontWeight: FontWeight.w600)),
+        title: const Text('策略监控', style: TextStyle(color: _t1, fontSize: 17, fontWeight: FontWeight.w600)),
         centerTitle: true,
       ),
       body: _loading

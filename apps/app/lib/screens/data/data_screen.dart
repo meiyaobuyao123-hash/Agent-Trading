@@ -83,7 +83,7 @@ class _DataScreenState extends State<DataScreen> {
                                 children: [
                                   Icon(CupertinoIcons.chart_bar_alt_fill, size: 14, color: _t4),
                                   const SizedBox(width: 6),
-                                  Text('热币模拟盘', style: TextStyle(fontSize: 13, color: _t4)),
+                                  Text('策略监控', style: TextStyle(fontSize: 13, color: _t4)),
                                   const SizedBox(width: 4),
                                   Icon(CupertinoIcons.chevron_right, size: 12, color: _t4),
                                 ],

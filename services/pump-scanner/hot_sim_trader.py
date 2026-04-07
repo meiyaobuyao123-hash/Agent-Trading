@@ -20,9 +20,21 @@ from database import get_db
 
 log = logging.getLogger(__name__)
 
-BUY_AMOUNT = 10.0
+BUY_AMOUNT_DEFAULT = 10.0
+BUY_AMOUNT_BTC = 50.0
+BUY_AMOUNT_ETH = 20.0
 TP_PCT = 15.0
 SL_PCT = 15.0
+
+
+def _get_buy_amount(source: str, symbol: str) -> float:
+    """按资产类型返回下单金额"""
+    if source == "btc_eth":
+        if symbol.upper() == "BTC":
+            return BUY_AMOUNT_BTC
+        elif symbol.upper() == "ETH":
+            return BUY_AMOUNT_ETH
+    return BUY_AMOUNT_DEFAULT
 
 
 class HotSimTrader:
@@ -63,13 +75,14 @@ class HotSimTrader:
         self.init_from_db()
         now_iso = datetime.now(timezone.utc).isoformat()
         db = get_db()
+        amount = _get_buy_amount(source, symbol)
 
         base_row = {
             "chain": chain,
             "address": address,
             "symbol": symbol or "?",
             "entry_price": price,
-            "amount_usd": BUY_AMOUNT,
+            "amount_usd": amount,
             "tp_pct": TP_PCT,
             "sl_pct": SL_PCT,
             "tp_price": round(price * (1 + TP_PCT / 100), 12),
@@ -128,7 +141,8 @@ class HotSimTrader:
 
     def _close_position(self, pid: str, reason: str, exit_price: float, pnl_pct: float):
         """平仓"""
-        pnl_usd = round(BUY_AMOUNT * pnl_pct / 100, 2)
+        pos_amount = float(self._open_positions.get(pid, {}).get("amount_usd", BUY_AMOUNT_DEFAULT))
+        pnl_usd = round(pos_amount * pnl_pct / 100, 2)
         now_iso = datetime.now(timezone.utc).isoformat()
         try:
             get_db().table("hot_sim_trades").update({

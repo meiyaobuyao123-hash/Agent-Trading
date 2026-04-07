@@ -73,6 +73,8 @@ class SmartMoneyTracker:
         # OKX toplist 冷却：每条链最多每10s调一次，防429
         self._last_okx_toplist: Dict[str, float] = {}
         self._okx_toplist_cooldown = 10.0
+        # 模拟盘去重：同一代币同一来源只触发一次买入
+        self._sim_triggered: Set[str] = set()
 
     async def init(self):
         self._session = aiohttp.ClientSession()
@@ -814,10 +816,15 @@ class SmartMoneyTracker:
                 addr = sig.get("token_address", "")
                 if price > 0 and addr:
                     sim.on_price_update(addr, price)
-                    # 聪明钱强信号触发模拟买入
+                    # 聪明钱强信号触发模拟买入（heat>=15 + buyers>=3 + 去重）
                     heat = sig.get("heat_score", 0)
                     buyers = sig.get("unique_buyers", 0)
-                    if heat >= 10 and buyers >= 3:
+                    mc = sig.get("market_cap_usd", 0)
+                    _sim_key = f"sm:{chain}:{addr}"
+                    if (heat >= 15 and buyers >= 3
+                            and price > 0 and (mc <= 0 or price < mc)
+                            and _sim_key not in self._sim_triggered):
+                        self._sim_triggered.add(_sim_key)
                         sim.on_token_enter(
                             address=addr,
                             chain=sig.get("chain", ""),

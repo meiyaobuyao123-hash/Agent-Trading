@@ -86,7 +86,7 @@ class _HotSimPageState extends State<HotSimPage> {
           itemBuilder: (_, i) {
             final on = _sourceTab == i;
             return GestureDetector(
-              onTap: () { setState(() => _sourceTab = i); _load(); },
+              onTap: () { setState(() { _sourceTab = i; _modeTab = 0; }); _load(); },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(color: on ? _t1 : Colors.white, borderRadius: BorderRadius.circular(16)),

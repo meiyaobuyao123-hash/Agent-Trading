@@ -805,7 +805,7 @@ class SmartMoneyTracker:
         # 实时 bot 检测：同代币60秒内买卖 → 立即黑名单
         self._realtime_bot_detect(txns, chain)
 
-        # 模拟盘：用 enriched 价格检查止盈止损（毫秒级）
+        # 模拟盘：价格更新 + 聪明钱信号买入触发（毫秒级）
         try:
             from hot_sim_trader import get_sim_trader
             sim = get_sim_trader()
@@ -814,6 +814,18 @@ class SmartMoneyTracker:
                 addr = sig.get("token_address", "")
                 if price > 0 and addr:
                     sim.on_price_update(addr, price)
+                    # 聪明钱强信号触发模拟买入
+                    heat = sig.get("heat_score", 0)
+                    buyers = sig.get("unique_buyers", 0)
+                    if heat >= 10 and buyers >= 3:
+                        sim.on_token_enter(
+                            address=addr,
+                            chain=sig.get("chain", ""),
+                            symbol=sig.get("token_symbol", "?"),
+                            price=price,
+                            score=heat,
+                            source="smart_money",
+                        )
         except Exception:
             pass
 

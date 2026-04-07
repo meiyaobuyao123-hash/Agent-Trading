@@ -86,10 +86,31 @@ class SignalGenerator:
         if api_key:
             signal = await self._claude_confirm(asset, direction, snapshot, cycle_phase, api_key)
             if signal:
+                self._trigger_sim(asset, signal)
                 return signal
 
         # Claude 不可用时降级为规则引擎
-        return self._rule_based_signal(asset, direction, snapshot)
+        signal = self._rule_based_signal(asset, direction, snapshot)
+        if signal:
+            self._trigger_sim(asset, signal)
+        return signal
+
+    def _trigger_sim(self, asset: str, signal: Dict[str, Any]):
+        """触发模拟盘买入（只跟做多信号）"""
+        if signal.get("signal_type") != "long":
+            return
+        try:
+            from hot_sim_trader import get_sim_trader
+            get_sim_trader().on_token_enter(
+                address=f"{asset.lower()}_spot",
+                chain="btc_eth",
+                symbol=asset,
+                price=signal.get("entry_price", 0),
+                score=signal.get("confidence", 50),
+                source="btc_eth",
+            )
+        except Exception:
+            pass
 
     async def _claude_confirm(
         self, asset: str, direction: str, snapshot: Dict[str, Any],

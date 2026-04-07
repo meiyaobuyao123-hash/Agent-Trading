@@ -56,56 +56,47 @@ class HotSimTrader:
             log.warning("[HotSim] 初始化失败: %s", e)
 
     def on_token_enter(self, address: str, chain: str, symbol: str,
-                       price: float, score: float):
-        """热币入榜时调用 — 自动模拟买入"""
+                       price: float, score: float, source: str = "hot"):
+        """信号触发时调用 — 自动模拟买入（支持多信号源）"""
         if price <= 0:
             return
         self.init_from_db()
         now_iso = datetime.now(timezone.utc).isoformat()
         db = get_db()
 
+        base_row = {
+            "chain": chain,
+            "address": address,
+            "symbol": symbol or "?",
+            "entry_price": price,
+            "amount_usd": BUY_AMOUNT,
+            "tp_pct": TP_PCT,
+            "sl_pct": SL_PCT,
+            "tp_price": round(price * (1 + TP_PCT / 100), 12),
+            "sl_price": round(price * (1 - SL_PCT / 100), 12),
+            "score_at_entry": score,
+            "source": source,
+            "status": "open",
+            "entered_at": now_iso,
+        }
+
         # mode=repeat: 每次都买
         try:
-            row_repeat = {
-                "mode": "repeat",
-                "chain": chain,
-                "address": address,
-                "symbol": symbol or "?",
-                "entry_price": price,
-                "amount_usd": BUY_AMOUNT,
-                "tp_pct": TP_PCT,
-                "sl_pct": SL_PCT,
-                "tp_price": round(price * (1 + TP_PCT / 100), 12),
-                "sl_price": round(price * (1 - SL_PCT / 100), 12),
-                "score_at_entry": score,
-                "status": "open",
-                "entered_at": now_iso,
-            }
+            row_repeat = {**base_row, "mode": "repeat"}
             res = db.table("hot_sim_trades").insert(row_repeat).execute()
             if res.data:
                 self._open_positions[res.data[0]["id"]] = res.data[0]
         except Exception as e:
-            log.debug("[HotSim] repeat insert: %s", e)
+            log.debug("[Sim] repeat insert: %s", e)
 
-        # mode=unique: 只买一次
-        key = f"{chain}:{address}"
+        # mode=unique: 只买一次（BTC/ETH 跳过 unique，只有 2 个币没意义）
+        if source == "btc_eth":
+            return
+
+        key = f"{source}:{chain}:{address}"
         if key not in self._bought_unique:
             try:
-                row_unique = {
-                    "mode": "unique",
-                    "chain": chain,
-                    "address": address,
-                    "symbol": symbol or "?",
-                    "entry_price": price,
-                    "amount_usd": BUY_AMOUNT,
-                    "tp_pct": TP_PCT,
-                    "sl_pct": SL_PCT,
-                    "tp_price": round(price * (1 + TP_PCT / 100), 12),
-                    "sl_price": round(price * (1 - SL_PCT / 100), 12),
-                    "score_at_entry": score,
-                    "status": "open",
-                    "entered_at": now_iso,
-                }
+                row_unique = {**base_row, "mode": "unique"}
                 res = db.table("hot_sim_trades").insert(row_unique).execute()
                 if res.data:
                     self._open_positions[res.data[0]["id"]] = res.data[0]

@@ -13,9 +13,12 @@ class HotSimPage extends StatefulWidget {
 class _HotSimPageState extends State<HotSimPage> {
   Map<String, dynamic>? _data;
   bool _loading = true;
-  int _tab = 0; // 0=repeat, 1=unique
+  int _sourceTab = 0; // 0=全部, 1=热币, 2=聪明钱, 3=新币, 4=BTC/ETH
+  int _modeTab = 0;   // 0=repeat, 1=unique
 
   static const _apiBase = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://43.156.207.26');
+  static const _sourceKeys = ['', 'hot', 'smart_money', 'pump', 'btc_eth'];
+  static const _sourceLabels = ['全部', '热币', '聪明钱', '新币', 'BTC/ETH'];
 
   static const _t1 = Color(0xFF000000);
   static const _t2 = Color(0xFF3C3C43);
@@ -32,7 +35,11 @@ class _HotSimPageState extends State<HotSimPage> {
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
-      final r = await http.get(Uri.parse('$_apiBase/api/data/hot-sim/compare')).timeout(const Duration(seconds: 10));
+      final src = _sourceKeys[_sourceTab];
+      final url = src.isEmpty
+          ? '$_apiBase/api/data/hot-sim/compare'
+          : '$_apiBase/api/data/hot-sim/compare?source=$src';
+      final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
       if (r.statusCode == 200) _data = jsonDecode(r.body);
     } catch (_) {}
     setState(() => _loading = false);
@@ -61,9 +68,9 @@ class _HotSimPageState extends State<HotSimPage> {
   }
 
   Widget _buildBody() {
-    final modes = ['repeat', 'unique'];
-    final labels = ['每次都买', '每币只买一次'];
-    final d = _data![modes[_tab]] as Map<String, dynamic>? ?? {};
+    final isBtcEth = _sourceTab == 4;
+    final modeKey = isBtcEth ? 'repeat' : (_modeTab == 0 ? 'repeat' : 'unique');
+    final d = _data![modeKey] as Map<String, dynamic>? ?? {};
     final summary = d['summary'] as Map<String, dynamic>? ?? {};
     final trades = (d['recent_trades'] as List?) ?? [];
 
@@ -72,31 +79,45 @@ class _HotSimPageState extends State<HotSimPage> {
       children: [
         const SizedBox(height: 8),
 
-        // Tab 切换
-        Container(
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-          padding: const EdgeInsets.all(3),
-          child: Row(
-            children: List.generate(2, (i) {
-              final on = _tab == i;
-              return Expanded(child: GestureDetector(
-                onTap: () => setState(() => _tab = i),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  decoration: BoxDecoration(
-                    color: on ? _t1 : Colors.transparent,
-                    borderRadius: BorderRadius.circular(8),
+        // 信号源 Tab
+        SizedBox(height: 32, child: ListView.separated(
+          scrollDirection: Axis.horizontal, itemCount: _sourceLabels.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, i) {
+            final on = _sourceTab == i;
+            return GestureDetector(
+              onTap: () { setState(() => _sourceTab = i); _load(); },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(color: on ? _t1 : Colors.white, borderRadius: BorderRadius.circular(16)),
+                alignment: Alignment.center,
+                child: Text(_sourceLabels[i], style: TextStyle(color: on ? Colors.white : _t3, fontSize: 12, fontWeight: FontWeight.w500)),
+              ),
+            );
+          },
+        )),
+        const SizedBox(height: 10),
+
+        // 模式切换（BTC/ETH 不显示 unique）
+        if (!isBtcEth)
+          Container(
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
+            padding: const EdgeInsets.all(3),
+            child: Row(
+              children: List.generate(2, (i) {
+                final on = _modeTab == i;
+                return Expanded(child: GestureDetector(
+                  onTap: () => setState(() => _modeTab = i),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 7),
+                    decoration: BoxDecoration(color: on ? _t1 : Colors.transparent, borderRadius: BorderRadius.circular(8)),
+                    alignment: Alignment.center,
+                    child: Text(i == 0 ? '每次都买' : '每币只买一次', style: TextStyle(color: on ? Colors.white : _t3, fontSize: 12, fontWeight: FontWeight.w500)),
                   ),
-                  alignment: Alignment.center,
-                  child: Text(labels[i], style: TextStyle(
-                    color: on ? Colors.white : _t3,
-                    fontSize: 13, fontWeight: FontWeight.w500,
-                  )),
-                ),
-              ));
-            }),
+                ));
+              }),
+            ),
           ),
-        ),
         const SizedBox(height: 12),
 
         // 配置说明

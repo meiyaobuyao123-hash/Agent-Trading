@@ -31,6 +31,12 @@ def save_indicators(asset: str, snapshot: Dict[str, Any]) -> None:
         if row.get("price_usd", 0) <= 0:
             return
         get_db().table("btc_eth_indicators").insert(row).execute()
+        # 模拟盘价格更新
+        try:
+            from hot_sim_trader import get_sim_trader
+            get_sim_trader().on_price_update(f"{asset.lower()}_spot", row.get("price_usd", 0))
+        except Exception:
+            pass
         log.info("[BTC/ETH Storage] indicators saved: %s $%.0f", asset, row.get("price_usd", 0))
     except Exception as e:
         log.error("[BTC/ETH Storage] save_indicators failed: %s (cols: %s)", e, list(row.keys())[:5])

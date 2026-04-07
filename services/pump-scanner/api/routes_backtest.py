@@ -16,10 +16,13 @@ router = APIRouter(prefix="/api/data", tags=["data-sim"])
 log = logging.getLogger(__name__)
 
 
-def _get_stats(mode: str) -> dict:
+def _get_stats(mode: str, source: str = "") -> dict:
     db = get_db()
     try:
-        res = db.table("hot_sim_trades").select("*").eq("mode", mode).order("entered_at", desc=True).execute()
+        q = db.table("hot_sim_trades").select("*").eq("mode", mode)
+        if source:
+            q = q.eq("source", source)
+        res = q.order("entered_at", desc=True).execute()
     except Exception as e:
         return {"error": str(e)}
 
@@ -70,13 +73,16 @@ def _get_stats(mode: str) -> dict:
 
 
 @router.get("/hot-sim")
-async def hot_sim(mode: str = Query("repeat", regex="^(repeat|unique)$")):
-    return _get_stats(mode)
+async def hot_sim(
+    mode: str = Query("repeat", regex="^(repeat|unique)$"),
+    source: str = Query("", regex="^(|hot|smart_money|pump|btc_eth)$"),
+):
+    return _get_stats(mode, source)
 
 
 @router.get("/hot-sim/compare")
-async def hot_sim_compare():
+async def hot_sim_compare(source: str = Query("", regex="^(|hot|smart_money|pump|btc_eth)$")):
     return {
-        "repeat": _get_stats("repeat"),
-        "unique": _get_stats("unique"),
+        "repeat": _get_stats("repeat", source),
+        "unique": _get_stats("unique", source),
     }

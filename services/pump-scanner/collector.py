@@ -531,6 +531,17 @@ class PumpScanner:
                         "entered_at": now,
                     }
                     pump_stats.incr("signal_entered")
+                    # 模拟盘：信号池入池触发买入
+                    try:
+                        from hot_sim_trader import get_sim_trader
+                        _mc_usd = (f.market_cap_sol or 0) * 150
+                        _price = _mc_usd / f.total_supply if getattr(f, 'total_supply', 0) and f.total_supply > 0 else 0
+                        if _price > 0:
+                            get_sim_trader().on_token_enter(
+                                address=mint, chain="solana", symbol=f.symbol,
+                                price=_price, score=result.total, source="pump")
+                    except Exception:
+                        pass
                     log.info(
                         f"[信号池+] {f.symbol}({mint[:6]}…) "
                         f"score={result.total:.0f} bc={f.bc_progress:.1f}%"

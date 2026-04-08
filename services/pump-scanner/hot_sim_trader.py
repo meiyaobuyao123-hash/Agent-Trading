@@ -44,6 +44,9 @@ class HotSimTrader:
         # 所有 open 仓位 {id: {entry_price, chain, address, symbol, mode}}
         self._open_positions: Dict[str, dict] = {}
         self._initialized = False
+        self._price_update_count = 0
+        self._price_match_count = 0
+        self._last_stats_log = 0.0
 
     def init_from_db(self):
         """启动时从 DB 加载已有数据"""
@@ -149,11 +152,16 @@ class HotSimTrader:
             return
         self.init_from_db()
 
+        self._price_update_count += 1
+        now = time.time()
+        matched = False
+
         to_close = []
         for pid, pos in self._open_positions.items():
             if pos.get("address", "").lower() != address.lower():
                 continue
 
+            matched = True
             tp = float(pos.get("tp_price", 0))
             sl = float(pos.get("sl_price", 0))
             entry = float(pos.get("entry_price", 0))
@@ -162,6 +170,18 @@ class HotSimTrader:
                 to_close.append((pid, "tp", price, TP_PCT))
             elif sl > 0 and price <= sl:
                 to_close.append((pid, "sl", price, -SL_PCT))
+
+        if matched:
+            self._price_match_count += 1
+
+        # 每 60s 输出统计
+        if now - self._last_stats_log > 60:
+            log.info("[HotSim] 价格统计: %d 次更新, %d 次匹配仓位, open=%d",
+                     self._price_update_count, self._price_match_count,
+                     len(self._open_positions))
+            self._price_update_count = 0
+            self._price_match_count = 0
+            self._last_stats_log = now
 
         for pid, reason, exit_price, pnl_pct in to_close:
             self._close_position(pid, reason, exit_price, pnl_pct)

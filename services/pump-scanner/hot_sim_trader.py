@@ -13,7 +13,7 @@ Python 3.9 兼容。
 
 import logging
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Dict, Set
 
 from database import get_db
@@ -64,8 +64,6 @@ class HotSimTrader:
             log.info("[HotSim] 初始化: unique已买=%d, open仓位=%d",
                      len(self._bought_unique), len(self._open_positions))
             self._initialized = True
-            # 启动时清理过期仓位
-            self.cleanup_stale_positions()
         except Exception as e:
             log.warning("[HotSim] 初始化失败: %s", e)
 
@@ -119,65 +117,14 @@ class HotSimTrader:
             except Exception as e:
                 log.debug("[HotSim] unique insert: %s", e)
 
-    async def check_all_positions(self):
-        """定时主动查价格，检查所有 open 仓位的止盈止损（每 5 分钟）"""
-        if not self._initialized:
-            self.init_from_db()
-        if not self._open_positions:
-            return
-
-        # 收集所有 open 仓位的地址（去重）
-        addr_set = set()
-        for pos in self._open_positions.values():
-            addr_set.add(pos.get("address", ""))
-
-        # 从 hot_coins 表批量查价格
-        from database import get_db
-        db = get_db()
-        checked = 0
-        for addr in addr_set:
-            if not addr:
-                continue
-            try:
-                res = db.table("hot_coins").select("price_usd").eq("address", addr).limit(1).execute()
-                if res.data:
-                    price = float(res.data[0].get("price_usd", 0))
-                    if price > 0:
-                        self.on_price_update(addr, price)
-                        checked += 1
-            except Exception:
-                pass
-
-        if checked > 0:
-            log.info("[HotSim] 主动价格检查: %d/%d 地址有价格", checked, len(addr_set))
-
-    def cleanup_stale_positions(self):
-        """清理已死代币的仓位（价格归零或长期无更新）→ 按止损平仓"""
-        if not self._initialized:
-            self.init_from_db()
-        now = datetime.now(timezone.utc)
-        stale_cutoff = (now - timedelta(days=3)).isoformat()  # 3天没价格更新=死币
-        to_close = []
-        for pid, pos in self._open_positions.items():
-            entered = pos.get("entered_at", "")
-            if entered and entered < stale_cutoff:
-                to_close.append(pid)
-        for pid in to_close:
-            self._close_position(pid, "sl", 0, -SL_PCT)
-        if to_close:
-            log.info("[HotSim] 清理 %d 个过期仓位（3天+无价格更新）", len(to_close))
-
     def on_price_update(self, address: str, price: float):
         """价格更新时检查止盈止损"""
         if price <= 0:
             return
-        if not self._initialized:
-            self.init_from_db()
 
         to_close = []
-        addr_lower = address.lower()
         for pid, pos in self._open_positions.items():
-            if pos.get("address", "").lower() != addr_lower:
+            if pos.get("address", "").lower() != address.lower():
                 continue
 
             tp = float(pos.get("tp_price", 0))

@@ -375,6 +375,7 @@ class PriceFeed:
 
     async def _run_evm_poll_loop(self) -> None:
         """轮询所有注册代币（EVM + Solana 兜底）"""
+        _poll_count = 0
         async with aiohttp.ClientSession() as session:
             while True:
                 # 合并所有需要轮询的地址：EVM + Solana mint
@@ -382,6 +383,11 @@ class PriceFeed:
                 all_addrs.update(self._sol_mints.keys())
                 if all_addrs:
                     await self._poll_dex_prices(session, list(all_addrs))
+                _poll_count += 1
+                if _poll_count % 30 == 1:  # 每 30 轮（~60s）输出一次
+                    log.info("[PriceFeed] DexScreener 轮询: %d 个地址 (evm=%d, sol=%d), 缓存=%d",
+                             len(all_addrs), len(self._evm_addrs), len(self._sol_mints),
+                             len(self._token))
                 await asyncio.sleep(_EVM_POLL_INTERVAL)
 
     async def _poll_dex_prices(self, session: aiohttp.ClientSession,

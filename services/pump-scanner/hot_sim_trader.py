@@ -119,6 +119,38 @@ class HotSimTrader:
             except Exception as e:
                 log.debug("[HotSim] unique insert: %s", e)
 
+    async def check_all_positions(self):
+        """定时主动查价格，检查所有 open 仓位的止盈止损（每 5 分钟）"""
+        if not self._initialized:
+            self.init_from_db()
+        if not self._open_positions:
+            return
+
+        # 收集所有 open 仓位的地址（去重）
+        addr_set = set()
+        for pos in self._open_positions.values():
+            addr_set.add(pos.get("address", ""))
+
+        # 从 hot_coins 表批量查价格
+        from database import get_db
+        db = get_db()
+        checked = 0
+        for addr in addr_set:
+            if not addr:
+                continue
+            try:
+                res = db.table("hot_coins").select("price_usd").eq("address", addr).limit(1).execute()
+                if res.data:
+                    price = float(res.data[0].get("price_usd", 0))
+                    if price > 0:
+                        self.on_price_update(addr, price)
+                        checked += 1
+            except Exception:
+                pass
+
+        if checked > 0:
+            log.info("[HotSim] 主动价格检查: %d/%d 地址有价格", checked, len(addr_set))
+
     def cleanup_stale_positions(self):
         """清理已死代币的仓位（价格归零或长期无更新）→ 按止损平仓"""
         if not self._initialized:

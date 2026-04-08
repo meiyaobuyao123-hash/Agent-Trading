@@ -125,6 +125,19 @@ async def main():
         misfire_grace_time=600,
     )
 
+    # ── 模拟盘主动价格检查（每 5 分钟）────────────────────────
+    async def _sim_check():
+        from hot_sim_trader import get_sim_trader
+        await get_sim_trader().check_all_positions()
+    scheduler.add_job(
+        _sim_check,
+        trigger="interval",
+        minutes=5,
+        id="sim_price_check",
+        name="模拟盘价格检查",
+        misfire_grace_time=60,
+    )
+
     # ── 聪明钱地址挖掘（每天 UTC 04:00）───────────────────────
     from smart_wallet_miner import run_smart_wallet_miner
     scheduler.add_job(

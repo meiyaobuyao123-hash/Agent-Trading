@@ -54,8 +54,9 @@ _BINANCE_SYMBOL_MAP = {
 # Helius WebSocket 端点
 _HELIUS_WS = f"wss://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
-# DexScreener 批量查询（EVM REST fallback）
-_DEX_TOKENS_API = "https://api.dexscreener.com/tokens/v1/{addresses}"
+# DexScreener 批量查询（需要链前缀）
+_DEX_TOKENS_API = "https://api.dexscreener.com/tokens/v1/{chain}/{addresses}"
+_CHAIN_TO_DEX = {"solana": "solana", "eth": "ethereum", "bsc": "bsc", "base": "base"}
 _EVM_POLL_INTERVAL = 2     # EVM 代币轮询间隔（秒，WS 失联时 fallback）
 _EVM_BATCH_SIZE = 30       # DexScreener 单批最多 30 个地址
 
@@ -107,6 +108,7 @@ class PriceFeed:
         # 引用计数：谁在追踪哪些代币
         self._watch_refcount: Dict[str, int] = {}
         self._watch_sources: Dict[str, Set[str]] = {}
+        self._token_chains: Dict[str, str] = {}  # addr_lower → chain
 
         # Helius logsSubscribe ID → mint 映射
         self._helius_sub_id: Dict[int, str] = {}
@@ -144,6 +146,7 @@ class PriceFeed:
         addr = address.lower()
         self._watch_refcount[addr] = self._watch_refcount.get(addr, 0) + 1
         self._watch_sources.setdefault(addr, set()).add(source)
+        self._token_chains[addr] = chain
         if chain == "solana":
             self.register_solana_token(address, pair_address)
         else:
@@ -158,6 +161,7 @@ class PriceFeed:
         if rc <= 0:
             self._watch_refcount.pop(addr, None)
             self._watch_sources.pop(addr, None)
+            self._token_chains.pop(addr, None)
             self._sol_mints.pop(addr, None)
             self._evm_addrs.discard(addr)
             log.debug("[PriceFeed] unregister %s (refcount=0, 停止追踪)", addr[:8])
@@ -352,7 +356,7 @@ class PriceFeed:
     ) -> None:
         """立即从 DexScreener 查单个代币价格（由 Helius WS 触发）"""
         try:
-            url = f"https://api.dexscreener.com/tokens/v1/{address}"
+            url = f"https://api.dexscreener.com/tokens/v1/solana/{address}"
             async with session.get(url, timeout=_HTTP_TIMEOUT) as resp:
                 if resp.status != 200:
                     return
@@ -374,28 +378,33 @@ class PriceFeed:
     # ═══════════════════════════════════════════════════════
 
     async def _run_evm_poll_loop(self) -> None:
-        """轮询所有注册代币（EVM + Solana 兜底）"""
+        """轮询所有注册代币（按链分组查询 DexScreener）"""
         _poll_count = 0
         async with aiohttp.ClientSession() as session:
             while True:
-                # 合并所有需要轮询的地址：EVM + Solana mint
-                all_addrs = set(self._evm_addrs)
-                all_addrs.update(self._sol_mints.keys())
-                if all_addrs:
-                    await self._poll_dex_prices(session, list(all_addrs))
+                # 按链分组
+                by_chain: Dict[str, list] = {}
+                for addr, chain in self._token_chains.items():
+                    dex_chain = _CHAIN_TO_DEX.get(chain, chain)
+                    by_chain.setdefault(dex_chain, []).append(addr)
+                total = sum(len(v) for v in by_chain.values())
+                if total > 0:
+                    for dex_chain, addrs in by_chain.items():
+                        await self._poll_dex_prices(session, addrs, dex_chain)
                 _poll_count += 1
-                if _poll_count % 30 == 1:  # 每 30 轮（~60s）输出一次
-                    log.info("[PriceFeed] DexScreener 轮询: %d 个地址 (evm=%d, sol=%d), 缓存=%d",
-                             len(all_addrs), len(self._evm_addrs), len(self._sol_mints),
+                if _poll_count % 30 == 1:
+                    log.info("[PriceFeed] DexScreener 轮询: %d 个地址 (%s), 缓存=%d",
+                             total,
+                             ", ".join(f"{k}={len(v)}" for k, v in by_chain.items()),
                              len(self._token))
                 await asyncio.sleep(_EVM_POLL_INTERVAL)
 
     async def _poll_dex_prices(self, session: aiohttp.ClientSession,
-                               addrs: list) -> None:
+                               addrs: list, dex_chain: str = "") -> None:
         for i in range(0, len(addrs), _EVM_BATCH_SIZE):
             batch = addrs[i:i + _EVM_BATCH_SIZE]
             joined = ",".join(batch)
-            url = _DEX_TOKENS_API.format(addresses=joined)
+            url = _DEX_TOKENS_API.format(chain=dex_chain, addresses=joined)
             try:
                 async with session.get(url, timeout=_HTTP_TIMEOUT) as resp:
                     if resp.status != 200:

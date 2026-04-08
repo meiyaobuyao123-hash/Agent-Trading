@@ -368,20 +368,24 @@ class PriceFeed:
             log.debug(f"[DexScr instant] {address[:8]}: {e}")
 
     # ═══════════════════════════════════════════════════════
-    # ③ DexScreener REST 轮询（5s，EVM chains）
-    #   BSC block=3s  Base block=2s  ETH block=12s
-    #   5s 轮询已是免费方案最快可用频率
+    # ③ DexScreener REST 轮询（所有注册代币的兜底）
+    #   EVM: 每 2s 轮询一次
+    #   Solana: Helius WS 为主，DexScreener 每 5s 兜底
     # ═══════════════════════════════════════════════════════
 
     async def _run_evm_poll_loop(self) -> None:
+        """轮询所有注册代币（EVM + Solana 兜底）"""
         async with aiohttp.ClientSession() as session:
             while True:
-                if self._evm_addrs:
-                    await self._poll_evm_prices(session)
+                # 合并所有需要轮询的地址：EVM + Solana mint
+                all_addrs = set(self._evm_addrs)
+                all_addrs.update(self._sol_mints.keys())
+                if all_addrs:
+                    await self._poll_dex_prices(session, list(all_addrs))
                 await asyncio.sleep(_EVM_POLL_INTERVAL)
 
-    async def _poll_evm_prices(self, session: aiohttp.ClientSession) -> None:
-        addrs = list(self._evm_addrs)
+    async def _poll_dex_prices(self, session: aiohttp.ClientSession,
+                               addrs: list) -> None:
         for i in range(0, len(addrs), _EVM_BATCH_SIZE):
             batch = addrs[i:i + _EVM_BATCH_SIZE]
             joined = ",".join(batch)

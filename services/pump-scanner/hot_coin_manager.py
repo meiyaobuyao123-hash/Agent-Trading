@@ -276,7 +276,7 @@ class HotCoinManager:
         # 注册到 PriceFeed
         from price_feed import price_feed
         chain = coin.get("chain", "")
-        price_feed.register_token(addr, chain, coin.get("pair_address", ""))
+        price_feed.register_token(addr, chain, coin.get("pair_address", ""), source="hot_coin")
 
         sym = coin.get("symbol", addr[:8])
         log.info(
@@ -372,6 +372,13 @@ class HotCoinManager:
                     ).execute()
                 except Exception as e:
                     log.debug(f"[HotCoin] 退出更新 performance 失败: {e}")
+
+            # PriceFeed 引用计数 -1（sim_trader 可能仍需要追踪）
+            try:
+                from price_feed import price_feed
+                price_feed.unregister_token(addr, source="hot_coin")
+            except Exception:
+                pass
 
             # 发布退出事件 → Agent 可触发卖出策略
             try:

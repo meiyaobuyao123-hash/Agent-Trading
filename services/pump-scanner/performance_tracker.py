@@ -363,6 +363,20 @@ def _apply_price_update(row: dict, current_price: float) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════
+#  PriceFeed 回调入口（统一价格服务）
+# ══════════════════════════════════════════════════════════════
+
+def on_price_update_for_performance(address: str, price: float) -> None:
+    """PriceFeed 回调：实时价格更新 → 更新 daily_highs"""
+    if price <= 0 or not _cache:
+        return
+    addr_lower = address.lower()
+    for row in _cache.values():
+        if row.get("address", "").lower() == addr_lower and row.get("is_active"):
+            _apply_price_update(row, price)
+
+
+# ══════════════════════════════════════════════════════════════
 #  缓存管理
 # ══════════════════════════════════════════════════════════════
 

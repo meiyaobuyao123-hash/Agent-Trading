@@ -104,6 +104,10 @@ class PriceFeed:
         # 价格变更回调（可选，供外部注册监听）
         self._callbacks: List[Callable[[str, float], None]] = []
 
+        # 引用计数：谁在追踪哪些代币
+        self._watch_refcount: Dict[str, int] = {}
+        self._watch_sources: Dict[str, Set[str]] = {}
+
         # Helius logsSubscribe ID → mint 映射
         self._helius_sub_id: Dict[int, str] = {}
 
@@ -134,12 +138,35 @@ class PriceFeed:
         """注册一个 EVM 代币到 DexScreener 轮询列表"""
         self._evm_addrs.add(address.lower())
 
-    def register_token(self, address: str, chain: str, pair_address: str = "") -> None:
-        """统一注册接口，自动路由 Solana/EVM"""
+    def register_token(self, address: str, chain: str, pair_address: str = "",
+                       source: str = "default") -> None:
+        """统一注册接口，自动路由 Solana/EVM，引用计数管理"""
+        addr = address.lower()
+        self._watch_refcount[addr] = self._watch_refcount.get(addr, 0) + 1
+        self._watch_sources.setdefault(addr, set()).add(source)
         if chain == "solana":
             self.register_solana_token(address, pair_address)
         else:
             self.register_evm_token(address)
+
+    def unregister_token(self, address: str, source: str = "default") -> None:
+        """引用计数 -1，refcount=0 时停止追踪"""
+        addr = address.lower()
+        sources = self._watch_sources.get(addr, set())
+        sources.discard(source)
+        rc = self._watch_refcount.get(addr, 0) - 1
+        if rc <= 0:
+            self._watch_refcount.pop(addr, None)
+            self._watch_sources.pop(addr, None)
+            self._sol_mints.pop(addr, None)
+            self._evm_addrs.discard(addr)
+            log.debug("[PriceFeed] unregister %s (refcount=0, 停止追踪)", addr[:8])
+        else:
+            self._watch_refcount[addr] = rc
+
+    def get_watched_tokens(self) -> Set[str]:
+        """返回所有正在追踪的代币地址集合"""
+        return set(self._watch_refcount.keys())
 
     def on_price_update(self, callback: Callable[[str, float], None]) -> None:
         """注册价格变更回调：callback(address, price_usd)"""

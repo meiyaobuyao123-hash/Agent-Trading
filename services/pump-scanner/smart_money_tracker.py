@@ -807,15 +807,23 @@ class SmartMoneyTracker:
         # 实时 bot 检测：同代币60秒内买卖 → 立即黑名单
         self._realtime_bot_detect(txns, chain)
 
-        # 模拟盘：价格更新 + 聪明钱信号买入触发（毫秒级）
+        # DEX swap 搭车推价格 → PriceFeed（所有 callback 自动收到）
+        # + 聪明钱强信号触发模拟买入
         try:
+            from price_feed import price_feed
+            watched = price_feed.get_watched_tokens()
             from hot_sim_trader import get_sim_trader
             sim = get_sim_trader()
             for sig in signals.values():
                 price = sig.get("price_usd", 0)
                 addr = sig.get("token_address", "")
                 if price > 0 and addr:
-                    sim.on_price_update(addr, price)
+                    # 搭车推价格：如果该代币在追踪列表中，走 PriceFeed 统一分发
+                    if addr.lower() in watched:
+                        price_feed.update_price(addr, price)
+                    else:
+                        # 不在追踪列表，仍直接推给 sim_trader
+                        sim.on_price_update(addr, price)
                     # 聪明钱强信号触发模拟买入（heat>=15 + buyers>=3 + 去重）
                     heat = sig.get("heat_score", 0)
                     buyers = sig.get("unique_buyers", 0)

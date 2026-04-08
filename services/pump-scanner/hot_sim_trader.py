@@ -61,8 +61,21 @@ class HotSimTrader:
             for r in (res2.data or []):
                 self._open_positions[r["id"]] = r
 
-            log.info("[HotSim] 初始化: unique已买=%d, open仓位=%d",
-                     len(self._bought_unique), len(self._open_positions))
+            # 为所有 open 仓位注册 PriceFeed（确保退榜代币仍收价格）
+            registered = set()
+            for pos in self._open_positions.values():
+                addr = pos.get("address", "")
+                chain = pos.get("chain", "")
+                if addr and addr.lower() not in registered:
+                    try:
+                        from price_feed import price_feed
+                        price_feed.register_token(addr, chain, source="sim_trader")
+                        registered.add(addr.lower())
+                    except Exception:
+                        pass
+
+            log.info("[HotSim] 初始化: unique已买=%d, open仓位=%d, 注册PriceFeed=%d",
+                     len(self._bought_unique), len(self._open_positions), len(registered))
             self._initialized = True
         except Exception as e:
             log.warning("[HotSim] 初始化失败: %s", e)
@@ -93,6 +106,19 @@ class HotSimTrader:
             "entered_at": now_iso,
         }
 
+        # 注册到 PriceFeed（确保退榜后也能收到价格更新）
+        addr_lower = address.lower()
+        has_existing = any(
+            p.get("address", "").lower() == addr_lower
+            for p in self._open_positions.values()
+        )
+        if not has_existing:
+            try:
+                from price_feed import price_feed
+                price_feed.register_token(address, chain, source="sim_trader")
+            except Exception as e:
+                log.debug("[HotSim] register_token: %s", e)
+
         # mode=repeat: 每次都买
         try:
             row_repeat = {**base_row, "mode": "repeat"}
@@ -121,6 +147,7 @@ class HotSimTrader:
         """价格更新时检查止盈止损"""
         if price <= 0:
             return
+        self.init_from_db()
 
         to_close = []
         for pid, pos in self._open_positions.items():
@@ -161,6 +188,20 @@ class HotSimTrader:
             mode = pos.get("mode", "?")
             log.info("[HotSim] %s %s %s: %s exit=$%.8f pnl=%+.1f%% ($%+.2f)",
                      mode, reason.upper(), sym, pos.get("chain", ""), exit_price, pnl_pct, pnl_usd)
+
+            # 该地址无更多 open 仓位 → 取消 PriceFeed 追踪
+            addr = pos.get("address", "")
+            if addr:
+                still_open = any(
+                    p.get("address", "").lower() == addr.lower()
+                    for p in self._open_positions.values()
+                )
+                if not still_open:
+                    try:
+                        from price_feed import price_feed
+                        price_feed.unregister_token(addr, source="sim_trader")
+                    except Exception:
+                        pass
 
 
 # 全局单例

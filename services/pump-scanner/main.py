@@ -408,12 +408,24 @@ async def main():
     # 注册 PriceFeed 回调 → 热币实时打分
     price_feed.on_price_update(hot_coin_manager.on_price_update)
 
+    # 注册 PriceFeed 回调 → 模拟盘止盈止损
+    from hot_sim_trader import get_sim_trader
+    sim_trader = get_sim_trader()
+    sim_trader.init_from_db()
+    price_feed.on_price_update(sim_trader.on_price_update)
+    log.info("sim_trader 已注册 PriceFeed 回调 (open=%d)", len(sim_trader._open_positions))
+
+    # 注册 PriceFeed 回调 → 表现追踪实时价格
+    from performance_tracker import on_price_update_for_performance
+    price_feed.on_price_update(on_price_update_for_performance)
+
     # 将已加载的活跃热币注册到 PriceFeed
     for token in hot_coin_manager.get_active_tokens():
         price_feed.register_token(
             address=token.get("address", ""),
             chain=token.get("chain", ""),
             pair_address=token.get("pair_address", ""),
+            source="hot_coin",
         )
 
     # 启动实时价格订阅（Binance WS: SOL/ETH/BNB/BTC + DexScreener WS: 热币 pair）

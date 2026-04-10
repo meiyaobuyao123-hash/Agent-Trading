@@ -26,11 +26,12 @@ log = logging.getLogger(__name__)
 SIMPLE_RULES = [
     # ── 高频写入表（优先清理）──
     ("smart_money_signals", "scan_time",   3,   None),   # 最大表！无限增长→3天
-    ("smart_money_txns",    "created_at",  3,   None),   # 实时交易记录→3天
+    ("smart_money_txns",    "scan_time",   3,   None),   # 实时交易记录→3天
     ("token_snapshots",     "snapshot_at", 5,   None),   # 14天→5天
     # ── 中频表 ──
     ("btc_eth_indicators",  "ts",          7,   None),
     ("token_performance",   "created_at",  30,  {"is_active": False}),  # 90天→30天
+    ("token_kol_mentions",  "created_at",  14,  None),   # 先删依赖
     ("kol_tweets",          "created_at",  14,  None),   # 30天→14天
     ("kol_signals",         "detected_at", 14,  None),   # 新增
     # ── 低频表 ──

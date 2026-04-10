@@ -189,7 +189,7 @@ class _HotCoinCardState extends State<HotCoinCard> {
   }
 }
 
-// ─── HOT 标签（带光晕）──────────────────────
+// ─── HOT 标签（纯色简洁）──────────────────────
 class _HotBadge extends StatelessWidget {
   const _HotBadge();
 
@@ -199,19 +199,13 @@ class _HotBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
-        gradient: c.successGradient,
+        color: c.warning.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(4),
-        boxShadow: [
-          BoxShadow(
-            color: c.success.withValues(alpha: 0.3),
-            blurRadius: 4,
-          ),
-        ],
       ),
-      child: const Text(
+      child: Text(
         'HOT',
         style: TextStyle(
-          color: Colors.white,
+          color: c.warning,
           fontSize: 8,
           fontWeight: FontWeight.w800,
           letterSpacing: 0.5,
@@ -281,7 +275,7 @@ class _Dot extends StatelessWidget {
   }
 }
 
-// ─── 涨跌框（渐变填充）─────────────────────────
+// ─── 涨跌框（纯色简洁）─────────────────────────
 class _ChangeBox extends StatelessWidget {
   final double pct;
   const _ChangeBox({required this.pct});
@@ -290,31 +284,24 @@ class _ChangeBox extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final isPos = pct >= 0;
-    final gradient = isPos ? c.successGradient : c.dangerGradient;
+    final color = isPos ? c.success : c.danger;
     final sign = isPos ? '+' : '';
 
     return Container(
       constraints: const BoxConstraints(minWidth: 72),
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        gradient: gradient,
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
-        boxShadow: [
-          BoxShadow(
-            color: (isPos ? c.success : c.danger).withValues(alpha: 0.2),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
       ),
       alignment: Alignment.center,
       child: Text(
         '$sign${pct.toStringAsFixed(2)}%',
-        style: const TextStyle(
-          color: Colors.white,
+        style: TextStyle(
+          color: color,
           fontSize: 12,
           fontWeight: FontWeight.w700,
-          fontFeatures: [FontFeature.tabularFigures()],
+          fontFeatures: const [FontFeature.tabularFigures()],
         ),
       ),
     );

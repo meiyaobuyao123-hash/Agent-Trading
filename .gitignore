@@ -30,3 +30,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+services/pump-scanner/_run_migration.py
+services/pump-scanner/twscrape_accounts.db
+services/pump-scanner/backfill_images.py

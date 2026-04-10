@@ -192,67 +192,71 @@ class AppColorScheme {
   //  Light 配色
   // ═══════════════════════════════════════════════
   static const light = AppColorScheme(
-    bg: Color(0xFFF0F2F8),
-    bgSecondary: Color(0xFFE8EAF0),
-    surface: Color(0xFFFFFFFF),
-    surfaceAlt: Color(0xFFF5F5FA),
+    // 纯净白底 — 参考 Coinbase/Robinhood 高端风格
+    bg: Color(0xFFFAFAFC),            // 微灰白，比纯白更舒适
+    bgSecondary: Color(0xFFF3F4F6),   // 区块背景
+    surface: Color(0xFFFFFFFF),        // 卡片纯白
+    surfaceAlt: Color(0xFFF9FAFB),    // 交替行
 
-    cardGlass: Color(0xDCF0F2F6),     // 86% 灰蓝调，有对比
-    glassBorder: Color(0x1A000000),   // 10% 黑，可见边框
-    glassHighlight: Color(0x33FFFFFF),// 20%
+    cardGlass: Color(0xFFFFFFFF),      // 白卡片，不要灰蓝调
+    glassBorder: Color(0x0F000000),    // 6% 极淡边框
+    glassHighlight: Color(0x08000000), // 微妙高光
 
-    primary: Color(0xFF2563EB),
-    primaryGlow: Color(0x262563EB),
-    primaryLight: Color(0xFFE0EAFF),
+    primary: Color(0xFF1D4ED8),        // 深蓝，更有质感
+    primaryGlow: Color(0x1A1D4ED8),
+    primaryLight: Color(0xFFEFF6FF),
 
-    success: Color(0xFF059669),
-    successLight: Color(0xFFD1FAE5),
-    danger: Color(0xFFDC2626),
-    dangerLight: Color(0xFFFEE2E2),
-    warning: Color(0xFFD97706),
-    warningLight: Color(0xFFFEF3C7),
+    success: Color(0xFF16A34A),        // 鲜绿
+    successLight: Color(0xFFF0FDF4),
+    danger: Color(0xFFDC2626),         // 红
+    dangerLight: Color(0xFFFEF2F2),
+    warning: Color(0xFFEA580C),        // 橙
+    warningLight: Color(0xFFFFF7ED),
 
-    textPrimary: Color(0xFF0F172A),
-    textSecondary: Color(0xFF64748B),
-    textTertiary: Color(0xFF94A3B8),
+    textPrimary: Color(0xFF111827),    // 近黑，高对比
+    textSecondary: Color(0xFF6B7280),  // 中灰，清晰可读
+    textTertiary: Color(0xFF9CA3AF),   // 浅灰，辅助信息
     textInverse: Color(0xFFFFFFFF),
 
-    divider: Color(0xFFE2E8F0),
-    border: Color(0xFFCBD5E1),
+    divider: Color(0xFFE5E7EB),        // 淡灰分割线
+    border: Color(0xFFE5E7EB),         // 统一边框色
 
-    iconPrimary: Color(0xFF0F172A),
-    iconInactive: Color(0xFF94A3B8),
+    iconPrimary: Color(0xFF111827),
+    iconInactive: Color(0xFF9CA3AF),
 
-    shimmerBase: Color(0xFFE2E8F0),
-    shimmerHighlight: Color(0xFFF1F5F9),
+    shimmerBase: Color(0xFFF3F4F6),
+    shimmerHighlight: Color(0xFFFFFFFF),
 
-    chartBg: Color(0xFFF8FAFC),
-    chartSurface: Color(0xFFFFFFFF),
-    chartGrid: Color(0xFFE2E8F0),
-    chartCrosshair: Color(0xFF64748B),
-    chartBullish: Color(0xFF059669),
+    chartBg: Color(0xFFFFFFFF),
+    chartSurface: Color(0xFFFAFAFC),
+    chartGrid: Color(0xFFF3F4F6),
+    chartCrosshair: Color(0xFF6B7280),
+    chartBullish: Color(0xFF16A34A),
     chartBearish: Color(0xFFDC2626),
 
     accentGold: Color(0xFFD97706),
-    accentGoldDim: Color(0x26D97706),
+    accentGoldDim: Color(0x1AD97706),
 
     cardShadow: [
-      BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, 2)),
+      BoxShadow(color: Color(0x08000000), blurRadius: 8, offset: Offset(0, 1)),
+      BoxShadow(color: Color(0x05000000), blurRadius: 2, offset: Offset(0, 0)),
     ],
     cardShadowMd: [
-      BoxShadow(color: Color(0x18000000), blurRadius: 20, offset: Offset(0, 4)),
+      BoxShadow(color: Color(0x0D000000), blurRadius: 16, offset: Offset(0, 4)),
+      BoxShadow(color: Color(0x05000000), blurRadius: 4, offset: Offset(0, 1)),
     ],
     cardShadowLg: [
-      BoxShadow(color: Color(0x20000000), blurRadius: 30, offset: Offset(0, 8)),
+      BoxShadow(color: Color(0x12000000), blurRadius: 24, offset: Offset(0, 8)),
+      BoxShadow(color: Color(0x08000000), blurRadius: 6, offset: Offset(0, 2)),
     ],
 
     primaryGradient: LinearGradient(
-      colors: [Color(0xFF2563EB), Color(0xFF7C3AED)],
+      colors: [Color(0xFF1D4ED8), Color(0xFF6366F1)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),
     successGradient: LinearGradient(
-      colors: [Color(0xFF059669), Color(0xFF34D399)],
+      colors: [Color(0xFF16A34A), Color(0xFF4ADE80)],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
     ),

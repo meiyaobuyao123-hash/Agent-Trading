@@ -195,28 +195,17 @@ class _MarketScreenState extends State<MarketScreen> {
       body: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
-          // ── 毛玻璃 AppBar ──────────────────
-          SliverAppBar(
-            pinned: true,
-            expandedHeight: topPadding + 52,
-            backgroundColor: Colors.transparent,
-            surfaceTintColor: Colors.transparent,
-            flexibleSpace: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-                child: Container(
-                  color: c.bg.withValues(alpha: 0.7),
-                  padding: EdgeInsets.only(top: topPadding + 8, left: 20, bottom: 8),
-                  alignment: Alignment.bottomLeft,
-                  child: Text(
-                    t.marketTitle,
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w600,
-                      color: c.textPrimary,
-                      letterSpacing: -0.3,
-                    ),
-                  ),
+          // ── 标题（直接吸顶）──────────────────
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: EdgeInsets.only(top: topPadding + 8, left: 20, bottom: 4),
+              child: Text(
+                t.marketTitle,
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: c.textPrimary,
+                  letterSpacing: -0.3,
                 ),
               ),
             ),

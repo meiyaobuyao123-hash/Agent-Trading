@@ -2,7 +2,7 @@ name: aitrading_app
 description: "pump.fun 内盘信号 — 每日推送最具潜力早期代币"
 publish_to: 'none'
 
-version: 1.0.0+1
+version: 1.2.0+8
 
 environment:
   sdk: ^3.11.0

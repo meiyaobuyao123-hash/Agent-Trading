@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "151316463137",
+    "project_id": "agent-trading-dc183",
+    "storage_bucket": "agent-trading-dc183.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:151316463137:android:dda1aa1d2667df2ab4ad60",
+        "android_client_info": {
+          "package_name": "com.aitrading.aitrading_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBShzQr_9rZbY7AH7jPvddhNtN_xZgcVGc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

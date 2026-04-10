@@ -14,7 +14,7 @@
 		<string>ko</string>
 	</array>
 	<key>CFBundleDisplayName</key>
-	<string>Aitrading App</string>
+	<string>Future Trading</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>

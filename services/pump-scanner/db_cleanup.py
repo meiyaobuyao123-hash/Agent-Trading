@@ -24,13 +24,21 @@ log = logging.getLogger(__name__)
 
 # 简单清理：(表名, 时间列, 保留天数, 额外过滤)
 SIMPLE_RULES = [
-    ("token_snapshots",    "snapshot_at", 14,  None),
-    ("btc_eth_indicators", "ts",          7,   None),
-    ("btc_eth_alerts",     "created_at",  30,  {"is_active": False}),
-    ("kol_tweets",         "created_at",  30,  None),
-    ("hot_funnel_stats",   "recorded_at", 30,  None),
-    ("token_performance",  "created_at",  90,  {"is_active": False}),
-    ("agent_risk_events",  "created_at",  30,  None),  # PRD-005
+    # ── 高频写入表（优先清理）──
+    ("smart_money_signals", "scan_time",   3,   None),   # 最大表！无限增长→3天
+    ("smart_money_txns",    "created_at",  3,   None),   # 实时交易记录→3天
+    ("token_snapshots",     "snapshot_at", 5,   None),   # 14天→5天
+    # ── 中频表 ──
+    ("btc_eth_indicators",  "ts",          7,   None),
+    ("token_performance",   "created_at",  30,  {"is_active": False}),  # 90天→30天
+    ("kol_tweets",          "created_at",  14,  None),   # 30天→14天
+    ("kol_signals",         "detected_at", 14,  None),   # 新增
+    # ── 低频表 ──
+    ("btc_eth_alerts",      "created_at",  30,  {"is_active": False}),
+    ("hot_funnel_stats",    "recorded_at", 30,  None),
+    ("agent_risk_events",   "created_at",  30,  None),
+    ("agent_alerts",        "created_at",  30,  {"is_read": True}),  # 新增：已读告警30天
+    ("agent_memory",        "created_at",  60,  {"type": "episodic"}),  # 新增：中期记忆60天
 ]
 
 

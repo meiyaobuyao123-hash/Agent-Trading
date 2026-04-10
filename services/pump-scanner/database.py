@@ -30,27 +30,55 @@ _snapshot_extra_cols = {
 _snapshot_cols_available = True  # 首次错误后置 False
 
 
+_snapshot_buffer: list = []
+_snapshot_buffer_lock = __import__("threading").Lock()
+_SNAPSHOT_BATCH_SIZE = 50
+
+
 def insert_snapshot(snapshot: dict):
-    """插入特征快照（自动兼容新旧表结构）"""
+    """缓冲插入快照 — 每 50 条批量写入"""
     global _snapshot_cols_available
     data = snapshot
     if not _snapshot_cols_available:
         data = {k: v for k, v in snapshot.items() if k not in _snapshot_extra_cols}
+    with _snapshot_buffer_lock:
+        _snapshot_buffer.append(data)
+        if len(_snapshot_buffer) < _SNAPSHOT_BATCH_SIZE:
+            return
+        batch = list(_snapshot_buffer)
+        _snapshot_buffer.clear()
+    _flush_snapshot_batch(batch)
+
+
+def flush_snapshot_buffer():
+    """强制刷新快照缓冲区（定时器调用）"""
+    with _snapshot_buffer_lock:
+        if not _snapshot_buffer:
+            return
+        batch = list(_snapshot_buffer)
+        _snapshot_buffer.clear()
+    _flush_snapshot_batch(batch)
+
+
+def _flush_snapshot_batch(batch: list):
+    """批量写入 token_snapshots"""
+    global _snapshot_cols_available
+    if not batch:
+        return
     try:
-        get_db().table("token_snapshots").insert(data).execute()
+        get_db().table("token_snapshots").insert(batch).execute()
     except Exception as e:
         err_msg = str(e)
         if "does not exist" in err_msg and _snapshot_cols_available:
-            # 新列不存在，降级到旧字段并重试
             _snapshot_cols_available = False
-            log.warning("token_snapshots 缺少新列，降级模式（请执行 014 migration）")
-            fallback = {k: v for k, v in snapshot.items() if k not in _snapshot_extra_cols}
+            log.warning("token_snapshots 缺少新列，降级模式")
+            fallback = [{k: v for k, v in row.items() if k not in _snapshot_extra_cols} for row in batch]
             try:
                 get_db().table("token_snapshots").insert(fallback).execute()
             except Exception as e2:
-                log.error(f"insert_snapshot fallback error: {e2}")
+                log.error(f"batch insert_snapshot fallback error ({len(batch)} rows): {e2}")
         else:
-            log.error(f"insert_snapshot error: {e}")
+            log.error(f"batch insert_snapshot error ({len(batch)} rows): {e}")
 
 
 _trade_buffer: list = []

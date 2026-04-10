@@ -68,6 +68,14 @@ OKX_CHAIN_INDEX = {
 # API 基础地址
 GOPLUS_API       = "https://api.gopluslabs.io/api/v1"
 DEXSCREENER_API  = "https://api.dexscreener.com"
+
+# ── AVE Cloud Skill（黑客松开关）──────────────────────────
+# USE_AVE=true → 数据/安全/交易全部走 AVE Cloud API
+# USE_AVE=false → 走现有方案（DexScreener + GoPlus + OKX DEX）
+USE_AVE       = os.getenv("USE_AVE", "false").lower() == "true"
+AVE_API_KEY   = os.getenv("AVE_API_KEY", "")
+AVE_DATA_BASE = "https://data.ave-api.xyz/v2"
+AVE_TRADE_BASE = "https://bot-api.ave.ai"
 HELIUS_RPC       = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
 # 链配置：goplus_chain → GoPlus 链ID

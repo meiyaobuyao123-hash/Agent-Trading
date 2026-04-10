@@ -209,6 +209,13 @@ class TradeExecutor:
         Returns:
             TradeResult
         """
+        from config import USE_AVE
+        if USE_AVE:
+            return await self._execute_trade_ave(
+                chain, token_address, action, amount_usd,
+                slippage_pct, wallet_address, private_key,
+            )
+
         try:
             from agent.dex_router import get_dex_router
 
@@ -411,6 +418,98 @@ class TradeExecutor:
             key = os.getenv(f"TRADE_WALLET_PRIVATE_KEY_{chain.upper()}", "")
 
         return addr, key
+
+    # ── AVE Cloud Skill 交易（USE_AVE=true）──────────────────
+
+    async def _execute_trade_ave(
+        self, chain: str, token_address: str, action: str,
+        amount_usd: float, slippage_pct: float = 1.0,
+        wallet_address: Optional[str] = None,
+        private_key: Optional[str] = None,
+    ) -> TradeResult:
+        """通过 AVE Cloud chainWallet API 执行交易"""
+        try:
+            from ave_client import ave
+
+            addr, key = self._resolve_wallet(chain, wallet_address, private_key)
+            if not addr or not key:
+                return TradeResult(success=False, error="No wallet configured for AVE trade")
+
+            # 确定输入输出代币
+            if action == "buy":
+                in_token = "sol" if chain == "solana" else "usdt"
+                out_token = token_address
+                swap_type = "buy"
+                # 将 USD 转为链原生数量（粗算，实际用 quote 验证）
+                amount_raw = str(int(amount_usd * 1_000_000))  # USDC 6 decimals
+            else:
+                in_token = token_address
+                out_token = "sol" if chain == "solana" else "usdt"
+                swap_type = "sell"
+                amount_raw = str(int(amount_usd * 1_000_000))
+
+            # 1. 报价
+            quote = await ave.get_quote(chain, in_token, out_token, amount_raw, swap_type)
+            if not quote:
+                return TradeResult(success=False, error="AVE quote failed")
+
+            estimate_out = quote.get("estimateOut", "0")
+            log.info("[AVE Trade] %s %s $%.2f → quote out=%s", action, token_address[:12], amount_usd, estimate_out)
+
+            # 2. 创建交易
+            if chain == "solana":
+                tx_data = await ave.create_solana_tx(
+                    in_token, out_token, amount_raw, swap_type,
+                    slippage_pct, addr,
+                )
+            else:
+                tx_data = await ave.create_evm_tx(
+                    chain, in_token, out_token, amount_raw, swap_type,
+                    slippage_pct, addr,
+                )
+
+            if not tx_data:
+                return TradeResult(success=False, error="AVE create tx failed")
+
+            # 3. 本地签名
+            request_tx_id = tx_data.get("requestTxId", "")
+            raw_tx = tx_data.get("rawTransaction") or tx_data.get("tx", "")
+
+            if chain == "solana":
+                signed = self._sign_solana_tx({"tx": raw_tx}, key)
+            else:
+                signed = await self._sign_evm_tx(tx_data, key, chain)
+
+            if not signed:
+                return TradeResult(success=False, error="AVE tx signing failed")
+
+            # 4. 发送签名交易
+            if chain == "solana":
+                result = await ave.send_signed_solana_tx(request_tx_id, signed)
+            else:
+                result = await ave.send_signed_evm_tx(chain, request_tx_id, signed)
+
+            if not result:
+                return TradeResult(success=False, error="AVE send tx failed")
+
+            tx_hash = result.get("txHash", result.get("tx_hash", ""))
+            out_decimals = int(quote.get("decimals", 9))
+            out_amount = int(estimate_out) / (10 ** out_decimals) if estimate_out else 0
+            price = amount_usd / out_amount if out_amount > 0 and action == "buy" else 0
+
+            log.info("[AVE Trade] ✅ %s %s tx=%s", action, token_address[:12], tx_hash[:16] if tx_hash else "?")
+
+            return TradeResult(
+                success=True,
+                tx_hash=tx_hash,
+                price=price,
+                amount_usd=amount_usd,
+                gas_fee=0,
+            )
+
+        except Exception as e:
+            log.error("[AVE Trade] %s %s failed: %s", action, token_address[:12], e)
+            return TradeResult(success=False, error=f"AVE trade error: {e}")
 
     # ── Solana 签名 ──────────────────────────────────────────
 

@@ -401,6 +401,10 @@ class PriceFeed:
 
     async def _poll_dex_prices(self, session: aiohttp.ClientSession,
                                addrs: list, dex_chain: str = "") -> None:
+        from config import USE_AVE
+        if USE_AVE:
+            await self._poll_ave_prices(addrs, dex_chain)
+            return
         for i in range(0, len(addrs), _EVM_BATCH_SIZE):
             batch = addrs[i:i + _EVM_BATCH_SIZE]
             joined = ",".join(batch)
@@ -428,6 +432,25 @@ class PriceFeed:
 
             if i + _EVM_BATCH_SIZE < len(addrs):
                 await asyncio.sleep(0.3)
+
+    async def _poll_ave_prices(self, addrs: list, dex_chain: str) -> None:
+        """AVE 批量价格轮询（USE_AVE=true 时替代 DexScreener）"""
+        try:
+            from ave_client import ave
+            # AVE 链名映射
+            ave_chain = {"solana": "solana", "ethereum": "eth",
+                         "bsc": "bsc", "base": "base"}.get(dex_chain, dex_chain)
+            for addr in addrs:
+                detail = await ave.get_token_detail(addr, ave_chain)
+                if detail:
+                    price_str = detail.get("current_price_usd")
+                    if price_str:
+                        try:
+                            self.update_price(addr, float(price_str))
+                        except (ValueError, TypeError):
+                            pass
+        except Exception as e:
+            log.warning("[AVE] price poll error, fallback next cycle: %s", e)
 
 
 # ─────────────────────────────────────────────────────────────

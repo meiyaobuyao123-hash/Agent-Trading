@@ -168,7 +168,28 @@ async def _check_goplus(
     address: str,
     goplus_chain: str,
 ) -> dict:
-    """返回安全检测字段"""
+    """返回安全检测字段（USE_AVE=true 时走 AVE /contracts/）"""
+    from config import USE_AVE
+    if USE_AVE:
+        try:
+            from ave_client import ave
+            risk = await ave.check_risk(address, chain)
+            if risk:
+                return {
+                    "is_honeypot": risk.get("is_honeypot", False),
+                    "is_open_source": risk.get("is_open_source", True),
+                    "buy_tax": risk.get("buy_tax", 0),
+                    "sell_tax": risk.get("sell_tax", 0),
+                    "top10_holder_pct": risk.get("top10_holder_pct", 0),
+                    "top1_holder_pct": risk.get("top1_holder_pct", 0),
+                    "goplus_risk": risk.get("is_honeypot", False)
+                        or risk.get("buy_tax", 0) > 0.1
+                        or risk.get("sell_tax", 0) > 0.1,
+                }
+        except Exception as e:
+            log.warning("[AVE] check_risk fallback to GoPlus: %s", e)
+        # AVE 失败则 fallback 到 GoPlus
+
     try:
         if chain == "solana":
             url = f"{GOPLUS_API}/solana/token_security"
@@ -709,8 +730,25 @@ async def _batch_dexscreener_prices(
 ) -> Dict[str, dict]:
     """
     DexScreener 批量价格查询 — OKX 不可用时的 fallback。
-    DexScreener /tokens 端点支持逗号分隔（最多30个地址/请求）。
+    USE_AVE=true 时走 AVE /tokens/{addr-chain} 查询。
     """
+    from config import USE_AVE
+    if USE_AVE:
+        try:
+            from ave_client import ave
+            ave_result = {}
+            for addr in addresses:
+                detail = await ave.get_token_detail(addr, "solana")
+                if detail and detail.get("current_price_usd"):
+                    ave_result[addr.lower()] = {
+                        "priceUsd": detail.get("current_price_usd"),
+                        "marketCap": detail.get("market_cap"),
+                        "liquidity": {"usd": detail.get("tvl") or detail.get("main_pair_tvl")},
+                    }
+            return ave_result
+        except Exception as e:
+            log.warning("[AVE] batch prices fallback to DexScreener: %s", e)
+
     result = {}  # type: Dict[str, dict]
 
     for i in range(0, len(addresses), 30):

@@ -53,12 +53,40 @@ def insert_snapshot(snapshot: dict):
             log.error(f"insert_snapshot error: {e}")
 
 
+_trade_buffer: list = []
+_trade_buffer_lock = __import__("threading").Lock()
+_TRADE_BATCH_SIZE = 50  # 每 50 条批量写入一次
+
+
 def insert_trade(trade: dict):
-    """插入交易流水"""
+    """缓冲插入交易流水 — 每 50 条批量 upsert，减少 Supabase 连接消耗"""
+    with _trade_buffer_lock:
+        _trade_buffer.append(trade)
+        if len(_trade_buffer) < _TRADE_BATCH_SIZE:
+            return
+        batch = list(_trade_buffer)
+        _trade_buffer.clear()
+    _flush_trade_batch(batch)
+
+
+def flush_trade_buffer():
+    """强制刷新缓冲区（定时器调用）"""
+    with _trade_buffer_lock:
+        if not _trade_buffer:
+            return
+        batch = list(_trade_buffer)
+        _trade_buffer.clear()
+    _flush_trade_batch(batch)
+
+
+def _flush_trade_batch(batch: list):
+    """批量写入 token_trades"""
+    if not batch:
+        return
     try:
-        get_db().table("token_trades").upsert(trade, on_conflict="tx_sig").execute()
+        get_db().table("token_trades").upsert(batch, on_conflict="tx_sig").execute()
     except Exception as e:
-        log.error(f"insert_trade error: {e}")
+        log.error(f"batch insert_trade error ({len(batch)} rows): {e}")
 
 
 def get_active_tokens() -> List[str]:

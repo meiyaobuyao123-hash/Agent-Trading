@@ -358,6 +358,18 @@ async def main():
             max_instances=1,
         )
 
+    # ── token_trades 缓冲刷新（每10秒）───────────────────
+    from database import flush_trade_buffer
+    scheduler.add_job(
+        flush_trade_buffer,
+        trigger="interval",
+        seconds=10,
+        id="trade_buffer_flush",
+        name="交易缓冲刷新(10s)",
+        misfire_grace_time=5,
+        max_instances=1,
+    )
+
     scheduler.start()
     log.info(
         "定时任务已启动:\n"

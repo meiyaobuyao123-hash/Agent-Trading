@@ -27,11 +27,16 @@ from btc_eth.collectors.lunarcrush import LunarCrushCollector
 from btc_eth.collectors.alternative_me import AlternativeMeCollector
 from btc_eth.collectors.dune_onchain import DuneOnchainCollector
 from btc_eth.indicators.indicator_engine import IndicatorEngine
+from btc_eth.analysis.signal_generator import SignalGenerator
+from btc_eth.analysis.cycle_analyzer import CycleAnalyzer
 from btc_eth import storage
 from btc_eth.config import (
     INTERVAL_HIGH_FREQ, INTERVAL_MID_FREQ, INTERVAL_LOW_FREQ,
     INTERVAL_DAILY, INDICATOR_PERSIST_INTERVAL,
 )
+
+# 信号生成间隔（5 分钟检查一次预筛条件）
+INTERVAL_SIGNAL = 300
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +49,8 @@ class BtcEthManager:
 
         # 核心组件
         self._indicator_engine = IndicatorEngine()
+        self._signal_generator = SignalGenerator()
+        self._cycle_analyzer = CycleAnalyzer()
         self._binance_ws = BinanceWsCollector()
         self._blockchain_ws = BlockchainWsCollector()
         self._binance_rest = BinanceRestCollector()
@@ -102,6 +109,7 @@ class BtcEthManager:
             asyncio.create_task(self._daily_loop()),
             asyncio.create_task(self._persist_loop()),
             asyncio.create_task(self._paper_exit_loop()),
+            asyncio.create_task(self._signal_loop()),  # BTC/ETH 信号生成
         ]
 
         log.info(
@@ -240,6 +248,52 @@ class BtcEthManager:
                     log.info("[BTC/ETH] Paper trading: %d positions closed by SL/TP", closed)
             except Exception as e:
                 log.debug("[BTC/ETH] Paper exit check: %s", e)
+
+    async def _signal_loop(self) -> None:
+        """每 5 分钟检查 BTC/ETH 是否生成交易信号 → 触发模拟盘买入
+
+        流程：
+          1. Stage 1: 规则预筛（RSI/费率/OI 极值）
+          2. Stage 2: Claude 确认或规则引擎降级
+          3. 信号生成 → SignalGenerator._trigger_sim → sim_trader 买入
+        """
+        # 启动后等 2 分钟让指标充分预热
+        await asyncio.sleep(120)
+        log.info("[BTC/ETH] 信号生成循环启动（每 %ds 检查）", INTERVAL_SIGNAL)
+
+        while self._running:
+            try:
+                for asset in ("BTC", "ETH"):
+                    snapshot = self._indicator_engine.get_snapshot(asset)
+                    # 指标不足则跳过
+                    if not snapshot or snapshot.get("price_usd", 0) <= 0:
+                        continue
+
+                    # Stage 1: 规则预筛
+                    direction = self._signal_generator.pre_filter(asset, snapshot)
+                    if not direction:
+                        continue
+
+                    log.info("[BTC/ETH] %s Stage1 预筛通过: %s", asset, direction)
+
+                    # 获取周期阶段（用于 Claude prompt，不影响规则降级）
+                    cycle = self._cycle_analyzer.analyze_rule_based(snapshot)
+                    cycle_phase = cycle.get("phase", "unknown")
+
+                    # Stage 2: 生成信号（会自动触发 _trigger_sim → sim_trader）
+                    signal = await self._signal_generator.generate_signal(
+                        asset, direction, snapshot, cycle_phase
+                    )
+                    if signal:
+                        log.info(
+                            "[BTC/ETH] %s 信号生成: type=%s confidence=%d entry=%s",
+                            asset, signal.get("signal_type"),
+                            signal.get("confidence"), signal.get("entry_price"),
+                        )
+            except Exception as e:
+                log.warning("[BTC/ETH] 信号生成错误: %s", e)
+
+            await asyncio.sleep(INTERVAL_SIGNAL)
 
     def get_health(self) -> Dict[str, Any]:
         """返回模块健康状态"""

@@ -23,8 +23,25 @@ log = logging.getLogger(__name__)
 BUY_AMOUNT_DEFAULT = 10.0
 BUY_AMOUNT_BTC = 50.0
 BUY_AMOUNT_ETH = 20.0
-TP_PCT = 15.0
-SL_PCT = 15.0
+
+# ── 风报配置（基于真实数据校准）────────────────────────────
+# 基于 3720 笔交易分析：15%/15% 对称在 48% 胜率下注定亏钱
+# SOL: MEME 波动剧烈（平均持仓 4h），让赢家跑
+# BSC: 稳定链（平均持仓 25h，胜率 57.6%），小幅非对称即可
+# Base/ETH: 中等波动
+# BTC/ETH: 主流币，波动小，用较紧的对称
+TP_PCT_DEFAULT = 20.0
+SL_PCT_DEFAULT = 10.0
+
+# (tp_pct, sl_pct) 按链差异化
+_TP_SL_BY_CHAIN = {
+    "solana": (40.0, 8.0),    # SOL MEME: 大涨让跑，小亏快割
+    "bsc":    (25.0, 12.0),   # BSC: 稳定，略偏正
+    "base":   (25.0, 12.0),   # Base: 中等
+    "eth":    (20.0, 10.0),   # ETH: 对称偏正
+    "ethereum": (20.0, 10.0),
+    "btc_eth":  (15.0, 10.0), # BTC/ETH 主流币：较紧
+}
 
 
 def _get_buy_amount(source: str, symbol: str) -> float:
@@ -35,6 +52,94 @@ def _get_buy_amount(source: str, symbol: str) -> float:
         elif symbol.upper() == "ETH":
             return BUY_AMOUNT_ETH
     return BUY_AMOUNT_DEFAULT
+
+
+def _get_tp_sl(chain: str, source: str) -> tuple:
+    """按链和信号源返回 (tp_pct, sl_pct)"""
+    # BTC/ETH 源用自己的配置
+    if source == "btc_eth":
+        return _TP_SL_BY_CHAIN["btc_eth"]
+    # 其他源按链区分
+    c = (chain or "").lower()
+    return _TP_SL_BY_CHAIN.get(c, (TP_PCT_DEFAULT, SL_PCT_DEFAULT))
+
+
+# ── 时段过滤（基于真实数据）──────────────────────────────
+# 历史数据显示 UTC 0 时胜率 24%、18 时胜率 6.7%、10 时胜率 33%、21-22 时胜率 39%
+# 这些时段全部过滤，不买入
+# （对应北京时间 8 时、凌晨 2 时、18 时、凌晨 5-6 时）
+_BAD_HOURS_UTC = {0, 10, 18, 21, 22}
+
+
+def _is_bad_hour() -> bool:
+    """判断当前 UTC 小时是否在垃圾时段"""
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).hour in _BAD_HOURS_UTC
+
+
+# ── 链权重（基于真实胜率差异）────────────────────────────
+# BSC 胜率 57.6% +$39、SOL 胜率 38.2% -$55
+# weight=1.0 完全通过，weight=0.5 随机过滤一半，weight=0 全部过滤
+_CHAIN_WEIGHT = {
+    "bsc":      1.5,   # 明星链，weight>1 → 全进
+    "base":     1.0,   # 中等
+    "eth":      1.0,
+    "ethereum": 1.0,
+    "solana":   0.6,   # 弱链，40% 概率过滤掉
+    "btc_eth":  1.0,
+}
+
+
+def _pass_chain_filter(chain: str, source: str) -> bool:
+    """按链权重概率性过滤"""
+    import random
+    if source == "btc_eth":
+        return True  # BTC/ETH 不受链权重影响
+    w = _CHAIN_WEIGHT.get((chain or "").lower(), 1.0)
+    if w >= 1.0:
+        return True
+    return random.random() < w
+
+
+def _pass_score_filter(score: float, source: str) -> bool:
+    """基于真实数据的 score 质量过滤
+
+    真实数据统计（hot 源，617 笔已平仓）：
+      50-60 分: 胜率 47.9% (最差)
+      60-70 分: 胜率 50.4% (最好)
+      70-80 分: 胜率 44.3% (虚高分，pump-then-dump)
+      80+  分: 胜率 50.0%
+
+    结论：50-60 和 70-80 是陷阱区间，要么太弱要么太"虚"
+    策略：优先入场 60-70 甜点区；70-80 降低权重
+    """
+    # BTC/ETH 不用 hot 打分，跳过
+    if source == "btc_eth":
+        return True
+
+    # pump 源 score 是 pump 自己的 0-100 打分，逻辑类似（保留一致）
+    # 50 分以下 hot_coin_manager 已经过滤了，这里只针对 sim 入场
+
+    # 60-70 分直接入场（甜点区）
+    if 60 <= score < 70:
+        return True
+
+    # 70-80 分降低入场概率（虚高分）
+    if 70 <= score < 80:
+        import random
+        return random.random() < 0.5
+
+    # 80+ 分直接入场
+    if score >= 80:
+        return True
+
+    # 50-60 分降低入场概率（最差段）
+    if 50 <= score < 60:
+        import random
+        return random.random() < 0.4
+
+    # <50 理论上不会到这（hot_coin_manager ENTRY_SCORE_MIN=50），保险
+    return False
 
 
 class HotSimTrader:
@@ -88,10 +193,27 @@ class HotSimTrader:
         """信号触发时调用 — 自动模拟买入（支持多信号源）"""
         if price <= 0:
             return
+
+        # ── 入场过滤 1：时段过滤（基于真实数据的垃圾时段）──
+        if _is_bad_hour():
+            log.debug("[HotSim] %s 跳过（垃圾时段 UTC=%d）", symbol, datetime.now(timezone.utc).hour)
+            return
+
+        # ── 入场过滤 2：链权重过滤（SOL 40% 概率过滤）──
+        if not _pass_chain_filter(chain, source):
+            log.debug("[HotSim] %s 跳过（链权重过滤 chain=%s）", symbol, chain)
+            return
+
+        # ── 入场过滤 3：score 质量过滤（50-60 和 70-80 降权）──
+        if not _pass_score_filter(score, source):
+            log.debug("[HotSim] %s 跳过（score 质量过滤 score=%.1f）", symbol, score)
+            return
+
         self.init_from_db()
         now_iso = datetime.now(timezone.utc).isoformat()
         db = get_db()
         amount = _get_buy_amount(source, symbol)
+        tp_pct, sl_pct = _get_tp_sl(chain, source)
 
         base_row = {
             "chain": chain,
@@ -99,10 +221,10 @@ class HotSimTrader:
             "symbol": symbol or "?",
             "entry_price": price,
             "amount_usd": amount,
-            "tp_pct": TP_PCT,
-            "sl_pct": SL_PCT,
-            "tp_price": round(price * (1 + TP_PCT / 100), 12),
-            "sl_price": round(price * (1 - SL_PCT / 100), 12),
+            "tp_pct": tp_pct,
+            "sl_pct": sl_pct,
+            "tp_price": round(price * (1 + tp_pct / 100), 12),
+            "sl_price": round(price * (1 - sl_pct / 100), 12),
             "score_at_entry": score,
             "source": source,
             "status": "open",
@@ -164,12 +286,14 @@ class HotSimTrader:
             matched = True
             tp = float(pos.get("tp_price", 0))
             sl = float(pos.get("sl_price", 0))
-            entry = float(pos.get("entry_price", 0))
+            # 使用仓位自己的 tp_pct/sl_pct（每笔仓位开仓时就确定了）
+            tp_pct_row = float(pos.get("tp_pct") or TP_PCT_DEFAULT)
+            sl_pct_row = float(pos.get("sl_pct") or SL_PCT_DEFAULT)
 
             if tp > 0 and price >= tp:
-                to_close.append((pid, "tp", price, TP_PCT))
+                to_close.append((pid, "tp", price, tp_pct_row))
             elif sl > 0 and price <= sl:
-                to_close.append((pid, "sl", price, -SL_PCT))
+                to_close.append((pid, "sl", price, -sl_pct_row))
 
         if matched:
             self._price_match_count += 1

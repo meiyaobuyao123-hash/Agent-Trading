@@ -532,19 +532,21 @@ class PumpScanner:
                     }
                     pump_stats.incr("signal_entered")
                     # 模拟盘：信号池入池触发买入
+                    # pump.fun 代币 total supply 固定 10 亿（如果 f 没有这个字段用默认值）
                     try:
                         from hot_sim_trader import get_sim_trader
                         from price_feed import price_feed
                         _sol_usd = price_feed.get_major_price("SOL") or 150
                         _mc_usd = (f.market_cap_sol or 0) * _sol_usd
-                        _supply = getattr(f, 'total_supply', 0) or 0
-                        _price = _mc_usd / _supply if _supply > 0 else 0
-                        if _price > 0.0001:  # 过滤极低价垃圾币
+                        # 修复：pump.fun 代币 supply 固定 1_000_000_000
+                        _supply = getattr(f, 'total_supply', 0) or 1_000_000_000
+                        _price = _mc_usd / _supply
+                        if _price > 0:  # mcap>0 即可（极低价也应该追踪）
                             get_sim_trader().on_token_enter(
                                 address=mint, chain="solana", symbol=f.symbol,
                                 price=_price, score=result.total, source="pump")
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        log.warning("[pump sim] 触发失败 %s: %s", f.symbol, e)
                     log.info(
                         f"[信号池+] {f.symbol}({mint[:6]}…) "
                         f"score={result.total:.0f} bc={f.bc_progress:.1f}%"

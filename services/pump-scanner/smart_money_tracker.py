@@ -824,12 +824,24 @@ class SmartMoneyTracker:
                     else:
                         # 不在追踪列表，仍直接推给 sim_trader
                         sim.on_price_update(addr, price)
-                    # 聪明钱强信号触发模拟买入（heat>=15 + buyers>=3 + 去重）
-                    heat = sig.get("heat_score", 0)
-                    buyers = sig.get("unique_buyers", 0)
-                    mc = sig.get("market_cap_usd", 0)
+                    # 聪明钱强信号触发模拟买入（基于真实数据校准阈值 + 去重）
+                    # 根因：原阈值 buyers>=3 过严，实际 99% 信号 buyers 是 1-2
+                    # 改为：heat>=10 或 (elite买≥1 且 buyers>=2)，更贴合真实分布
+                    heat = sig.get("heat_score", 0) or 0
+                    buyers = sig.get("unique_buyers", 0) or 0
+                    elite_buys = sig.get("elite_buy_count", 0) or 0
+                    verified_buys = sig.get("verified_buy_count", 0) or 0
+                    mc = sig.get("market_cap_usd", 0) or 0
                     _sim_key = f"sm:{chain}:{addr}"
-                    if (heat >= 15 and buyers >= 3
+
+                    # 触发条件（满足任一）：
+                    #   A. heat_score >= 10（强信号）
+                    #   B. elite 买入 ≥ 1 且 buyers ≥ 2（精英+跟风）
+                    #   C. verified 买入 ≥ 2 且 buyers ≥ 2（多个验证钱包）
+                    cond_a = heat >= 10
+                    cond_b = elite_buys >= 1 and buyers >= 2
+                    cond_c = verified_buys >= 2 and buyers >= 2
+                    if ((cond_a or cond_b or cond_c)
                             and price > 0 and (mc <= 0 or price < mc)
                             and _sim_key not in self._sim_triggered):
                         self._sim_triggered.add(_sim_key)

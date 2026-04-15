@@ -147,6 +147,7 @@ class PumpScanner:
     # 阶段1：WS 全量捕获（零延迟，不丢弃）
     # ──────────────────────────────────────────────────
     async def _listen_new_tokens(self):
+        backoff = 1.0
         while True:
             try:
                 async with websockets.connect(
@@ -157,12 +158,22 @@ class PumpScanner:
                 ) as ws:
                     await ws.send(json.dumps({"method": "subscribeNewToken"}))
                     log.info("已订阅 newToken 事件")
-                    async for raw in ws:
+                    backoff = 1.0
+                    # 读消息超时 30s：pumpportal 正常高峰每秒多条，
+                    # 超过 30s 无消息基本是"僵死连接"，主动关闭触发重连
+                    while True:
+                        try:
+                            raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                        except asyncio.TimeoutError:
+                            log.warning("newToken WS 30s 无消息，判定僵死，主动重连")
+                            break
                         await self._on_new_token(json.loads(raw))
             except Exception as e:
                 pump_stats.incr("ws_new_reconnects")
-                log.warning(f"newToken WS 断开，5s 后重连: {e}")
-                await asyncio.sleep(5)
+                # 指数退避：1 → 2 → 4 → 8 → max 15s，减小首次断开丢数据
+                log.warning(f"newToken WS 断开，{backoff:.1f}s 后重连: {e}")
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 15)
 
     async def _on_new_token(self, evt: dict):
         if evt.get("txType") != "create":
@@ -219,6 +230,7 @@ class PumpScanner:
     # 阶段2：WS 交易监听
     # ──────────────────────────────────────────────────
     async def _listen_trades(self):
+        backoff = 1.0
         while True:
             try:
                 async with websockets.connect(
@@ -230,16 +242,19 @@ class PumpScanner:
                 ) as ws:
                     self._ws_trade = ws
                     log.info("交易 WS 已连接")
+                    backoff = 1.0
                     await asyncio.gather(
                         self._process_subscribe_queue(ws),
                         self._recv_trades(ws),
                     )
             except Exception as e:
                 pump_stats.incr("ws_trade_reconnects")
-                log.warning(f"trade WS 断开，5s 后重连: {e}")
+                # 指数退避：1 → 2 → 4 → 8 → max 15s
+                log.warning(f"trade WS 断开，{backoff:.1f}s 后重连: {e}")
                 self._ws_trade = None
                 self._subscribed.clear()
-                await asyncio.sleep(5)
+                await asyncio.sleep(backoff)
+                backoff = min(backoff * 2, 15)
 
     async def _process_subscribe_queue(self, ws):
         while True:
@@ -252,7 +267,13 @@ class PumpScanner:
                 self._subscribed.add(mint)
 
     async def _recv_trades(self, ws):
-        async for raw in ws:
+        # 60s 无消息 → 判定僵死连接，抛异常触发外层 reconnect
+        # trade WS 只推订阅代币的交易，阈值比 newToken 宽松
+        while True:
+            try:
+                raw = await asyncio.wait_for(ws.recv(), timeout=60.0)
+            except asyncio.TimeoutError:
+                raise ConnectionError("trade WS 60s 无消息，判定僵死")
             evt = json.loads(raw)
             await self._on_trade(evt)
 

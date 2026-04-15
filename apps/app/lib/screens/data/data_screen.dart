@@ -1,8 +1,11 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'hot_sim_page.dart';
 
 class DataScreen extends StatefulWidget {
@@ -14,22 +17,98 @@ class DataScreen extends StatefulWidget {
 class _DataScreenState extends State<DataScreen> {
   Map<String, dynamic>? _data;
   bool _loading = true;
+  bool _refreshing = false;
+  String? _loadError;
   int _chainTab = 0;
+  Timer? _autoRefreshTimer;
 
   static const _apiBase = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://43.156.207.26');
   static const _chainKeys = ['all', 'solana', 'bsc', 'ethereum', 'base'];
   static const _chainLabels = ['全链', 'SOL', 'BSC', 'ETH', 'Base'];
+  static const _cacheKey = 'data_screen_cache_v2';
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _loadFromCache().then((_) => _load());
+    // 每 5 分钟后台自动刷新一次，保证数据新鲜（失败也不影响显示）
+    _autoRefreshTimer = Timer.periodic(const Duration(minutes: 5), (_) => _load(silent: true));
+  }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  /// 先从本地缓存加载，保证 App 一打开就有数据
+  Future<void> _loadFromCache() async {
     try {
-      final r = await http.get(Uri.parse('$_apiBase/api/data/pnl-distribution')).timeout(const Duration(seconds: 10));
-      if (r.statusCode == 200) _data = jsonDecode(r.body);
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_cacheKey);
+      if (cached != null && cached.isNotEmpty) {
+        final data = jsonDecode(cached) as Map<String, dynamic>;
+        if (mounted) setState(() { _data = data; _loading = false; });
+      }
     } catch (_) {}
-    setState(() => _loading = false);
+  }
+
+  /// 从服务器加载，带 3 次自动重试 + 本地缓存
+  /// silent=true 时不改 loading 状态（用于后台定时刷新）
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && _data == null) {
+      setState(() { _loading = true; _loadError = null; });
+    }
+
+    Map<String, dynamic>? newData;
+    String? lastError;
+
+    // 3 次重试，超时 15s，间隔 2s
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        final r = await http
+            .get(Uri.parse('$_apiBase/api/data/pnl-distribution'))
+            .timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) {
+          newData = jsonDecode(r.body) as Map<String, dynamic>;
+          break;
+        }
+        lastError = 'HTTP ${r.statusCode}';
+      } catch (e) {
+        lastError = e.toString().split('\n').first;
+      }
+      if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+    }
+
+    if (!mounted) return;
+
+    if (newData != null) {
+      // 成功 → 更新数据并缓存到本地
+      setState(() {
+        _data = newData;
+        _loading = false;
+        _loadError = null;
+      });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_cacheKey, jsonEncode(newData));
+      } catch (_) {}
+    } else {
+      // 失败 → 保留旧数据（如果有），只显示错误标识
+      setState(() {
+        _loading = false;
+        _loadError = lastError;
+      });
+    }
+  }
+
+  /// 下拉刷新
+  Future<void> _onRefresh() async {
+    if (_refreshing) return;
+    _refreshing = true;
+    HapticFeedback.lightImpact();
+    await _load();
+    _refreshing = false;
   }
 
   // ── 设计系统 ──
@@ -48,13 +127,18 @@ class _DataScreenState extends State<DataScreen> {
     return Scaffold(
       backgroundColor: _bg,
       body: SafeArea(
-        child: _loading
+        child: _loading && _data == null
             ? const Center(child: CupertinoActivityIndicator())
             : _data == null
-                ? Center(child: CupertinoButton(onPressed: _load, child: const Text('重试')))
-                : CustomScrollView(
+                ? _buildEmptyState()
+                : RefreshIndicator(
+                    onRefresh: _onRefresh,
+                    color: _blue,
+                    child: CustomScrollView(
+                    physics: const AlwaysScrollableScrollPhysics(),
                     slivers: [
                       CupertinoSliverNavigationBar(largeTitle: const Text('数据'), backgroundColor: _bg.withOpacity(0.9), border: null),
+                      if (_loadError != null) SliverToBoxAdapter(child: _buildOfflineBanner()),
                       SliverToBoxAdapter(child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -95,6 +179,63 @@ class _DataScreenState extends State<DataScreen> {
                       )),
                     ],
                   ),
+                  ),
+      ),
+    );
+  }
+
+  /// 首次加载失败（无缓存）— 显示友好的空状态
+  Widget _buildEmptyState() {
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: _blue,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 200),
+          Icon(CupertinoIcons.wifi_exclamationmark, size: 56, color: _t4),
+          const SizedBox(height: 16),
+          Center(child: Text('暂时无法加载数据', style: TextStyle(fontSize: 15, color: _t2, fontWeight: FontWeight.w600))),
+          const SizedBox(height: 8),
+          Center(child: Text('下拉刷新重试', style: TextStyle(fontSize: 13, color: _t3))),
+          const SizedBox(height: 24),
+          Center(
+            child: CupertinoButton(
+              color: _blue,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+              borderRadius: BorderRadius.circular(20),
+              onPressed: _loading ? null : _load,
+              child: _loading
+                  ? const CupertinoActivityIndicator(color: Colors.white)
+                  : const Text('重新加载', style: TextStyle(fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 有缓存数据但本次刷新失败 — 显示顶部小横幅，不影响内容展示
+  Widget _buildOfflineBanner() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3CD),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFFE69C), width: 0.5),
+      ),
+      child: Row(
+        children: [
+          Icon(CupertinoIcons.wifi_slash, size: 14, color: const Color(0xFF856404)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '当前为缓存数据，下拉刷新',
+              style: TextStyle(fontSize: 12, color: const Color(0xFF856404)),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -1035,28 +1035,86 @@ class SmartMoneyTracker:
     # 聚合窗口：用最近 6h 的 txns 计算 unique_buyers 等
     _SIGNAL_AGG_WINDOW_HOURS = 6
 
-    def _recompute_signal_from_txns(self, sig: Dict[str, Any]) -> None:
-        """从 smart_money_txns 表查最近 N 小时数据，重算 sig 的统计字段
+    def _batch_fetch_txns_for_signals(
+        self, signals: List[Dict[str, Any]]
+    ) -> Dict[tuple, List[Dict[str, Any]]]:
+        """一次性查所有 signals 涉及 (chain, token_address) 的 6h 窗 txns。
+
+        性能修复：原逐条 `_recompute_signal_from_txns` 对每条 signal 单独查 DB，
+        热代币每秒多次调用 → Supabase QPS 飙升。改为一批 signals 一次拉完。
+        返回: {(chain, token_address): [txn, ...]}
+        """
+        result: Dict[tuple, List[Dict[str, Any]]] = {}
+        if not signals:
+            return result
+
+        try:
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            cutoff = (_dt.now(_tz.utc) - _td(hours=self._SIGNAL_AGG_WINDOW_HOURS)).isoformat()
+
+            # 按链分组查询（avoid 超大 IN 列表）
+            by_chain: Dict[str, List[str]] = defaultdict(list)
+            for s in signals:
+                ch = s.get("chain"); ta = s.get("token_address")
+                if ch and ta:
+                    by_chain[ch].append(ta)
+
+            for chain, addrs in by_chain.items():
+                # 去重，避免重复查询
+                uniq = list(dict.fromkeys(addrs))
+                # Supabase in_ 列表建议 <= 100/批，分批
+                for i in range(0, len(uniq), 100):
+                    batch = uniq[i:i + 100]
+                    try:
+                        res = (
+                            self.db.table("smart_money_txns")
+                            .select("chain,token_address,wallet_address,wallet_tier,tx_type,volume_usd")
+                            .eq("chain", chain)
+                            .in_("token_address", batch)
+                            .gte("tx_time", cutoff)
+                            .limit(5000)
+                            .execute()
+                        )
+                        for t in (res.data or []):
+                            key = (t.get("chain"), t.get("token_address"))
+                            result.setdefault(key, []).append(t)
+                    except Exception as e:
+                        logger.debug("[SM] batch fetch %s [%d,%d): %s", chain, i, i + len(batch), e)
+        except Exception as e:
+            logger.warning("[SM] batch fetch txns failed: %s", e)
+
+        return result
+
+    def _recompute_signal_from_txns(
+        self,
+        sig: Dict[str, Any],
+        txns: Optional[List[Dict[str, Any]]] = None,
+    ) -> None:
+        """从 smart_money_txns 数据重算 sig 的窗口聚合统计字段。
 
         修复根因：原 _aggregate 每次只处理 1 个 wallet 的 txs（WS 单笔触发），
         upsert 时按 (chain, token_address) 冲突 → 后写覆盖前面所有数据，
         导致 unique_buyers 永远 = 1。
 
-        正确做法：按时间窗口从 txns 表 SELECT 所有交易，应用层去重计算。
+        正确做法：按时间窗口从 txns 表查所有交易，应用层去重计算。
+        新版接受外部传入的已查 txns（批量模式），无则回退 DB 单查（兼容老调用）。
         """
         try:
-            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
-            cutoff = (_dt.now(_tz.utc) - _td(hours=self._SIGNAL_AGG_WINDOW_HOURS)).isoformat()
-            res = (self.db.table("smart_money_txns")
-                   .select("wallet_address,wallet_tier,tx_type,volume_usd")
-                   .eq("chain", sig["chain"])
-                   .eq("token_address", sig["token_address"])
-                   .gte("tx_time", cutoff)
-                   .limit(1000)
-                   .execute())
-            txns = res.data or []
+            if txns is None:
+                # 兜底：单条查询（仅 legacy 路径会走到）
+                from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+                cutoff = (_dt.now(_tz.utc) - _td(hours=self._SIGNAL_AGG_WINDOW_HOURS)).isoformat()
+                res = (self.db.table("smart_money_txns")
+                       .select("wallet_address,wallet_tier,tx_type,volume_usd")
+                       .eq("chain", sig["chain"])
+                       .eq("token_address", sig["token_address"])
+                       .gte("tx_time", cutoff)
+                       .limit(1000)
+                       .execute())
+                txns = res.data or []
+
             if not txns:
-                return  # 保留 _aggregate 计算的原值
+                return  # 保留原值
 
             buyers, sellers = set(), set()
             buy_count = sell_count = 0
@@ -1123,9 +1181,14 @@ class SmartMoneyTracker:
     def _upsert_signals(self, signals: List[Dict[str, Any]]):
         now = datetime.now(timezone.utc).isoformat()
         _i = self._to_int  # 简写
+
+        # 批量拉 6h 窗 txns，整批 signals 共享这次查询（性能修复：N round-trip → 1）
+        txns_by_key = self._batch_fetch_txns_for_signals(signals)
+
         for sig in signals:
-            # 写入前从 txns 表查真实窗口聚合（修复 unique_buyers 覆盖 bug）
-            self._recompute_signal_from_txns(sig)
+            # 写入前用窗口聚合重算（修复 unique_buyers 覆盖 bug）
+            key = (sig.get("chain"), sig.get("token_address"))
+            self._recompute_signal_from_txns(sig, txns=txns_by_key.get(key, []))
             row = {
                 "chain": sig["chain"],
                 "token_address": sig["token_address"],

@@ -262,16 +262,22 @@ class BtcEthManager:
         await asyncio.sleep(120)
 
         # 等待指标齐全（最多等 10 分钟）
+        # 三项齐全才能判定就绪：
+        #   1) WS 价格已喂入（price_usd > 0）
+        #   2) 技术指标已计算（rsi_14 非 None）
+        #   3) REST 采集至少成功一轮（_last_success 非 None）
+        # 加第 3 条避免 "WS 有价但 REST 指标缺" 时的误信号
         max_warmup = 600
         elapsed = 0
         while self._running and elapsed < max_warmup:
+            rest_ready = self._binance_rest._last_success is not None
             ready = []
             for asset in ("BTC", "ETH"):
                 s = self._indicator_engine.get_snapshot(asset)
                 if s and s.get("price_usd", 0) > 0 and s.get("rsi_14") is not None:
                     ready.append(asset)
-            if len(ready) == 2:
-                log.info("[BTC/ETH] 指标预热完成，信号循环启动（每 %ds 检查）", INTERVAL_SIGNAL)
+            if len(ready) == 2 and rest_ready:
+                log.info("[BTC/ETH] 指标预热完成（含 REST），信号循环启动（每 %ds）", INTERVAL_SIGNAL)
                 break
             await asyncio.sleep(30)
             elapsed += 30

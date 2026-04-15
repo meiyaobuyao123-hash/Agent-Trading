@@ -159,14 +159,14 @@ class PumpScanner:
                     await ws.send(json.dumps({"method": "subscribeNewToken"}))
                     log.info("已订阅 newToken 事件")
                     backoff = 1.0
-                    # 读消息超时 30s：pumpportal 正常高峰每秒多条，
-                    # 超过 30s 无消息基本是"僵死连接"，抛异常让外层 except 统一处理
-                    # （计数、退避、日志都走同一路径，便于观测）
+                    # 读消息超时 15s：pumpportal 高峰每秒多条 create，
+                    # 15s 无消息基本是僵死连接，更短的超时能缩小数据丢失窗口
+                    # 抛异常让外层 except 统一处理（计数、退避、日志同一路径）
                     while True:
                         try:
-                            raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
+                            raw = await asyncio.wait_for(ws.recv(), timeout=15.0)
                         except asyncio.TimeoutError:
-                            raise ConnectionError("newToken WS 30s 无消息，判定僵死")
+                            raise ConnectionError("newToken WS 15s 无消息，判定僵死")
                         await self._on_new_token(json.loads(raw))
             except Exception as e:
                 pump_stats.incr("ws_new_reconnects")

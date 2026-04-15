@@ -118,11 +118,17 @@ class ProactiveScanner:
         results: List[Dict[str, Any]] = []
 
         try:
+            # FIX（2026-04-15）：原查询无 wallet_tier 过滤。
+            # 之前 EVM Group B 全挂 → watching 几乎 0 交易，此查询"意外正确"。
+            # 修复后 watching 24h 涌入 200+ 钱包/1000+ 笔 txns，
+            # 会被错记为 elite_buy_count，淹没真正的 elite 同步买入信号。
+            # 这里只信 elite + verified 两层。
             res = (
                 get_db()
                 .table("smart_money_txns")
-                .select("token_address, token_symbol, chain, wallet_address")
+                .select("token_address, token_symbol, chain, wallet_address, wallet_tier")
                 .eq("action", "buy")
+                .in_("wallet_tier", ["elite", "verified"])
                 .gte("created_at", cutoff)
                 .execute()
             )
@@ -141,9 +147,16 @@ class ProactiveScanner:
                     "token_symbol": tx.get("token_symbol", ""),
                     "chain": tx.get("chain", ""),
                     "wallets": set(),
+                    "tier_counts": {"elite": 0, "verified": 0},
                     "source_type": "smart_money",
                 }
-            token_buys[addr]["wallets"].add(tx.get("wallet_address", ""))
+            w = tx.get("wallet_address", "")
+            tier = tx.get("wallet_tier", "")
+            # 同一钱包多笔只计一次 unique
+            if w and w not in token_buys[addr]["wallets"]:
+                token_buys[addr]["wallets"].add(w)
+                if tier in token_buys[addr]["tier_counts"]:
+                    token_buys[addr]["tier_counts"][tier] += 1
 
         for addr, info in token_buys.items():
             if len(info["wallets"]) >= 2:
@@ -153,9 +166,16 @@ class ProactiveScanner:
                     "chain": info.get("chain", ""),
                     "source_type": "smart_money",
                     "score": min(len(info["wallets"]) * 25, 100),
-                    "reason": f"{len(info['wallets'])} 个聪明钱钱包在 2h 内买入",
+                    "reason": (
+                        f"{len(info['wallets'])} 个聪明钱钱包在 2h 内买入"
+                        f" (elite:{info['tier_counts']['elite']}, "
+                        f"verified:{info['tier_counts']['verified']})"
+                    ),
                     "context": {
-                        "elite_buy_count": len(info["wallets"]),
+                        # 语义正确的新字段名
+                        "smart_buy_count": len(info["wallets"]),
+                        "elite_buy_count": info["tier_counts"]["elite"],
+                        "verified_buy_count": info["tier_counts"]["verified"],
                     },
                 })
 

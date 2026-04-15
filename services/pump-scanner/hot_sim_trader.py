@@ -272,15 +272,20 @@ class HotSimTrader:
             return
 
         key = f"{source}:{chain}:{address}"
-        if key not in self._bought_unique:
-            try:
-                row_unique = {**base_row, "mode": "unique"}
-                res = db.table("hot_sim_trades").insert(row_unique).execute()
-                if res.data:
-                    self._open_positions[res.data[0]["id"]] = res.data[0]
-                self._bought_unique.add(key)
-            except Exception as e:
-                log.debug("[HotSim] unique insert: %s", e)
+        # 原子化：先占位，写入失败回滚。防止两个信号源（hot + smart_money）
+        # 并发触发同代币时穿过检查、双重插入。
+        if key in self._bought_unique:
+            return
+        self._bought_unique.add(key)
+        try:
+            row_unique = {**base_row, "mode": "unique"}
+            res = db.table("hot_sim_trades").insert(row_unique).execute()
+            if res.data:
+                self._open_positions[res.data[0]["id"]] = res.data[0]
+        except Exception as e:
+            # 失败回滚占位，允许下次重试
+            self._bought_unique.discard(key)
+            log.debug("[HotSim] unique insert: %s", e)
 
     def on_price_update(self, address: str, price: float):
         """价格更新时检查止盈止损"""

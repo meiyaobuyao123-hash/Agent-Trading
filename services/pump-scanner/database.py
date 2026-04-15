@@ -216,17 +216,38 @@ def get_smart_wallet_tiers() -> dict:
     加载聪明钱分级数据
     返回: {wallet_address: tier_str}
     tier: 'elite' | 'verified' | 'watching'（黑名单不返回）
+
+    FIX（2026-04-15）：Supabase PostgREST 单次查询默认截断 1000 行，
+    之前只加载了 3.9% (1000/25862) 的钱包，导致 pump.fun 端 smart_money
+    匹配率接近 0%。现用 range() 分页加载全部。
     """
+    PAGE = 1000
+    result: dict = {}
+    offset = 0
     try:
-        res = (
-            get_db()
-            .table("smart_wallets")
-            .select("wallet, tier")
-            .eq("is_blacklisted", False)
-            .in_("tier", ["elite", "verified", "watching"])
-            .execute()
-        )
-        return {r["wallet"]: r["tier"] for r in res.data}
+        db = get_db()
+        while True:
+            res = (
+                db.table("smart_wallets")
+                .select("wallet, tier")
+                .eq("is_blacklisted", False)
+                .in_("tier", ["elite", "verified", "watching"])
+                .range(offset, offset + PAGE - 1)
+                .execute()
+            )
+            batch = res.data or []
+            if not batch:
+                break
+            for r in batch:
+                result[r["wallet"]] = r["tier"]
+            if len(batch) < PAGE:
+                break
+            offset += PAGE
+        if not result:
+            log.warning("get_smart_wallet_tiers: 返回 0 个钱包（可能 DB 连接或过滤异常）")
+        else:
+            log.info("get_smart_wallet_tiers: 加载 %d 个钱包", len(result))
+        return result
     except Exception as e:
         log.error(f"get_smart_wallet_tiers error: {e}")
-        return {}
+        return result  # 返回已经拿到的部分，比返回空更好

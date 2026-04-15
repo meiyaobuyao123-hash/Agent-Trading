@@ -160,13 +160,13 @@ class PumpScanner:
                     log.info("已订阅 newToken 事件")
                     backoff = 1.0
                     # 读消息超时 30s：pumpportal 正常高峰每秒多条，
-                    # 超过 30s 无消息基本是"僵死连接"，主动关闭触发重连
+                    # 超过 30s 无消息基本是"僵死连接"，抛异常让外层 except 统一处理
+                    # （计数、退避、日志都走同一路径，便于观测）
                     while True:
                         try:
                             raw = await asyncio.wait_for(ws.recv(), timeout=30.0)
                         except asyncio.TimeoutError:
-                            log.warning("newToken WS 30s 无消息，判定僵死，主动重连")
-                            break
+                            raise ConnectionError("newToken WS 30s 无消息，判定僵死")
                         await self._on_new_token(json.loads(raw))
             except Exception as e:
                 pump_stats.incr("ws_new_reconnects")

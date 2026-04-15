@@ -195,25 +195,39 @@ class SmartMoneyTracker:
             "SOL DEX Monitor: watching %d programs, matching %d wallets",
             len(self._SOL_DEX_PROGRAMS), len(self._sol_wallet_set),
         )
-        backoff = 5
+        # backoff 状态用 list 包一层，让 _connect_sol_dex_ws 可以回写重置
+        backoff_state = [5]
         while self._running:
             try:
-                await self._connect_sol_dex_ws()
-                backoff = 5
+                await self._connect_sol_dex_ws(backoff_state)
+                backoff_state[0] = 5
             except Exception as e:
                 # Helius 免费版 429 需要更长冷却（10 分钟级），普通错误保持 120s
-                err_str = str(e)
-                is_429 = "429" in err_str or "rejected" in err_str.lower() or "rate" in err_str.lower()
+                # 紧缩匹配：避免 "rate" 子串误命中 "operate"/"generate" 等
+                err_str = str(e).lower()
+                is_429 = (
+                    "429" in err_str
+                    or "rate limit" in err_str
+                    or "rate-limit" in err_str
+                    or "rejected" in err_str
+                    or "too many request" in err_str
+                )
                 max_backoff = 600 if is_429 else 120
+                cur = backoff_state[0]
                 logger.warning(
                     "SOL DEX WS disconnected: %s, reconnect in %ds (max=%ds, 429=%s)",
-                    e, backoff, max_backoff, is_429,
+                    e, cur, max_backoff, is_429,
                 )
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, max_backoff)
+                await asyncio.sleep(cur)
+                backoff_state[0] = min(cur * 2, max_backoff)
 
-    async def _connect_sol_dex_ws(self):
-        """订阅 DEX 程序的 logsSubscribe，解析每笔 swap"""
+    async def _connect_sol_dex_ws(self, backoff_state: Optional[List[int]] = None):
+        """订阅 DEX 程序的 logsSubscribe，解析每笔 swap
+
+        backoff_state: 调用方传入的 [int] 包装，用于"连接稳定 60s 后重置"。
+        """
+        connect_t = time.monotonic()
+        reset_done = False
         async with websockets.connect(
             _HELIUS_WS,
             ping_interval=30,
@@ -238,6 +252,13 @@ class SmartMoneyTracker:
             async for raw in ws:
                 if not self._running:
                     break
+                # 连接稳定 60s 后重置 backoff（_connect_sol_dex_ws 不会正常返回，
+                # 所以必须在这里重置，否则 backoff 只增不减）
+                if not reset_done and backoff_state is not None and (time.monotonic() - connect_t) >= 60:
+                    if backoff_state[0] != 5:
+                        logger.info("SOL DEX WS stable 60s, backoff reset %d→5", backoff_state[0])
+                    backoff_state[0] = 5
+                    reset_done = True
                 try:
                     msg = json.loads(raw)
                 except Exception:
@@ -446,18 +467,21 @@ class SmartMoneyTracker:
 
     async def _monitor_evm_chain(self, chain: str, ws_url: str):
         """单链 DEX Swap 事件监控"""
-        backoff = 5
+        backoff_state = [5]
         while self._running:
             try:
-                await self._connect_evm_dex_ws(chain, ws_url)
-                backoff = 5
+                await self._connect_evm_dex_ws(chain, ws_url, backoff_state)
+                backoff_state[0] = 5
             except Exception as e:
-                logger.warning("EVM DEX WS %s disconnected: %s, reconnect in %ds", chain, e, backoff)
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 120)
+                cur = backoff_state[0]
+                logger.warning("EVM DEX WS %s disconnected: %s, reconnect in %ds", chain, e, cur)
+                await asyncio.sleep(cur)
+                backoff_state[0] = min(cur * 2, 120)
 
-    async def _connect_evm_dex_ws(self, chain: str, ws_url: str):
+    async def _connect_evm_dex_ws(self, chain: str, ws_url: str, backoff_state: Optional[List[int]] = None):
         """订阅 EVM 链上 Swap 事件 log"""
+        connect_t = time.monotonic()
+        reset_done = False
         async with websockets.connect(
             ws_url,
             ping_interval=30,
@@ -480,6 +504,12 @@ class SmartMoneyTracker:
             async for raw in ws:
                 if not self._running:
                     break
+                # 连接稳定 60s 后重置 backoff（异常中断场景里 backoff 只增不减）
+                if not reset_done and backoff_state is not None and (time.monotonic() - connect_t) >= 60:
+                    if backoff_state[0] != 5:
+                        logger.info("EVM DEX WS %s stable 60s, backoff reset %d→5", chain, backoff_state[0])
+                    backoff_state[0] = 5
+                    reset_done = True
                 try:
                     msg = json.loads(raw)
                 except Exception:

@@ -485,7 +485,12 @@ def _evaluate_top_holders(db):
             wallet_lower = wallet.lower()
             current_tier = existing.get(wallet_lower)
 
-            if count >= 3 and current_tier != "elite":
+            # 已 elite 或已 blacklisted 一律跳过 — 不能用 holder count 解除黑名单，
+            # 也不能用它降 elite
+            if current_tier in ("elite", "blacklisted"):
+                continue
+
+            if count >= 3:
                 new_tier = "verified"
             elif count >= 1 and current_tier is None:
                 new_tier = "watching"
@@ -495,10 +500,7 @@ def _evaluate_top_holders(db):
             # count 是"出现在好代币的次数"，不是真实交易数 —
             # 不要写入 total_trades / win_trades，防止 v3 评估误以为有真交易
             try:
-                res = db.table("smart_wallets").select("wallet").eq(
-                    "wallet", wallet
-                ).limit(1).execute()
-                if res.data:
+                if current_tier is not None:
                     # 已存在：只更新 tier + last_seen，不覆盖真实交易数
                     db.table("smart_wallets").update({
                         "tier": new_tier,
@@ -514,8 +516,8 @@ def _evaluate_top_holders(db):
                         "is_blacklisted": False,
                     }).execute()
                 promoted += 1
-            except Exception:
-                pass
+            except Exception as e:
+                log.debug(f"[TopHolder晋升] 跳过 {wallet[:8]}…: {e}")
 
         log.info(f"[TopHolder晋升] 好代币 {len(good_tokens)} 个，新增/升级 {promoted} 个聪明钱")
 

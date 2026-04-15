@@ -831,8 +831,11 @@ class SmartMoneyTracker:
             else:
                 txn.pop("_token_qty", None)
 
-        self._upsert_signals(list(signals.values()))
+        # 注意：先写 txns，后写 signals。
+        # 因为 _upsert_signals 内部会从 txns 表 SELECT 真实窗口聚合（修复 unique_buyers bug），
+        # 必须确保当前批次的 txns 已写入，否则会少算最新数据。
         self._upsert_txns(txns)
+        self._upsert_signals(list(signals.values()))
         self._cleanup_old_txns()
 
         # 实时 bot 检测：同代币60秒内买卖 → 立即黑名单
@@ -976,12 +979,92 @@ class SmartMoneyTracker:
         return "weak"
 
     # ──────────────────────────────────────────────
+    # 信号统计重算（修复 unique_buyers 永远=1 的 bug）
+    # ──────────────────────────────────────────────
+
+    # 聚合窗口：用最近 6h 的 txns 计算 unique_buyers 等
+    _SIGNAL_AGG_WINDOW_HOURS = 6
+
+    def _recompute_signal_from_txns(self, sig: Dict[str, Any]) -> None:
+        """从 smart_money_txns 表查最近 N 小时数据，重算 sig 的统计字段
+
+        修复根因：原 _aggregate 每次只处理 1 个 wallet 的 txs（WS 单笔触发），
+        upsert 时按 (chain, token_address) 冲突 → 后写覆盖前面所有数据，
+        导致 unique_buyers 永远 = 1。
+
+        正确做法：按时间窗口从 txns 表 SELECT 所有交易，应用层去重计算。
+        """
+        try:
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+            cutoff = (_dt.now(_tz.utc) - _td(hours=self._SIGNAL_AGG_WINDOW_HOURS)).isoformat()
+            res = (self.db.table("smart_money_txns")
+                   .select("wallet_address,wallet_tier,tx_type,volume_usd")
+                   .eq("chain", sig["chain"])
+                   .eq("token_address", sig["token_address"])
+                   .gte("tx_time", cutoff)
+                   .limit(1000)
+                   .execute())
+            txns = res.data or []
+            if not txns:
+                return  # 保留 _aggregate 计算的原值
+
+            buyers, sellers = set(), set()
+            buy_count = sell_count = 0
+            buy_vol = sell_vol = 0.0
+            elite_buy = elite_sell = 0
+            verified_buy = verified_sell = 0
+
+            for t in txns:
+                w = t.get("wallet_address", "")
+                tier = t.get("wallet_tier", "watching")
+                vol = float(t.get("volume_usd") or 0)
+                if t.get("tx_type") == "buy":
+                    buy_count += 1
+                    buy_vol += vol
+                    if w:
+                        buyers.add(w)
+                    if tier == "elite":
+                        elite_buy += 1
+                    elif tier == "verified":
+                        verified_buy += 1
+                else:
+                    sell_count += 1
+                    sell_vol += vol
+                    if w:
+                        sellers.add(w)
+                    if tier == "elite":
+                        elite_sell += 1
+                    elif tier == "verified":
+                        verified_sell += 1
+
+            # 用真实窗口数据覆盖
+            sig["unique_buyers"] = len(buyers)
+            sig["unique_sellers"] = len(sellers)
+            sig["buy_count"] = buy_count
+            sig["sell_count"] = sell_count
+            sig["buy_volume"] = round(buy_vol, 2)
+            sig["sell_volume"] = round(sell_vol, 2)
+            sig["elite_buy_count"] = elite_buy
+            sig["elite_sell_count"] = elite_sell
+            sig["verified_buy_count"] = verified_buy
+            sig["verified_sell_count"] = verified_sell
+            sig["net_flow"] = round(buy_vol - sell_vol, 2)
+            # 重算 heat 和 strength（依赖 unique_buyers）
+            sig["heat_score"] = self._calc_heat_score(sig)
+            sig["signal_strength"] = self._calc_strength(sig)
+        except Exception as e:
+            logger.debug("[SM] recompute %s:%s 失败: %s",
+                         sig.get("chain"), sig.get("token_address", "")[:10], e)
+
+    # ──────────────────────────────────────────────
     # DB 写入
     # ──────────────────────────────────────────────
 
     def _upsert_signals(self, signals: List[Dict[str, Any]]):
         now = datetime.now(timezone.utc).isoformat()
         for sig in signals:
+            # 写入前从 txns 表查真实窗口聚合（修复 unique_buyers 覆盖 bug）
+            self._recompute_signal_from_txns(sig)
             row = {
                 "chain": sig["chain"],
                 "token_address": sig["token_address"],

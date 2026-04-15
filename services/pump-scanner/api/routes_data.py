@@ -9,6 +9,8 @@
 from fastapi import APIRouter
 from datetime import datetime
 
+from api._cache import cached
+
 router = APIRouter(prefix="/api/data", tags=["data"])
 
 
@@ -129,6 +131,7 @@ _CHAIN_PNL = {
 
 
 @router.get("/pnl-distribution")
+@cached(ttl=300)  # 5分钟缓存 — Dune 数据每周才变，数据看板不需要实时
 async def get_pnl_distribution():
     """全链 + 分链交易者盈亏分布"""
     return {
@@ -139,6 +142,7 @@ async def get_pnl_distribution():
 
 
 @router.get("/pnl-distribution/{chain}")
+@cached(ttl=300)  # 5分钟缓存
 async def get_chain_pnl(chain: str):
     """单链交易者盈亏分布"""
     data = _CHAIN_PNL.get(chain)

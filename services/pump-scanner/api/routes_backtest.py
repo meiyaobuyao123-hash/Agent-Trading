@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query
 from database import get_db
+from api._cache import cached
 
 router = APIRouter(prefix="/api/data", tags=["data-sim"])
 log = logging.getLogger(__name__)
@@ -73,6 +74,7 @@ def _get_stats(mode: str, source: str = "") -> dict:
 
 
 @router.get("/hot-sim")
+@cached(ttl=60)  # 1分钟缓存 — 统计看板，不需要实时
 async def hot_sim(
     mode: str = Query("repeat", regex="^(repeat|unique)$"),
     source: str = Query("", regex="^(|hot|smart_money|pump|btc_eth)$"),
@@ -81,6 +83,7 @@ async def hot_sim(
 
 
 @router.get("/hot-sim/compare")
+@cached(ttl=60)  # 1分钟缓存 — 策略监控看板
 async def hot_sim_compare(source: str = Query("", regex="^(|hot|smart_money|pump|btc_eth)$")):
     return {
         "repeat": _get_stats("repeat", source),

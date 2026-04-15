@@ -339,6 +339,7 @@ def run_smart_wallet_updater():
         elif (total_score >= ELITE_TOTAL
               and s_win >= ELITE_WIN_MIN
               and s_pnl >= ELITE_PNL_MIN
+              and total_trades >= MIN_TRADES_FOR_SCORE  # 硬性门槛：至少 5 笔真实交易
               and wallet not in bot_wallets):
             tier = "elite"
             row["is_blacklisted"] = False
@@ -491,18 +492,27 @@ def _evaluate_top_holders(db):
             else:
                 continue
 
+            # count 是"出现在好代币的次数"，不是真实交易数 —
+            # 不要写入 total_trades / win_trades，防止 v3 评估误以为有真交易
             try:
-                db.table("smart_wallets").upsert({
-                    "wallet": wallet,
-                    "tier": new_tier,
-                    "total_trades": count,
-                    "win_trades": count,
-                    "total_sol_in": 0,
-                    "avg_entry_bc": 0,
-                    "active_weeks": 1,
-                    "last_seen": now_iso,
-                    "is_blacklisted": False,
-                }, on_conflict="wallet").execute()
+                res = db.table("smart_wallets").select("wallet").eq(
+                    "wallet", wallet
+                ).limit(1).execute()
+                if res.data:
+                    # 已存在：只更新 tier + last_seen，不覆盖真实交易数
+                    db.table("smart_wallets").update({
+                        "tier": new_tier,
+                        "last_seen": now_iso,
+                    }).eq("wallet", wallet).execute()
+                else:
+                    # 新钱包：插入空壳记录，total_trades 留给 v3 评估器从 txns 实算
+                    db.table("smart_wallets").insert({
+                        "wallet": wallet,
+                        "tier": new_tier,
+                        "active_weeks": 1,
+                        "last_seen": now_iso,
+                        "is_blacklisted": False,
+                    }).execute()
                 promoted += 1
             except Exception:
                 pass

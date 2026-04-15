@@ -13,6 +13,7 @@ import base64
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Set
+from collections import defaultdict
 
 import aiohttp
 import websockets
@@ -200,14 +201,27 @@ class SmartMoneyTracker:
                 await self._connect_sol_dex_ws()
                 backoff = 5
             except Exception as e:
-                logger.warning("SOL DEX WS disconnected: %s, reconnect in %ds", e, backoff)
+                # Helius 免费版 429 需要更长冷却（10 分钟级），普通错误保持 120s
+                err_str = str(e)
+                is_429 = "429" in err_str or "rejected" in err_str.lower() or "rate" in err_str.lower()
+                max_backoff = 600 if is_429 else 120
+                logger.warning(
+                    "SOL DEX WS disconnected: %s, reconnect in %ds (max=%ds, 429=%s)",
+                    e, backoff, max_backoff, is_429,
+                )
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 120)
+                backoff = min(backoff * 2, max_backoff)
 
     async def _connect_sol_dex_ws(self):
         """订阅 DEX 程序的 logsSubscribe，解析每笔 swap"""
-        async with websockets.connect(_HELIUS_WS, ping_interval=20, max_size=2**20) as ws:
-            # 每个 DEX 程序一个 logsSubscribe
+        async with websockets.connect(
+            _HELIUS_WS,
+            ping_interval=30,
+            ping_timeout=15,
+            close_timeout=5,
+            max_size=2**20,
+        ) as ws:
+            # 每个 DEX 程序一个 logsSubscribe — 间隔 1s 避免 Helius 免费版 429 burst
             for i, program_id in enumerate(self._SOL_DEX_PROGRAMS):
                 await ws.send(json.dumps({
                     "jsonrpc": "2.0",
@@ -218,7 +232,7 @@ class SmartMoneyTracker:
                         {"commitment": "processed"},
                     ],
                 }))
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(1.0)
             logger.info("SOL DEX WS: %d program subscriptions sent", len(self._SOL_DEX_PROGRAMS))
 
             async for raw in ws:
@@ -444,7 +458,13 @@ class SmartMoneyTracker:
 
     async def _connect_evm_dex_ws(self, chain: str, ws_url: str):
         """订阅 EVM 链上 Swap 事件 log"""
-        async with websockets.connect(ws_url, ping_interval=20, max_size=2**20) as ws:
+        async with websockets.connect(
+            ws_url,
+            ping_interval=30,
+            ping_timeout=15,
+            close_timeout=5,
+            max_size=2**20,
+        ) as ws:
             # 订阅 Swap 事件 (V2 + V3)
             sub_msg = json.dumps({
                 "jsonrpc": "2.0",
@@ -1060,8 +1080,19 @@ class SmartMoneyTracker:
     # DB 写入
     # ──────────────────────────────────────────────
 
+    @staticmethod
+    def _to_int(v) -> int:
+        """安全转 int — DB integer 列不接受 float 字符串"""
+        try:
+            if v is None:
+                return 0
+            return int(round(float(v)))
+        except (ValueError, TypeError):
+            return 0
+
     def _upsert_signals(self, signals: List[Dict[str, Any]]):
         now = datetime.now(timezone.utc).isoformat()
+        _i = self._to_int  # 简写
         for sig in signals:
             # 写入前从 txns 表查真实窗口聚合（修复 unique_buyers 覆盖 bug）
             self._recompute_signal_from_txns(sig)
@@ -1070,18 +1101,19 @@ class SmartMoneyTracker:
                 "token_address": sig["token_address"],
                 "token_name": sig.get("token_name", ""),
                 "token_symbol": sig.get("token_symbol", ""),
-                "buy_count": sig.get("buy_count", 0),
-                "sell_count": sig.get("sell_count", 0),
-                "buy_volume": sig.get("buy_volume", 0),
-                "sell_volume": sig.get("sell_volume", 0),
-                "unique_buyers": sig.get("unique_buyers", 0),
-                "unique_sellers": sig.get("unique_sellers", 0),
-                "elite_buy_count": sig.get("elite_buy_count", 0),
-                "elite_sell_count": sig.get("elite_sell_count", 0),
-                "verified_buy_count": sig.get("verified_buy_count", 0),
-                "verified_sell_count": sig.get("verified_sell_count", 0),
-                "heat_score": sig.get("heat_score", 0),
-                "net_flow": sig.get("net_flow", 0),
+                # ── DB 是 integer 类型的字段，强制转 int 防止 "invalid input syntax for type integer" ──
+                "buy_count": _i(sig.get("buy_count", 0)),
+                "sell_count": _i(sig.get("sell_count", 0)),
+                "buy_volume": _i(sig.get("buy_volume", 0)),
+                "sell_volume": _i(sig.get("sell_volume", 0)),
+                "unique_buyers": _i(sig.get("unique_buyers", 0)),
+                "unique_sellers": _i(sig.get("unique_sellers", 0)),
+                "elite_buy_count": _i(sig.get("elite_buy_count", 0)),
+                "elite_sell_count": _i(sig.get("elite_sell_count", 0)),
+                "verified_buy_count": _i(sig.get("verified_buy_count", 0)),
+                "verified_sell_count": _i(sig.get("verified_sell_count", 0)),
+                "heat_score": _i(sig.get("heat_score", 0)),
+                "net_flow": _i(sig.get("net_flow", 0)),
                 "signal_strength": sig.get("signal_strength", "weak"),
                 "price_usd": sig.get("price_usd", 0),
                 "market_cap_usd": sig.get("market_cap_usd", 0),

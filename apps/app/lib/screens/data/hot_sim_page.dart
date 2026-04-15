@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
 
 class HotSimPage extends StatefulWidget {
@@ -13,12 +16,15 @@ class HotSimPage extends StatefulWidget {
 class _HotSimPageState extends State<HotSimPage> {
   Map<String, dynamic>? _data;
   bool _loading = true;
+  String? _loadError;
   int _sourceTab = 0; // 0=全部, 1=热币, 2=聪明钱, 3=新币, 4=BTC/ETH
   int _modeTab = 0;   // 0=repeat, 1=unique
+  Timer? _autoRefreshTimer;
 
   static const _apiBase = String.fromEnvironment('API_BASE_URL', defaultValue: 'http://43.156.207.26');
   static const _sourceKeys = ['', 'hot', 'smart_money', 'pump', 'btc_eth'];
   static const _sourceLabels = ['全部', '热币', '聪明钱', '新币', 'BTC/ETH'];
+  static const _cachePrefix = 'hot_sim_cache_v1_';
 
   static const _t1 = Color(0xFF000000);
   static const _t2 = Color(0xFF3C3C43);
@@ -30,19 +36,82 @@ class _HotSimPageState extends State<HotSimPage> {
   static const _red = Color(0xFFFF3B30);
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _loadFromCache().then((_) => _load());
+    _autoRefreshTimer = Timer.periodic(const Duration(minutes: 2), (_) => _load(silent: true));
+  }
 
-  Future<void> _load() async {
-    setState(() => _loading = true);
+  @override
+  void dispose() {
+    _autoRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  String get _cacheKey => '$_cachePrefix${_sourceKeys[_sourceTab]}';
+
+  Future<void> _loadFromCache() async {
     try {
-      final src = _sourceKeys[_sourceTab];
-      final url = src.isEmpty
-          ? '$_apiBase/api/data/hot-sim/compare'
-          : '$_apiBase/api/data/hot-sim/compare?source=$src';
-      final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 10));
-      if (r.statusCode == 200) _data = jsonDecode(r.body);
+      final prefs = await SharedPreferences.getInstance();
+      final cached = prefs.getString(_cacheKey);
+      if (cached != null && cached.isNotEmpty) {
+        final data = jsonDecode(cached) as Map<String, dynamic>;
+        if (mounted) setState(() { _data = data; _loading = false; });
+      }
     } catch (_) {}
-    setState(() => _loading = false);
+  }
+
+  Future<void> _load({bool silent = false}) async {
+    if (!silent && _data == null) {
+      setState(() { _loading = true; _loadError = null; });
+    }
+
+    Map<String, dynamic>? newData;
+    String? lastError;
+
+    final src = _sourceKeys[_sourceTab];
+    final url = src.isEmpty
+        ? '$_apiBase/api/data/hot-sim/compare'
+        : '$_apiBase/api/data/hot-sim/compare?source=$src';
+
+    // 3 次重试，超时 15s，间隔 2s
+    for (int attempt = 0; attempt < 3; attempt++) {
+      try {
+        final r = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
+        if (r.statusCode == 200) {
+          newData = jsonDecode(r.body) as Map<String, dynamic>;
+          break;
+        }
+        lastError = 'HTTP ${r.statusCode}';
+      } catch (e) {
+        lastError = e.toString().split('\n').first;
+      }
+      if (attempt < 2) await Future.delayed(const Duration(seconds: 2));
+    }
+
+    if (!mounted) return;
+
+    if (newData != null) {
+      setState(() {
+        _data = newData;
+        _loading = false;
+        _loadError = null;
+      });
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString(_cacheKey, jsonEncode(newData));
+      } catch (_) {}
+    } else {
+      setState(() {
+        _loading = false;
+        _loadError = lastError;
+      });
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    HapticFeedback.lightImpact();
+    await _load();
   }
 
   @override
@@ -59,11 +128,41 @@ class _HotSimPageState extends State<HotSimPage> {
         title: const Text('策略监控', style: TextStyle(color: _t1, fontSize: 17, fontWeight: FontWeight.w600)),
         centerTitle: true,
       ),
-      body: _loading
+      body: _loading && _data == null
           ? const Center(child: CupertinoActivityIndicator())
           : _data == null
-              ? Center(child: CupertinoButton(onPressed: _load, child: const Text('重试')))
-              : RefreshIndicator(onRefresh: _load, child: _buildBody()),
+              ? _buildEmptyState()
+              : RefreshIndicator(onRefresh: _onRefresh, color: _blue, child: _buildBody()),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return RefreshIndicator(
+      onRefresh: _onRefresh,
+      color: _blue,
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: [
+          const SizedBox(height: 200),
+          Icon(CupertinoIcons.wifi_exclamationmark, size: 56, color: _t4),
+          const SizedBox(height: 16),
+          Center(child: Text('暂时无法加载数据', style: TextStyle(fontSize: 15, color: _t2, fontWeight: FontWeight.w600))),
+          const SizedBox(height: 8),
+          Center(child: Text('下拉刷新重试', style: TextStyle(fontSize: 13, color: _t3))),
+          const SizedBox(height: 24),
+          Center(
+            child: CupertinoButton(
+              color: _blue,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 10),
+              borderRadius: BorderRadius.circular(20),
+              onPressed: _loading ? null : _load,
+              child: _loading
+                  ? const CupertinoActivityIndicator(color: Colors.white)
+                  : const Text('重新加载', style: TextStyle(fontSize: 14)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -86,7 +185,11 @@ class _HotSimPageState extends State<HotSimPage> {
           itemBuilder: (_, i) {
             final on = _sourceTab == i;
             return GestureDetector(
-              onTap: () { setState(() { _sourceTab = i; _modeTab = 0; }); _load(); },
+              onTap: () async {
+                setState(() { _sourceTab = i; _modeTab = 0; _data = null; _loading = true; });
+                await _loadFromCache();
+                _load();
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(color: on ? _t1 : Colors.white, borderRadius: BorderRadius.circular(16)),

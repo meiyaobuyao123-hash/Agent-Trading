@@ -253,45 +253,81 @@ class BtcEthManager:
         """每 5 分钟检查 BTC/ETH 是否生成交易信号 → 触发模拟盘买入
 
         流程：
-          1. Stage 1: 规则预筛（RSI/费率/OI 极值）
-          2. Stage 2: Claude 确认或规则引擎降级
-          3. 信号生成 → SignalGenerator._trigger_sim → sim_trader 买入
+          1. 等待指标齐全（RSI_14 需要 14 根 1m K 线，约 14 分钟）
+          2. Stage 1: 规则预筛（RSI/费率/OI 极值）
+          3. Stage 2: Claude 确认或规则引擎降级（10s timeout）
+          4. 信号生成 → SignalGenerator._trigger_sim → sim_trader 买入
         """
-        # 启动后等 2 分钟让指标充分预热
+        # 启动后先等 2 分钟拿到基础数据
         await asyncio.sleep(120)
-        log.info("[BTC/ETH] 信号生成循环启动（每 %ds 检查）", INTERVAL_SIGNAL)
+
+        # 等待指标齐全（最多等 10 分钟）
+        max_warmup = 600
+        elapsed = 0
+        while self._running and elapsed < max_warmup:
+            ready = []
+            for asset in ("BTC", "ETH"):
+                s = self._indicator_engine.get_snapshot(asset)
+                if s and s.get("price_usd", 0) > 0 and s.get("rsi_14") is not None:
+                    ready.append(asset)
+            if len(ready) == 2:
+                log.info("[BTC/ETH] 指标预热完成，信号循环启动（每 %ds 检查）", INTERVAL_SIGNAL)
+                break
+            await asyncio.sleep(30)
+            elapsed += 30
+        else:
+            log.warning("[BTC/ETH] 指标预热超时（%ds），仍启动信号循环", max_warmup)
 
         while self._running:
+            # 主 try 捕获循环级别的异常，不影响下一轮
             try:
                 for asset in ("BTC", "ETH"):
-                    snapshot = self._indicator_engine.get_snapshot(asset)
-                    # 指标不足则跳过
-                    if not snapshot or snapshot.get("price_usd", 0) <= 0:
-                        continue
+                    # 单资产 try：一个资产失败不影响另一个
+                    try:
+                        snapshot = self._indicator_engine.get_snapshot(asset)
+                        if not snapshot or snapshot.get("price_usd", 0) <= 0:
+                            continue
 
-                    # Stage 1: 规则预筛
-                    direction = self._signal_generator.pre_filter(asset, snapshot)
-                    if not direction:
-                        continue
+                        # Stage 1: 规则预筛
+                        direction = self._signal_generator.pre_filter(asset, snapshot)
+                        if not direction:
+                            continue
 
-                    log.info("[BTC/ETH] %s Stage1 预筛通过: %s", asset, direction)
+                        log.info("[BTC/ETH] %s Stage1 预筛通过: %s", asset, direction)
 
-                    # 获取周期阶段（用于 Claude prompt，不影响规则降级）
-                    cycle = self._cycle_analyzer.analyze_rule_based(snapshot)
-                    cycle_phase = cycle.get("phase", "unknown")
+                        # 获取周期阶段
+                        cycle = self._cycle_analyzer.analyze_rule_based(snapshot)
+                        cycle_phase = cycle.get("phase", "unknown")
 
-                    # Stage 2: 生成信号（会自动触发 _trigger_sim → sim_trader）
-                    signal = await self._signal_generator.generate_signal(
-                        asset, direction, snapshot, cycle_phase
-                    )
-                    if signal:
-                        log.info(
-                            "[BTC/ETH] %s 信号生成: type=%s confidence=%d entry=%s",
-                            asset, signal.get("signal_type"),
-                            signal.get("confidence"), signal.get("entry_price"),
-                        )
+                        # Stage 2: 生成信号，加 15s timeout 防止 Claude 阻塞
+                        try:
+                            signal = await asyncio.wait_for(
+                                self._signal_generator.generate_signal(
+                                    asset, direction, snapshot, cycle_phase
+                                ),
+                                timeout=15.0,
+                            )
+                        except asyncio.TimeoutError:
+                            log.warning("[BTC/ETH] %s Claude 超时，降级规则引擎", asset)
+                            # 降级直接走规则引擎（不调 Claude）
+                            signal = self._signal_generator._rule_based_signal(
+                                asset, direction, snapshot
+                            )
+                            if signal:
+                                # 规则降级的信号也要触发 sim
+                                self._signal_generator._trigger_sim(asset, signal)
+
+                        if signal:
+                            log.info(
+                                "[BTC/ETH] %s 信号生成: type=%s confidence=%s entry=%s",
+                                asset, signal.get("signal_type"),
+                                signal.get("confidence"), signal.get("entry_price"),
+                            )
+                    except Exception as e:
+                        log.warning("[BTC/ETH] %s 信号生成失败: %s", asset, e)
+                        continue  # 下一个资产
             except Exception as e:
-                log.warning("[BTC/ETH] 信号生成错误: %s", e)
+                log.error("[BTC/ETH] 信号循环未预期错误: %s", e)
 
             await asyncio.sleep(INTERVAL_SIGNAL)
 

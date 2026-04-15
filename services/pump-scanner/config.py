@@ -76,6 +76,64 @@ USE_AVE       = os.getenv("USE_AVE", "false").lower() == "true"
 AVE_API_KEY   = os.getenv("AVE_API_KEY", "")
 AVE_DATA_BASE = "https://data.ave-api.xyz/v2"
 AVE_TRADE_BASE = "https://bot-api.ave.ai"
+
+# ── 模拟盘过滤配置（基于真实数据校准，支持环境变量覆盖）────
+def _parse_int_set(env_val: str) -> set:
+    try:
+        return {int(x.strip()) for x in env_val.split(",") if x.strip()}
+    except Exception:
+        return set()
+
+# 垃圾时段（UTC 小时），逗号分隔；默认基于历史胜率 <40% 的时段
+SIM_BAD_HOURS_UTC = _parse_int_set(os.getenv("SIM_BAD_HOURS_UTC", "0,10,18,21,22"))
+
+# 链权重（0.0-1.5）：>=1.0 全通过，<1.0 按权重概率通过
+SIM_CHAIN_WEIGHTS = {
+    "bsc":      float(os.getenv("SIM_WEIGHT_BSC", "1.5")),
+    "base":     float(os.getenv("SIM_WEIGHT_BASE", "1.0")),
+    "eth":      float(os.getenv("SIM_WEIGHT_ETH", "1.0")),
+    "ethereum": float(os.getenv("SIM_WEIGHT_ETH", "1.0")),
+    "solana":   float(os.getenv("SIM_WEIGHT_SOLANA", "0.6")),
+    "btc_eth":  1.0,
+}
+
+# TP/SL 配置：按链差异化（tp_pct, sl_pct）
+SIM_TP_SL_BY_CHAIN = {
+    "solana":   (float(os.getenv("SIM_TP_SOLANA",  "40")), float(os.getenv("SIM_SL_SOLANA",  "8"))),
+    "bsc":      (float(os.getenv("SIM_TP_BSC",     "25")), float(os.getenv("SIM_SL_BSC",     "12"))),
+    "base":     (float(os.getenv("SIM_TP_BASE",    "25")), float(os.getenv("SIM_SL_BASE",    "12"))),
+    "eth":      (float(os.getenv("SIM_TP_ETH",     "20")), float(os.getenv("SIM_SL_ETH",     "10"))),
+    "ethereum": (float(os.getenv("SIM_TP_ETH",     "20")), float(os.getenv("SIM_SL_ETH",     "10"))),
+    "btc_eth":  (float(os.getenv("SIM_TP_BTC_ETH", "15")), float(os.getenv("SIM_SL_BTC_ETH", "10"))),
+}
+SIM_TP_DEFAULT = float(os.getenv("SIM_TP_DEFAULT", "20"))
+SIM_SL_DEFAULT = float(os.getenv("SIM_SL_DEFAULT", "10"))
+
+# Score 阈值按 source 区分
+# 结构：{source: {"pass_above": [score, weight], ...}}
+# weight=1.0 必过，<1.0 按概率通过
+# 基于 hot 源 617 笔真实统计
+SIM_SCORE_THRESHOLDS = {
+    "hot": {
+        "ranges": [
+            (80.0, 999.0, 1.0),   # 80+ 必过
+            (70.0, 80.0,  0.5),   # 70-80 虚高分，50% 概率
+            (60.0, 70.0,  1.0),   # 60-70 甜点区，必过
+            (50.0, 60.0,  0.4),   # 50-60 最差段，40% 概率
+        ],
+    },
+    "pump": {
+        # pump 打分模型不同，保守策略：只在 75+ 必过，55-75 全过
+        "ranges": [
+            (75.0, 999.0, 1.0),
+            (55.0, 75.0,  1.0),
+        ],
+    },
+    "smart_money": {
+        # smart_money 的 score 是 heat_score，另有触发阈值控制，这里直接通过
+        "ranges": [(0.0, 999.0, 1.0)],
+    },
+}
 HELIUS_RPC       = f"https://mainnet.helius-rpc.com/?api-key={HELIUS_API_KEY}"
 
 # 链配置：goplus_chain → GoPlus 链ID

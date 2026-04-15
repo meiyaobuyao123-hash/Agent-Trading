@@ -24,24 +24,19 @@ BUY_AMOUNT_DEFAULT = 10.0
 BUY_AMOUNT_BTC = 50.0
 BUY_AMOUNT_ETH = 20.0
 
-# ── 风报配置（基于真实数据校准）────────────────────────────
-# 基于 3720 笔交易分析：15%/15% 对称在 48% 胜率下注定亏钱
-# SOL: MEME 波动剧烈（平均持仓 4h），让赢家跑
-# BSC: 稳定链（平均持仓 25h，胜率 57.6%），小幅非对称即可
-# Base/ETH: 中等波动
-# BTC/ETH: 主流币，波动小，用较紧的对称
-TP_PCT_DEFAULT = 20.0
-SL_PCT_DEFAULT = 10.0
+# 风报配置从 config.py 读取（支持环境变量覆盖，调整无需改代码）
+from config import (
+    SIM_BAD_HOURS_UTC,
+    SIM_CHAIN_WEIGHTS,
+    SIM_TP_SL_BY_CHAIN,
+    SIM_TP_DEFAULT,
+    SIM_SL_DEFAULT,
+    SIM_SCORE_THRESHOLDS,
+)
 
-# (tp_pct, sl_pct) 按链差异化
-_TP_SL_BY_CHAIN = {
-    "solana": (40.0, 8.0),    # SOL MEME: 大涨让跑，小亏快割
-    "bsc":    (25.0, 12.0),   # BSC: 稳定，略偏正
-    "base":   (25.0, 12.0),   # Base: 中等
-    "eth":    (20.0, 10.0),   # ETH: 对称偏正
-    "ethereum": (20.0, 10.0),
-    "btc_eth":  (15.0, 10.0), # BTC/ETH 主流币：较紧
-}
+# 兼容别名（避免其他文件引用断）
+TP_PCT_DEFAULT = SIM_TP_DEFAULT
+SL_PCT_DEFAULT = SIM_SL_DEFAULT
 
 
 def _get_buy_amount(source: str, symbol: str) -> float:
@@ -56,90 +51,101 @@ def _get_buy_amount(source: str, symbol: str) -> float:
 
 def _get_tp_sl(chain: str, source: str) -> tuple:
     """按链和信号源返回 (tp_pct, sl_pct)"""
-    # BTC/ETH 源用自己的配置
     if source == "btc_eth":
-        return _TP_SL_BY_CHAIN["btc_eth"]
-    # 其他源按链区分
+        return SIM_TP_SL_BY_CHAIN.get("btc_eth", (SIM_TP_DEFAULT, SIM_SL_DEFAULT))
     c = (chain or "").lower()
-    return _TP_SL_BY_CHAIN.get(c, (TP_PCT_DEFAULT, SL_PCT_DEFAULT))
-
-
-# ── 时段过滤（基于真实数据）──────────────────────────────
-# 历史数据显示 UTC 0 时胜率 24%、18 时胜率 6.7%、10 时胜率 33%、21-22 时胜率 39%
-# 这些时段全部过滤，不买入
-# （对应北京时间 8 时、凌晨 2 时、18 时、凌晨 5-6 时）
-_BAD_HOURS_UTC = {0, 10, 18, 21, 22}
+    return SIM_TP_SL_BY_CHAIN.get(c, (SIM_TP_DEFAULT, SIM_SL_DEFAULT))
 
 
 def _is_bad_hour() -> bool:
     """判断当前 UTC 小时是否在垃圾时段"""
-    from datetime import datetime, timezone
-    return datetime.now(timezone.utc).hour in _BAD_HOURS_UTC
+    return datetime.now(timezone.utc).hour in SIM_BAD_HOURS_UTC
 
 
-# ── 链权重（基于真实胜率差异）────────────────────────────
-# BSC 胜率 57.6% +$39、SOL 胜率 38.2% -$55
-# weight=1.0 完全通过，weight=0.5 随机过滤一半，weight=0 全部过滤
-_CHAIN_WEIGHT = {
-    "bsc":      1.5,   # 明星链，weight>1 → 全进
-    "base":     1.0,   # 中等
-    "eth":      1.0,
-    "ethereum": 1.0,
-    "solana":   0.6,   # 弱链，40% 概率过滤掉
-    "btc_eth":  1.0,
-}
+def _addr_hash_ratio(address: str) -> float:
+    """把地址哈希映射到 [0, 1)，用于确定性过滤（同地址永远返回同值）"""
+    if not address:
+        return 0.5
+    # 用 MD5 保证跨进程一致（Python 内置 hash() 每次重启变）
+    import hashlib
+    h = hashlib.md5(address.lower().encode()).hexdigest()
+    return (int(h[:8], 16) % 10000) / 10000.0
 
 
-def _pass_chain_filter(chain: str, source: str) -> bool:
-    """按链权重概率性过滤"""
-    import random
+def _pass_chain_filter(chain: str, source: str, address: str) -> bool:
+    """按链权重确定性过滤（基于地址哈希，同地址永远返回同结果）"""
     if source == "btc_eth":
-        return True  # BTC/ETH 不受链权重影响
-    w = _CHAIN_WEIGHT.get((chain or "").lower(), 1.0)
+        return True
+    w = SIM_CHAIN_WEIGHTS.get((chain or "").lower(), 1.0)
     if w >= 1.0:
         return True
-    return random.random() < w
+    return _addr_hash_ratio(address) < w
 
 
-def _pass_score_filter(score: float, source: str) -> bool:
-    """基于真实数据的 score 质量过滤
+def _pass_score_filter(score: float, source: str, address: str) -> bool:
+    """按 source 和地址哈希的 score 质量过滤
 
-    真实数据统计（hot 源，617 笔已平仓）：
-      50-60 分: 胜率 47.9% (最差)
-      60-70 分: 胜率 50.4% (最好)
-      70-80 分: 胜率 44.3% (虚高分，pump-then-dump)
-      80+  分: 胜率 50.0%
-
-    结论：50-60 和 70-80 是陷阱区间，要么太弱要么太"虚"
-    策略：优先入场 60-70 甜点区；70-80 降低权重
+    阈值表结构：{source: {"ranges": [(low, high, weight), ...]}}
+    - weight >= 1.0 必过
+    - weight < 1.0 用 hash(addr) 确定性概率过滤
     """
-    # BTC/ETH 不用 hot 打分，跳过
-    if source == "btc_eth":
+    cfg = SIM_SCORE_THRESHOLDS.get(source) or SIM_SCORE_THRESHOLDS.get("hot")
+    if not cfg:
         return True
 
-    # pump 源 score 是 pump 自己的 0-100 打分，逻辑类似（保留一致）
-    # 50 分以下 hot_coin_manager 已经过滤了，这里只针对 sim 入场
+    ranges = cfg.get("ranges") or []
+    for low, high, weight in ranges:
+        if low <= score < high:
+            if weight >= 1.0:
+                return True
+            return _addr_hash_ratio(address) < weight
 
-    # 60-70 分直接入场（甜点区）
-    if 60 <= score < 70:
-        return True
-
-    # 70-80 分降低入场概率（虚高分）
-    if 70 <= score < 80:
-        import random
-        return random.random() < 0.5
-
-    # 80+ 分直接入场
-    if score >= 80:
-        return True
-
-    # 50-60 分降低入场概率（最差段）
-    if 50 <= score < 60:
-        import random
-        return random.random() < 0.4
-
-    # <50 理论上不会到这（hot_coin_manager ENTRY_SCORE_MIN=50），保险
+    # 所有范围都不匹配 → 不入场（默认拒绝）
     return False
+
+
+# ── 过滤统计计数器（每 5 分钟输出一次）────────────────────
+class _FilterStats:
+    """入场过滤统计"""
+    def __init__(self):
+        self.total = 0
+        self.passed = 0
+        self.bad_hour = 0
+        self.bad_chain = 0
+        self.bad_score = 0
+        self.last_log = 0.0
+        self.window_sec = 300  # 5 分钟
+
+    def record(self, passed: bool, reason: str = ""):
+        self.total += 1
+        if passed:
+            self.passed += 1
+        elif reason == "hour":
+            self.bad_hour += 1
+        elif reason == "chain":
+            self.bad_chain += 1
+        elif reason == "score":
+            self.bad_score += 1
+
+    def maybe_log(self):
+        now = time.time()
+        if now - self.last_log < self.window_sec:
+            return
+        if self.total == 0:
+            self.last_log = now
+            return
+        pass_rate = self.passed / self.total * 100
+        log.info(
+            "[HotSim] 过滤统计(5min): 总=%d 通过=%d (%.1f%%) bad_hour=%d bad_chain=%d bad_score=%d",
+            self.total, self.passed, pass_rate,
+            self.bad_hour, self.bad_chain, self.bad_score,
+        )
+        # 重置窗口
+        self.total = self.passed = self.bad_hour = self.bad_chain = self.bad_score = 0
+        self.last_log = now
+
+
+_filter_stats = _FilterStats()
 
 
 class HotSimTrader:
@@ -194,20 +200,28 @@ class HotSimTrader:
         if price <= 0:
             return
 
-        # ── 入场过滤 1：时段过滤（基于真实数据的垃圾时段）──
+        # ── 入场过滤（按顺序：时段→链→score，任一失败即跳过）──
+        # 用确定性过滤（hash(address)）保证同地址结果一致
         if _is_bad_hour():
-            log.debug("[HotSim] %s 跳过（垃圾时段 UTC=%d）", symbol, datetime.now(timezone.utc).hour)
+            _filter_stats.record(False, "hour")
+            _filter_stats.maybe_log()
+            log.info("[HotSim] %s 过滤:垃圾时段 UTC=%d", symbol, datetime.now(timezone.utc).hour)
             return
 
-        # ── 入场过滤 2：链权重过滤（SOL 40% 概率过滤）──
-        if not _pass_chain_filter(chain, source):
-            log.debug("[HotSim] %s 跳过（链权重过滤 chain=%s）", symbol, chain)
+        if not _pass_chain_filter(chain, source, address):
+            _filter_stats.record(False, "chain")
+            _filter_stats.maybe_log()
+            log.info("[HotSim] %s 过滤:链权重 chain=%s", symbol, chain)
             return
 
-        # ── 入场过滤 3：score 质量过滤（50-60 和 70-80 降权）──
-        if not _pass_score_filter(score, source):
-            log.debug("[HotSim] %s 跳过（score 质量过滤 score=%.1f）", symbol, score)
+        if not _pass_score_filter(score, source, address):
+            _filter_stats.record(False, "score")
+            _filter_stats.maybe_log()
+            log.info("[HotSim] %s 过滤:score %.1f (source=%s)", symbol, score, source)
             return
+
+        _filter_stats.record(True)
+        _filter_stats.maybe_log()
 
         self.init_from_db()
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -286,9 +300,19 @@ class HotSimTrader:
             matched = True
             tp = float(pos.get("tp_price", 0))
             sl = float(pos.get("sl_price", 0))
-            # 使用仓位自己的 tp_pct/sl_pct（每笔仓位开仓时就确定了）
-            tp_pct_row = float(pos.get("tp_pct") or TP_PCT_DEFAULT)
-            sl_pct_row = float(pos.get("sl_pct") or SL_PCT_DEFAULT)
+            # 显式检查 None，避免 0 或 False 被 `or` 替换成默认值
+            _tp_raw = pos.get("tp_pct")
+            _sl_raw = pos.get("sl_pct")
+            if _tp_raw is None:
+                log.warning("[HotSim] pid=%s 缺 tp_pct，用默认 %.1f", pid, TP_PCT_DEFAULT)
+                tp_pct_row = TP_PCT_DEFAULT
+            else:
+                tp_pct_row = float(_tp_raw)
+            if _sl_raw is None:
+                log.warning("[HotSim] pid=%s 缺 sl_pct，用默认 %.1f", pid, SL_PCT_DEFAULT)
+                sl_pct_row = SL_PCT_DEFAULT
+            else:
+                sl_pct_row = float(_sl_raw)
 
             if tp > 0 and price >= tp:
                 to_close.append((pid, "tp", price, tp_pct_row))

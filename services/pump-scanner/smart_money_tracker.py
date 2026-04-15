@@ -744,6 +744,37 @@ class SmartMoneyTracker:
         return signals, txns
 
     # ──────────────────────────────────────────────
+    # 模拟盘去重（持久化）
+    # ──────────────────────────────────────────────
+
+    async def _already_sim_triggered(self, chain: str, address: str) -> bool:
+        """查询 24h 内是否已有同代币的 smart_money sim 买入
+
+        用 DB 作为权威去重，防止进程重启后 _sim_triggered 丢失导致重复买入。
+        """
+        try:
+            import asyncio as _asyncio
+            from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+
+            cutoff = (_dt.now(_tz.utc) - _td(hours=24)).isoformat()
+            from database import get_db
+            # supabase-py 是同步客户端，用 to_thread 避免阻塞事件循环
+            def _query():
+                return (get_db().table("hot_sim_trades")
+                        .select("id", count="exact")
+                        .eq("source", "smart_money")
+                        .eq("chain", chain)
+                        .eq("address", address)
+                        .gte("entered_at", cutoff)
+                        .limit(0)
+                        .execute())
+            res = await _asyncio.to_thread(_query)
+            return (res.count or 0) > 0
+        except Exception as e:
+            logger.debug("[SM] sim 去重查询失败 %s: %s", address[:10], e)
+            return False  # fail-open：查询失败时允许触发（宁可多买也别漏买）
+
+    # ──────────────────────────────────────────────
     # 市场数据 Enrich + 保存
     # ──────────────────────────────────────────────
 
@@ -844,6 +875,11 @@ class SmartMoneyTracker:
                     if ((cond_a or cond_b or cond_c)
                             and price > 0 and (mc <= 0 or price < mc)
                             and _sim_key not in self._sim_triggered):
+                        # DB 查重：24h 内已有同代币的 smart_money 仓位则跳过
+                        # （内存 _sim_triggered 重启丢失，DB 作为权威去重）
+                        if await self._already_sim_triggered(chain, addr):
+                            self._sim_triggered.add(_sim_key)  # 加入内存避免下次再查
+                            continue
                         self._sim_triggered.add(_sim_key)
                         sim.on_token_enter(
                             address=addr,

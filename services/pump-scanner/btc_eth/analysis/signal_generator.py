@@ -216,6 +216,37 @@ class SignalGenerator:
         }
 
     def _check_cooldown(self, key: str) -> bool:
-        """检查冷却（同方向 4h 内不重复）"""
+        """检查冷却（同方向 4h 内不重复）
+
+        两级检查：
+          1. 内存 _last_signal_time（快路径，同进程同次记忆）
+          2. DB hot_sim_trades（权威，重启后也正确）
+        """
+        # 1. 内存快路径
         last = self._last_signal_time.get(key, 0)
-        return (time.time() - last) > self._signal_cooldown
+        if (time.time() - last) <= self._signal_cooldown:
+            return False
+
+        # 2. DB 权威查询：过去 4h 是否已有同 (asset, source='btc_eth') 的仓位
+        # key 格式: "BTC_long" / "ETH_short"
+        try:
+            asset = key.split("_")[0]  # "BTC" / "ETH"
+            from datetime import datetime, timezone, timedelta
+            from database import get_db
+            cutoff = (datetime.now(timezone.utc) - timedelta(seconds=self._signal_cooldown)).isoformat()
+            res = (get_db().table("hot_sim_trades")
+                   .select("id", count="exact")
+                   .eq("source", "btc_eth")
+                   .eq("symbol", asset)
+                   .gte("entered_at", cutoff)
+                   .limit(0)
+                   .execute())
+            if (res.count or 0) > 0:
+                # DB 有记录，同步到内存避免下次再查
+                self._last_signal_time[key] = time.time()
+                return False
+        except Exception as e:
+            log.debug("[Signal] 冷却 DB 查询失败 %s: %s", key, e)
+            # fail-open：查询失败时允许触发
+
+        return True

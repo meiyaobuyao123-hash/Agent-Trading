@@ -40,12 +40,21 @@ def _get_stats(mode: str, source: str = "") -> dict:
     # open 仓位的浮动盈亏不计入已实现 PNL
 
     win_rate = len(tp_trades) / len(closed) * 100 if closed else 0
-    total_invested = len(rows) * 10.0
+
+    # 修复：按每笔实际 amount_usd 汇总（BTC=$50, ETH=$20, 其他=$10），而不是硬编码 $10
+    total_invested = sum(float(r.get("amount_usd") or 10.0) for r in rows)
+    closed_invested = sum(float(r.get("amount_usd") or 10.0) for r in closed)
+
+    # config 根据实际 source 展示
+    if source == "btc_eth":
+        config_label = {"buy_amount_btc": 50, "buy_amount_eth": 20, "tp_pct": 15, "sl_pct": 15}
+    else:
+        config_label = {"buy_amount": 10, "tp_pct": 15, "sl_pct": 15}
 
     return {
         "mode": mode,
         "mode_label": "每次都买" if mode == "repeat" else "每币只买一次",
-        "config": {"buy_amount": 10, "tp_pct": 15, "sl_pct": 15},
+        "config": config_label,
         "summary": {
             "total_trades": len(rows),
             "open_trades": len(open_trades),
@@ -55,7 +64,8 @@ def _get_stats(mode: str, source: str = "") -> dict:
             "win_rate": round(win_rate, 1),
             "total_invested": round(total_invested, 2),
             "realized_pnl": round(total_pnl, 2),
-            "roi_pct": round(total_pnl / total_invested * 100, 1) if total_invested > 0 else 0,
+            # ROI 用已平仓投入计算（反映真实已实现收益率）
+            "roi_pct": round(total_pnl / closed_invested * 100, 1) if closed_invested > 0 else 0,
         },
         "recent_trades": [{
             "symbol": r.get("symbol", "?"),

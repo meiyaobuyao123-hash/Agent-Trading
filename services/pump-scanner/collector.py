@@ -149,7 +149,12 @@ class PumpScanner:
     async def _listen_new_tokens(self):
         while True:
             try:
-                async with websockets.connect(PUMPPORTAL_WS) as ws:
+                async with websockets.connect(
+                    PUMPPORTAL_WS,
+                    ping_interval=30,
+                    ping_timeout=15,
+                    close_timeout=5,
+                ) as ws:
                     await ws.send(json.dumps({"method": "subscribeNewToken"}))
                     log.info("已订阅 newToken 事件")
                     async for raw in ws:
@@ -216,7 +221,13 @@ class PumpScanner:
     async def _listen_trades(self):
         while True:
             try:
-                async with websockets.connect(PUMPPORTAL_WS) as ws:
+                async with websockets.connect(
+                    PUMPPORTAL_WS,
+                    ping_interval=30,
+                    ping_timeout=15,
+                    close_timeout=5,
+                    max_size=2**20,
+                ) as ws:
                     self._ws_trade = ws
                     log.info("交易 WS 已连接")
                     await asyncio.gather(

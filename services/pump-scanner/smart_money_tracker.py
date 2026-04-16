@@ -1095,39 +1095,18 @@ class SmartMoneyTracker:
             rows.append({
                 "wallet_address": addr,
                 "chain": chain,
-                "total_tx_count": count,  # upsert 时 DB 侧会累加（见下方 RPC）
-                "total_unique_tokens": len(tokens),
-                "active_windows": 1,
+                "tx_count": count,
+                "unique_tokens": len(tokens),
                 "last_seen": now_iso,
             })
 
-        # 批量 upsert — 累加式更新（PostgREST 不支持 increment，先 select 再 update）
-        for i in range(0, len(rows), 50):
-            batch = rows[i:i + 50]
-            for row in batch:
-                try:
-                    # 查是否存在
-                    existing = self.db.table("dex_address_stats").select(
-                        "total_tx_count, total_unique_tokens, active_windows"
-                    ).eq("wallet_address", row["wallet_address"]).limit(1).execute()
-
-                    if existing.data:
-                        old = existing.data[0]
-                        self.db.table("dex_address_stats").update({
-                            "total_tx_count": (old.get("total_tx_count") or 0) + row["total_tx_count"],
-                            "total_unique_tokens": max(
-                                (old.get("total_unique_tokens") or 0), row["total_unique_tokens"]
-                            ),
-                            "active_windows": (old.get("active_windows") or 0) + 1,
-                            "last_seen": now_iso,
-                        }).eq("wallet_address", row["wallet_address"]).execute()
-                    else:
-                        row["first_seen"] = now_iso
-                        self.db.table("dex_address_stats").insert(row).execute()
-                except Exception as e:
-                    logger.debug("[SM] dex_address_stats upsert %s: %s", row["wallet_address"][:12], e)
-
-        logger.info("[SM] dex_address_stats: %d 行已写入/更新", len(rows))
+        # 写本地 PostgreSQL（非 Supabase，零网络延迟 + 原生 ON CONFLICT 累加）
+        try:
+            import local_db
+            written = local_db.upsert_address_stats(rows)
+            logger.info("[SM] dex_address_stats: %d 行写入本地 PG", written)
+        except Exception as e:
+            logger.warning("[SM] dex_address_stats 写入失败: %s", e)
 
     # ──────────────────────────────────────────────
     # 信号统计重算（修复 unique_buyers 永远=1 的 bug）

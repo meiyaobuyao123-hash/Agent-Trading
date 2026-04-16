@@ -193,21 +193,17 @@ _PROMOTE_MIN_TOKENS = 5        # 交易 5+ 不同代币
 
 
 def _mine_from_unknown_stats(db):
-    """从 dex_address_stats 找高频活跃地址 → 晋升 smart_wallets.watching"""
-    log.info("[TxnsMiner] 源2: 从 dex_address_stats 挖掘未知高频地址")
+    """从本地 PG dex_address_stats 找高频活跃地址 → 晋升 smart_wallets.watching"""
+    log.info("[TxnsMiner] 源2: 从 dex_address_stats（本地PG）挖掘未知高频地址")
 
     try:
-        res = (
-            db.table("dex_address_stats")
-            .select("wallet_address, chain, total_tx_count, total_unique_tokens, active_windows")
-            .gte("active_windows", _PROMOTE_MIN_WINDOWS)
-            .gte("total_tx_count", _PROMOTE_MIN_TX)
-            .gte("total_unique_tokens", _PROMOTE_MIN_TOKENS)
-            .is_("promoted_at", "null")
-            .limit(500)
-            .execute()
+        import local_db
+        candidates = local_db.get_promotion_candidates(
+            min_windows=_PROMOTE_MIN_WINDOWS,
+            min_tx=_PROMOTE_MIN_TX,
+            min_tokens=_PROMOTE_MIN_TOKENS,
+            limit=500,
         )
-        candidates = res.data or []
     except Exception as e:
         log.warning("[TxnsMiner] 查询 dex_address_stats 失败: %s", e)
         return
@@ -218,7 +214,7 @@ def _mine_from_unknown_stats(db):
 
     log.info("[TxnsMiner] 源2: %d 个达标候选", len(candidates))
 
-    # 排除已在 smart_wallets 的
+    # 排除已在 smart_wallets（Supabase）的
     existing = set()
     offset = 0
     while True:
@@ -238,16 +234,11 @@ def _mine_from_unknown_stats(db):
     for c in candidates:
         addr = c["wallet_address"]
         if addr.lower() in existing:
-            # 已存在但未标记 promoted → 更新标记
-            try:
-                db.table("dex_address_stats").update({
-                    "promoted_at": now_iso, "promoted_tier": "existing"
-                }).eq("wallet_address", addr).execute()
-            except Exception:
-                pass
+            # 已存在 → 标记已晋升（避免重复处理）
+            local_db.mark_promoted(addr, "existing")
             continue
 
-        # 新地址 → 写入 smart_wallets
+        # 新地址 → 写入 Supabase smart_wallets
         try:
             db.table("smart_wallets").insert({
                 "wallet": addr,
@@ -259,15 +250,17 @@ def _mine_from_unknown_stats(db):
                 "is_blacklisted": False,
             }).execute()
 
-            # 标记已晋升
-            db.table("dex_address_stats").update({
-                "promoted_at": now_iso, "promoted_tier": "watching"
-            }).eq("wallet_address", addr).execute()
-
+            local_db.mark_promoted(addr, "watching")
             promoted += 1
             existing.add(addr.lower())
         except Exception as e:
             log.debug("[TxnsMiner] 源2 写入 %s: %s", addr[:12], e)
+
+    # 定期清理本地 PG 90 天前已晋升的旧数据
+    try:
+        local_db.cleanup_old(days=90)
+    except Exception:
+        pass
 
     log.info("[TxnsMiner] 源2 完成: %d 候选 → %d 新增 watching", len(candidates), promoted)
 

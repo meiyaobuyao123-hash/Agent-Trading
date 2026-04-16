@@ -400,10 +400,30 @@ def _handle_inactive(db, now: datetime):
     remove_cutoff = (now - timedelta(days=INACTIVE_REMOVE_DAYS)).isoformat()
 
     try:
-        # ── 新增：watching 批量淘汰（30 天无活动 → inactive，不再参与监控）──
-        # 解决 Dune 批量导入了 ~25k "历史赚钱但不在我们 DEX 上交易"的地址，
-        # 导致钱包池膨胀、EVM Group B 轮询 40+ min 的问题。
+        # ── 新增：watching 批量淘汰 ──
+        # 两级淘汰策略：
+        #   7 天：Dune 导入的 watching 钱包如果在我们 DEX 监控上 0 交易 → inactive
+        #         （last_seen 没被 _upsert_txns 更新 = 从未在我们的 DEX 上被观察到）
+        #  30 天：所有 watching 钱包兜底淘汰
+        # 解决 Dune 批量导入了 ~25k "历史赚钱但不在我们 DEX 上交易"的地址。
         # inactive tier 不会被 get_smart_wallet_tiers() 加载（已有 in_ 过滤）。
+
+        # 7 天快速淘汰（主要针对 Dune 批量导入后从未激活的）
+        watch_fast_cutoff = (now - timedelta(days=7)).isoformat()
+        try:
+            fast_cull = db.table("smart_wallets").select(
+                "wallet", count="exact"
+            ).eq("tier", "watching").lt("last_seen", watch_fast_cutoff).limit(0).execute()
+            n_fast = fast_cull.count or 0
+            if n_fast > 0:
+                db.table("smart_wallets").update(
+                    {"tier": "inactive"}
+                ).eq("tier", "watching").lt("last_seen", watch_fast_cutoff).execute()
+                log.info(f"[淘汰] {n_fast} 个 watching 钱包 7天无活动 → inactive（未在我们 DEX 激活）")
+        except Exception as e:
+            log.warning(f"[淘汰] 7天快速淘汰失败: {e}")
+
+        # 30 天兜底淘汰（非 watching 的其他 tier 不受影响）
         watch_cull_cutoff = (now - timedelta(days=30)).isoformat()
         try:
             cull_count = db.table("smart_wallets").select(

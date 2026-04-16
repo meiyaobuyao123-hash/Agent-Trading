@@ -36,13 +36,29 @@ DUNE_QUERY_IDS = {
 
 # Bot 过滤：14 天内超过 5000 笔交易 → 大概率是 bot/MEV
 MAX_SWAPS_14D = 5000
-# 最低交易数
-MIN_SWAPS_14D = 30
-# 最少交易代币种类
-MIN_UNIQUE_TOKENS = 5
-# 最少活跃天数
-MIN_ACTIVE_DAYS = 5
-# Dune 查询已在 SQL 层做了过滤（BETWEEN 30 AND 5000），这里做二次校验
+# 最低交易数（提高到 50，确保不是偶尔路过的钱包）
+MIN_SWAPS_14D = 50
+# 最少交易代币种类（提高到 8，确保交易广度够 → 更可能跟我们的 DEX 重合）
+MIN_UNIQUE_TOKENS = 8
+# 最少活跃天数（提高到 7，确保连续活跃 → 不是一次性涌入）
+MIN_ACTIVE_DAYS = 7
+# Dune 查询已在 SQL 层做了过滤，这里做二次校验
+#
+# 重要：Dune SQL 建议同步更新（在 dune.com 网页编辑器里改查询）
+# 需要加上 WHERE 过滤只统计我们监控的 DEX 程序上的交易：
+#   SOL: Raydium AMM V4 (675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8)
+#        Jupiter V6 (JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4)
+#        Pump.fun (6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P)
+#        Raydium CLMM (CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK)
+#        Orca Whirlpool (whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc)
+#        Meteora DLMM (LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo)
+#   ETH: Uniswap V2 Router (0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D)
+#        Uniswap V3 Router (0xE592427A0AEce92De3Edee1F18E0157C05861564)
+#   BSC: PancakeSwap V2 Router (0x10ED43C718714eb63d5aA57B78B54704E256024E)
+#   Base: Uniswap V3 + Aerodrome
+#
+# 这样 Dune 返回的地址天然跟我们的 DEX 监控重合，不会再出现
+# "导入了 25k 地址但 99% 不在我们 DEX 上交易"的问题。
 
 
 def run_dune_wallet_import():

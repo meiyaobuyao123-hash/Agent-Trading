@@ -15,8 +15,7 @@ dependencies:
 
   cupertino_icons: ^1.0.8
 
-  # Supabase 直连
-  supabase_flutter: ^2.5.0
+  # Supabase SDK 已移除 — 全部走后端 HTTP API
 
   # 工具
   intl: ^0.20.2

@@ -24,15 +24,13 @@ class AppConfig {
     defaultValue: 'http://43.156.207.26',
   );
 
-  /// Supabase 项目 URL
-  static const String supabaseUrl = String.fromEnvironment(
-    'SUPABASE_URL',
-    defaultValue: 'https://qmzsruqgwaqusywprxlj.supabase.co',
-  );
-
-  /// Supabase 匿名公钥（anon key）
-  static const String supabaseAnonKey = String.fromEnvironment(
-    'SUPABASE_KEY',
-    defaultValue: 'sb_publishable_2uL576o81fhTTuXxhTv20w_oKzjlLkS',
-  );
+  // Supabase SDK 已移除 — 所有数据通过后端 HTTP API 获取
+  // static const String supabaseUrl = String.fromEnvironment(
+  //   'SUPABASE_URL',
+  //   defaultValue: 'https://qmzsruqgwaqusywprxlj.supabase.co',
+  // );
+  // static const String supabaseAnonKey = String.fromEnvironment(
+  //   'SUPABASE_KEY',
+  //   defaultValue: 'sb_publishable_2uL576o81fhTTuXxhTv20w_oKzjlLkS',
+  // );
 }

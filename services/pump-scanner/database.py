@@ -1,16 +1,54 @@
 from typing import Optional, List
-from supabase import create_client, Client
-from config import SUPABASE_URL, SUPABASE_KEY
+import os
 import logging
 
 log = logging.getLogger(__name__)
 
-_client: Optional[Client] = None
+# ── 数据库后端选择 ──
+# LOCAL_POSTGREST_URL 有值 → 用本地 PostgREST（迁移后的默认方式）
+# 否则回退 Supabase Cloud
+_LOCAL_POSTGREST_URL = os.getenv("LOCAL_POSTGREST_URL", "")
+_LOCAL_POSTGREST_JWT = os.getenv("LOCAL_POSTGREST_JWT", "")
 
-def get_db() -> Client:
+_client = None
+
+
+class _PostgRESTWrapper:
+    """包装 postgrest-py，兼容 supabase-py 的 .table() 语法
+
+    代码里到处用 db.table("xxx").select(...).eq(...).execute()
+    postgrest-py 用 db.from_("xxx")，这个 wrapper 统一接口。
+    """
+    def __init__(self, url: str, jwt: str):
+        from postgrest import SyncPostgrestClient
+        self._client = SyncPostgrestClient(
+            url,
+            headers={"Authorization": f"Bearer {jwt}"} if jwt else {},
+        )
+        log.info("[DB] 使用本地 PostgREST: %s", url)
+
+    def table(self, name: str):
+        return self._client.from_(name)
+
+    def rpc(self, fn_name: str, params: dict = None):
+        """RPC 调用（兼容 supabase-py 的 db.rpc("func", {...})）"""
+        return self._client.rpc(fn_name, params or {})
+
+
+def get_db():
     global _client
-    if _client is None:
+    if _client is not None:
+        return _client
+
+    if _LOCAL_POSTGREST_URL:
+        _client = _PostgRESTWrapper(_LOCAL_POSTGREST_URL, _LOCAL_POSTGREST_JWT)
+    else:
+        # 回退 Supabase Cloud
+        from supabase import create_client
+        from config import SUPABASE_URL, SUPABASE_KEY
         _client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        log.info("[DB] 使用 Supabase Cloud: %s", SUPABASE_URL)
+
     return _client
 
 

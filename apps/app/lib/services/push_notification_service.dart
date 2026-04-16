@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
+// Supabase SDK removed — auth token no longer used
 
 /// 后台消息处理（必须是顶层函数）
 @pragma('vm:entry-point')
@@ -142,15 +142,6 @@ class PushNotificationService {
 
   /// 上传 FCM Token 到后端
   static Future<void> _registerToken(String token) async {
-    final authToken =
-        Supabase.instance.client.auth.currentSession?.accessToken;
-
-    // 未登录时跳过（登录后会重新注册）
-    if (authToken == null) {
-      debugPrint('[Push] Skip token registration: user not logged in');
-      return;
-    }
-
     final platform = Platform.isIOS ? 'ios' : 'android';
 
     try {
@@ -158,7 +149,6 @@ class PushNotificationService {
         Uri.parse('$_apiBase/api/device/register'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
         },
         body: jsonEncode({
           'token': token,
@@ -239,15 +229,10 @@ class PushNotificationService {
       final token = await _messaging.getToken();
       if (token == null) return;
 
-      final authToken =
-          Supabase.instance.client.auth.currentSession?.accessToken;
-      if (authToken == null) return;
-
       await http.delete(
         Uri.parse('$_apiBase/api/device/unregister'),
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer $authToken',
         },
         body: jsonEncode({'token': token}),
       );

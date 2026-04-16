@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/app_config.dart';
 
 /// Agent API 服务 — 对接后端 FastAPI
@@ -13,12 +12,8 @@ class AgentService {
   static const _apiBase = AppConfig.backendBaseUrl;
   static const _timeout = Duration(seconds: 90);
 
-  String? get _token =>
-      Supabase.instance.client.auth.currentSession?.accessToken;
-
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',
-        if (_token != null) 'Authorization': 'Bearer $_token',
       };
 
   /// 解析后端错误信息

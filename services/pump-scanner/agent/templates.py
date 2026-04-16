@@ -59,11 +59,11 @@ STRATEGY_TEMPLATES: Dict[str, Dict[str, Any]] = {
     },
     "smart_money_follow": {
         "name": "聪明钱跟单",
-        "description": "跟踪 elite 级聪明钱钱包买入信号，流动性需 > $50K",
+        "description": "跟踪 elite/verified 级聪明钱钱包买入信号，流动性需 > $50K",
         "conditions": {
             "operator": "AND",
             "rules": [
-                {"data_source": "smart_money_signals", "field": "wallet_tier", "operator": "==", "value": "elite"},
+                {"data_source": "smart_money_signals", "field": "wallet_tier", "operator": "in", "value": ["elite", "verified"]},
                 {"data_source": "smart_money_signals", "field": "action", "operator": "==", "value": "buy"},
                 {"data_source": "smart_money_signals", "field": "liquidity_usd", "operator": ">", "value": 50000},
             ],

@@ -63,16 +63,21 @@ def upsert_address_stats(rows: list):
         (r["wallet_address"], r["chain"], r["tx_count"], r["unique_tokens"], 1, r["last_seen"], r["last_seen"])
         for r in rows
     ]
-    try:
-        with conn.cursor() as cur:
-            execute_values(cur, sql, values, page_size=200)
-        return len(values)
-    except Exception as e:
-        log.warning("[LocalDB] upsert_address_stats: %s", e)
-        # 连接可能断了，重置
-        global _pool
-        _pool = None
-        return 0
+    for attempt in range(2):
+        try:
+            with conn.cursor() as cur:
+                execute_values(cur, sql, values, page_size=200)
+            return len(values)
+        except Exception as e:
+            log.warning("[LocalDB] upsert_address_stats (attempt %d): %s", attempt + 1, e)
+            global _pool
+            _pool = None
+            if attempt == 0:
+                try:
+                    conn = _get_conn()  # 重连一次
+                except Exception:
+                    return 0
+    return 0
 
 
 def get_promotion_candidates(min_windows=3, min_tx=20, min_tokens=5, limit=500):

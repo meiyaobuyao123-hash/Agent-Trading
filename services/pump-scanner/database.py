@@ -43,11 +43,10 @@ def get_db():
     if _LOCAL_POSTGREST_URL:
         _client = _PostgRESTWrapper(_LOCAL_POSTGREST_URL, _LOCAL_POSTGREST_JWT)
     else:
-        # 回退 Supabase Cloud
-        from supabase import create_client
-        from config import SUPABASE_URL, SUPABASE_KEY
-        _client = create_client(SUPABASE_URL, SUPABASE_KEY)
-        log.info("[DB] 使用 Supabase Cloud: %s", SUPABASE_URL)
+        raise RuntimeError(
+            "[DB] LOCAL_POSTGREST_URL 未配置。数据库已迁移到本地 PostgreSQL，"
+            "请在 .env 中设置 LOCAL_POSTGREST_URL=http://localhost:3001 和 LOCAL_POSTGREST_JWT"
+        )
 
     return _client
 

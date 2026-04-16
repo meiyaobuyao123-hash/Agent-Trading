@@ -19,26 +19,21 @@ async def get_hot_coins(
     """Get hot coins ordered by score, excluding risky and skipped tokens."""
     db = get_db()
     try:
+        # postgrest-py 不支持 .not_() / .neq()（supabase-py 特有），
+        # 改用客户端过滤
         res = (
             db.table("hot_coins")
-            .select(
-                "chain, address, name, symbol, pair_address, dex_id, "
-                "price_usd, market_cap_usd, liquidity_usd, "
-                "volume_24h_usd, volume_1h_usd, volume_5m_usd, volume_4h_usd, "
-                "price_change_1h, price_change_5m, price_change_4h, price_change_6h, price_change_24h, "
-                "buys_1h, sells_1h, buys_24h, sells_24h, "
-                "age_days, holder_count, top10_holder_pct, top1_holder_pct, "
-                "goplus_risk, has_twitter, has_telegram, has_website, image_url, "
-                "score, score_m, score_q, score_p, recommendation, scanned_at"
-            )
+            .select("*")
             .eq("goplus_risk", False)
-            .not_("score", "is", "null")
-            .neq("recommendation", "skip")
             .order("score", desc=True)
-            .limit(limit)
+            .limit(limit * 2)
             .execute()
         )
-        return {"data": res.data or [], "count": len(res.data or [])}
+        data = [
+            r for r in (res.data or [])
+            if r.get("score") is not None and r.get("recommendation") != "skip"
+        ][:limit]
+        return {"data": data, "count": len(data)}
     except Exception as e:
         logger.error("get_hot_coins error: %s", e)
         return {"data": [], "count": 0}

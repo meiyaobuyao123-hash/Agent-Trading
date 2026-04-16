@@ -564,6 +564,11 @@ class SmartMoneyTracker:
 
                 if not matched_wallet:
                     # ── 未知地址：轻量计数（不调 API，不存 DB，只攒内存）──
+                    # 内存保护：超过上限提前 flush
+                    if len(self._unknown_addr_counter) >= self._UNKNOWN_ADDR_LIMIT:
+                        logger.warning("[SM] 未知地址数 %d 达上限，提前 flush",
+                                       len(self._unknown_addr_counter))
+                        self._flush_unknown_addresses()
                     token_contract = result.get("address", "").lower()
                     for addr in involved_addrs:
                         self._unknown_addr_counter[addr] += 1
@@ -1055,6 +1060,7 @@ class SmartMoneyTracker:
 
     _UNKNOWN_FLUSH_INTERVAL = 1800  # 30 min
     _UNKNOWN_MIN_TX = 5             # 30min 内 5+ 笔交易才值得记录
+    _UNKNOWN_ADDR_LIMIT = 200_000   # 防内存爆炸：超过此数提前 flush
 
     async def _unknown_addr_flush_loop(self):
         """每 30min 把高频未知地址写入 dex_address_stats 表"""
@@ -1091,12 +1097,14 @@ class SmartMoneyTracker:
         rows = []
         for addr, count in active.items():
             tokens = self._unknown_addr_tokens.get(addr, set())
+            # 标准化代币地址（EVM 大小写不统一 → 同币被计为不同）
+            normalized_tokens = {t.lower() for t in tokens if t}
             chain = "solana" if not addr.startswith("0x") and len(addr) >= 32 else "evm"
             rows.append({
                 "wallet_address": addr,
                 "chain": chain,
                 "tx_count": count,
-                "unique_tokens": len(tokens),
+                "unique_tokens": len(normalized_tokens),
                 "last_seen": now_iso,
             })
 

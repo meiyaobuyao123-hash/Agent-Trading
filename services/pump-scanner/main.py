@@ -136,6 +136,17 @@ async def main():
         misfire_grace_time=3600,
     )
 
+    # ── 自有数据聪明钱挖掘（每 6h，从 smart_money_txns 发现活跃地址）─
+    from txns_wallet_miner import run_txns_wallet_miner
+    scheduler.add_job(
+        run_txns_wallet_miner,
+        trigger="interval",
+        hours=6,
+        id="txns_wallet_miner",
+        name="自有数据聪明钱挖掘(6h)",
+        misfire_grace_time=3600,
+    )
+
     # ── Dune Analytics 聪明钱导入（每 3 天 UTC 05:00）──────────
     from dune_wallet_importer import run_dune_wallet_import
     scheduler.add_job(

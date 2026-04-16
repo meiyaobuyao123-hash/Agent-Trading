@@ -32,9 +32,11 @@ async def get_pump_signals():
         return {"signals": [], "count": 0, "message": "scanner not ready"}
 
     signals = scanner.get_signals()
+    is_history = bool(signals and signals[0].get("is_history"))
     return {
         "signals": signals,
         "count": len(signals),
+        "is_history": is_history,  # True = 当前无实时信号，展示最近 1h 历史回顾
     }
 
 

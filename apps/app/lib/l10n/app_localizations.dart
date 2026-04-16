@@ -1307,6 +1307,9 @@ abstract class S {
   /// **'实时扫描 pump.fun · 30s刷新'**
   String get scanPumpFun;
 
+  /// Recent signal review hint (shown when live pool is empty)
+  String get recentSignalReview;
+
   /// No description provided for @tradeDynamics.
   ///
   /// In zh, this message translates to:

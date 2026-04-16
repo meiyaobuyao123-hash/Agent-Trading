@@ -19,6 +19,7 @@ class PicksScreen extends StatefulWidget {
 class _PicksScreenState extends State<PicksScreen> {
   List<PumpSignal> _signals = [];
   bool _loading = true;
+  bool _isHistory = false;  // 当前展示的是历史回顾
   String? _error;
   Timer? _timer;
 
@@ -39,8 +40,15 @@ class _PicksScreenState extends State<PicksScreen> {
   Future<void> _load() async {
     if (_loading && _signals.isNotEmpty) return; // 避免重复loading
     try {
-      final signals = await PumpSignalService.instance.fetchSignals();
-      if (mounted) setState(() { _signals = signals; _loading = false; _error = null; });
+      final result = await PumpSignalService.instance.fetchSignals();
+      if (mounted) {
+        setState(() {
+          _signals = result.signals;
+          _isHistory = result.isHistory;
+          _loading = false;
+          _error = null;
+        });
+      }
     } catch (e) {
       if (mounted && _signals.isEmpty) {
         setState(() { _error = e.toString(); _loading = false; });
@@ -125,15 +133,46 @@ class _PicksScreenState extends State<PicksScreen> {
           else if (_signals.isEmpty)
             const SliverFillRemaining(child: _EmptyView())
           else ...[
-            SliverToBoxAdapter(
-              child: Container(
-                margin: const EdgeInsets.symmetric(horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.circular(12),
+            // 历史回顾提示条
+            if (_isHistory)
+              SliverToBoxAdapter(
+                child: Container(
+                  margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.history_rounded, size: 16, color: AppColors.warning),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          S.of(context).recentSignalReview,
+                          style: TextStyle(
+                            color: AppColors.warning,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Column(
-                  children: List.generate(_signals.length, (i) {
+              ),
+            SliverToBoxAdapter(
+              child: Opacity(
+                opacity: _isHistory ? 0.65 : 1.0,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: AppColors.surface,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    children: List.generate(_signals.length, (i) {
                     final signal = _signals[i];
                     return Column(
                       children: [
@@ -158,6 +197,7 @@ class _PicksScreenState extends State<PicksScreen> {
                     );
                   }),
                 ),
+              ),
               ),
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 32)),

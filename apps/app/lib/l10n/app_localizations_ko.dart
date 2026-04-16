@@ -685,6 +685,9 @@ class SKo extends S {
   String get scanPumpFun => '실시간 스캔 pump.fun · 30초 새로고침';
 
   @override
+  String get recentSignalReview => '최근 시그널 리뷰 (실시간 신호 없음)';
+
+  @override
   String get tradeDynamics => '거래 동태';
 
   @override

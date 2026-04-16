@@ -77,11 +77,48 @@ class PumpScanner:
         #         unique_buyers, age_minutes, entered_at, last_trade_at}
         self._signal_pool: Dict[str, dict] = {}
 
+        # ── 最近退池信号（供 API 空池时回退展示"近期信号回顾"）──
+        from collections import deque
+        self._recent_signals: deque = deque(maxlen=100)
+
     # ──────────────────────────────────────────────────
     # 实时信号池 — 供 API 读取
     # ──────────────────────────────────────────────────
+    def _archive_signal(self, mint: str, reason: str) -> None:
+        """退池时记录到 _recent_signals，供空池回退展示"""
+        sig = self._signal_pool.get(mint)
+        if not sig:
+            return
+        now = datetime.now(timezone.utc)
+        entered = sig.get("entered_at", now)
+        self._recent_signals.append({
+            "mint": sig.get("mint", mint),
+            "symbol": sig.get("symbol", ""),
+            "name": sig.get("name", ""),
+            "score": sig.get("score", 0),
+            "recommendation": sig.get("recommendation", ""),
+            "bc_progress": sig.get("bc_progress", 0),
+            "market_cap_sol": sig.get("market_cap_sol", 0),
+            "unique_buyers": sig.get("unique_buyers", 0),
+            "image_uri": sig.get("image_uri", ""),
+            "twitter": sig.get("twitter"),
+            "telegram": sig.get("telegram"),
+            "website": sig.get("website"),
+            "entered_at": entered.isoformat() if isinstance(entered, datetime) else str(entered),
+            "last_trade_at": (sig.get("last_trade_at") or entered).isoformat()
+                if isinstance(sig.get("last_trade_at", entered), datetime)
+                else str(sig.get("last_trade_at", entered)),
+            "exited_at": now.isoformat(),
+            "exit_reason": reason,
+            "age_minutes": round((now - entered).total_seconds() / 60, 1)
+                if isinstance(entered, datetime) else 0,
+            "is_history": True,
+        })
+
     def get_signals(self) -> list:
-        """返回当前信号池快照（按分数降序），供 API 端点调用"""
+        """返回当前信号池快照（按分数降序）。
+        空池时回退展示最近 1h 退池信号（is_history=True）。
+        """
         now = datetime.now(timezone.utc)
         signals = []
         for mint, sig in list(self._signal_pool.items()):
@@ -89,11 +126,13 @@ class PumpScanner:
             entered = sig.get("entered_at", now)
             age_h = (now - entered).total_seconds() / 3600
             if age_h > SIGNAL_MAX_AGE_H:
+                self._archive_signal(mint, "timeout")
                 self._signal_pool.pop(mint, None)
                 continue
             # 检查是否死币（30min 无交易）
             last_trade = sig.get("last_trade_at", entered)
             if (now - last_trade).total_seconds() > SIGNAL_DEAD_NO_TRADE:
+                self._archive_signal(mint, "no_trade")
                 self._signal_pool.pop(mint, None)
                 continue
             signals.append({
@@ -103,7 +142,20 @@ class PumpScanner:
                 "age_minutes": round((now - entered).total_seconds() / 60, 1),
             })
         signals.sort(key=lambda x: x.get("score", 0), reverse=True)
-        return signals
+
+        if signals:
+            return signals
+
+        # ── 空池回退：最近 1h 退池信号 ──
+        cutoff = (now - timedelta(hours=1)).isoformat()
+        history = []
+        for sig in reversed(self._recent_signals):
+            exited = sig.get("exited_at", "")
+            if exited and exited >= cutoff:
+                history.append(sig)
+            if len(history) >= 20:
+                break
+        return history
 
     # ──────────────────────────────────────────────────
     # 主入口
@@ -351,6 +403,7 @@ class PumpScanner:
                 log.info(f"🎓 毕业: {symbol} ({mint[:8]}…)")
                 # 毕业 → 移出信号池
                 if mint in self._signal_pool:
+                    self._archive_signal(mint, "graduated")
                     self._signal_pool.pop(mint, None)
                     pump_stats.incr("signal_exited")
 
@@ -453,6 +506,7 @@ class PumpScanner:
                 self._tokens.pop(mint, None)
                 self._trades.pop(mint, None)
                 if mint in self._signal_pool:
+                    self._archive_signal(mint, "timeout")
                     self._signal_pool.pop(mint, None)
                     pump_stats.incr("signal_exited")
                 evicted += 1
@@ -476,6 +530,7 @@ class PumpScanner:
                     self._tokens.pop(mint, None)
                     self._trades.pop(mint, None)
                     if mint in self._signal_pool:
+                        self._archive_signal(mint, "no_trade")
                         self._signal_pool.pop(mint, None)
                         pump_stats.incr("signal_exited")
                     evicted += 1
@@ -606,11 +661,13 @@ class PumpScanner:
             else:
                 # 不再满足条件 → 移出信号池
                 if mint in self._signal_pool:
+                    exit_reason = "bc_out" if not in_bc_window else "low_score"
                     log.info(
                         f"[信号池-] {f.symbol}({mint[:6]}…) "
                         f"score={result.total:.0f} bc={f.bc_progress:.1f}% "
-                        f"reason={'bc_out' if not in_bc_window else 'low_score'}"
+                        f"reason={exit_reason}"
                     )
+                    self._archive_signal(mint, exit_reason)
                     pump_stats.incr("signal_exited")
                     self._signal_pool.pop(mint, None)
 

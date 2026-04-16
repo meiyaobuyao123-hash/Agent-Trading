@@ -701,6 +701,9 @@ class SEn extends S {
   String get scanPumpFun => 'Live scan pump.fun · 30s refresh';
 
   @override
+  String get recentSignalReview => 'Recent signal review (no live signals)';
+
+  @override
   String get tradeDynamics => 'Trade Dynamics';
 
   @override

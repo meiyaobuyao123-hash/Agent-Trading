@@ -395,37 +395,59 @@ def run_smart_wallet_updater():
 # ═══════════════════════════════════════════════════════════
 
 def _handle_inactive(db, now: datetime):
-    """14天无交易降级，28天无交易移除"""
+    """14天降级 / 28天移除 / watching 批量淘汰不活跃"""
     demote_cutoff = (now - timedelta(days=INACTIVE_DEMOTE_DAYS)).isoformat()
     remove_cutoff = (now - timedelta(days=INACTIVE_REMOVE_DAYS)).isoformat()
 
     try:
-        # 28天无交易 → 移除
+        # ── 新增：watching 批量淘汰（30 天无活动 → inactive，不再参与监控）──
+        # 解决 Dune 批量导入了 ~25k "历史赚钱但不在我们 DEX 上交易"的地址，
+        # 导致钱包池膨胀、EVM Group B 轮询 40+ min 的问题。
+        # inactive tier 不会被 get_smart_wallet_tiers() 加载（已有 in_ 过滤）。
+        watch_cull_cutoff = (now - timedelta(days=30)).isoformat()
+        try:
+            cull_count = db.table("smart_wallets").select(
+                "wallet", count="exact"
+            ).eq("tier", "watching").lt("last_seen", watch_cull_cutoff).limit(0).execute()
+            n = cull_count.count or 0
+            if n > 0:
+                db.table("smart_wallets").update(
+                    {"tier": "inactive"}
+                ).eq("tier", "watching").lt("last_seen", watch_cull_cutoff).execute()
+                log.info(f"[淘汰] {n} 个 watching 钱包 30天无活动 → inactive")
+        except Exception as e:
+            log.warning(f"[淘汰] watching 批量淘汰失败: {e}")
+
+        # ── 28天无交易 → 移除（elite/verified/watching 统一） ──
         remove_res = db.table("smart_wallets").select(
-            "wallet"
+            "wallet", count="exact"
         ).lt("last_seen", remove_cutoff).neq(
             "tier", "blacklisted"
-        ).execute()
-        removed = 0
-        for r in (remove_res.data or []):
-            try:
-                db.table("smart_wallets").delete().eq(
-                    "wallet", r["wallet"]
-                ).execute()
-                removed += 1
-            except Exception:
-                pass
-        if removed:
-            log.info(f"[降级] 移除 {removed} 个 28天无交易钱包")
+        ).neq("tier", "inactive").limit(0).execute()
+        n_remove = remove_res.count or 0
+        if n_remove > 0 and n_remove < 1000:
+            # 小量逐条删
+            rows = db.table("smart_wallets").select("wallet").lt(
+                "last_seen", remove_cutoff
+            ).neq("tier", "blacklisted").neq("tier", "inactive").execute()
+            removed = 0
+            for r in (rows.data or []):
+                try:
+                    db.table("smart_wallets").delete().eq("wallet", r["wallet"]).execute()
+                    removed += 1
+                except Exception:
+                    pass
+            if removed:
+                log.info(f"[降级] 移除 {removed} 个 28天无交易钱包")
+        elif n_remove >= 1000:
+            log.warning(f"[降级] {n_remove} 个钱包待移除（>1000），跳过避免超时")
 
-        # 14天无交易 → 降一级
+        # ── 14天无交易 → 降一级 ──
         demote_map = {"elite": "verified", "verified": "watching"}
         for old_tier, new_tier in demote_map.items():
             demote_res = db.table("smart_wallets").select(
                 "wallet"
-            ).eq("tier", old_tier).lt(
-                "last_seen", demote_cutoff
-            ).execute()
+            ).eq("tier", old_tier).lt("last_seen", demote_cutoff).execute()
             demoted = 0
             for r in (demote_res.data or []):
                 try:

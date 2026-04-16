@@ -9,13 +9,18 @@ class PumpSignalService {
 
   static const _base = AppConfig.backendBaseUrl;
 
-  /// 获取当前实时信号池
-  Future<List<PumpSignal>> fetchSignals() async {
+  /// 获取当前实时信号池（含历史回退）
+  /// 返回 (signals, isHistory)
+  Future<({List<PumpSignal> signals, bool isHistory})> fetchSignals() async {
     final resp = await ApiClient.instance.get('$_base/api/pump/signals');
-    if (resp == null) return [];
+    if (resp == null) return (signals: <PumpSignal>[], isHistory: false);
     final list = resp['signals'] as List<dynamic>? ?? [];
-    return list
-        .map((e) => PumpSignal.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final isHistory = resp['is_history'] as bool? ?? false;
+    return (
+      signals: list
+          .map((e) => PumpSignal.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      isHistory: isHistory,
+    );
   }
 }

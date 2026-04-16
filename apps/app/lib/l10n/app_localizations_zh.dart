@@ -685,6 +685,9 @@ class SZh extends S {
   String get scanPumpFun => '实时扫描 pump.fun · 30s刷新';
 
   @override
+  String get recentSignalReview => '近期信号回顾（当前无实时信号）';
+
+  @override
   String get tradeDynamics => '交易动态';
 
   @override

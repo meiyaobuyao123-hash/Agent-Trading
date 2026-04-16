@@ -685,6 +685,9 @@ class SJa extends S {
   String get scanPumpFun => 'リアルタイムスキャン pump.fun · 30秒更新';
 
   @override
+  String get recentSignalReview => '最近のシグナル履歴（リアルタイム信号なし）';
+
+  @override
   String get tradeDynamics => '取引動態';
 
   @override

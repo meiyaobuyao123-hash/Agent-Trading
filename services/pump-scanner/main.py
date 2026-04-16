@@ -147,17 +147,19 @@ async def main():
         misfire_grace_time=3600,
     )
 
-    # ── Dune Analytics 聪明钱导入（每 3 天 UTC 05:00）──────────
-    from dune_wallet_importer import run_dune_wallet_import
-    scheduler.add_job(
-        run_dune_wallet_import,
-        trigger="cron",
-        day="*/3",
-        hour=5, minute=0,
-        id="dune_wallet_import",
-        name="Dune聪明钱导入(3天)",
-        misfire_grace_time=7200,
-    )
+    # ── Dune Analytics 聪明钱导入（已停用 2026-04-16：免费额度耗尽）──
+    # 替代方案：DEX WS 全量 swap 事件 → 内存计数未知地址 → dex_address_stats
+    # → txns_wallet_miner 每 6h 从 dex_address_stats 晋升 watching
+    # from dune_wallet_importer import run_dune_wallet_import
+    # scheduler.add_job(
+    #     run_dune_wallet_import,
+    #     trigger="cron",
+    #     day="*/3",
+    #     hour=5, minute=0,
+    #     id="dune_wallet_import",
+    #     name="Dune聪明钱导入(3天)",
+    #     misfire_grace_time=7200,
+    # )
 
     # ── 数据库清理（每 6 小时）─────────────────────────────
     from db_cleanup import run_db_cleanup

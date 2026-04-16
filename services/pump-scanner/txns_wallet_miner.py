@@ -177,8 +177,99 @@ def run_txns_wallet_miner():
         except Exception as e:
             log.debug("[TxnsMiner] 写入 %s: %s", addr[:12], e)
 
-    log.info("=== Txns Miner 完成: %d 条 txns → %d 候选 → %d 新增 ===",
+    log.info("=== Txns Miner（源1）完成: %d 条 txns → %d 候选 → %d 新增 ===",
              len(all_txns), len(candidates), new_count)
+
+    # ── 源 2: 从 dex_address_stats 挖掘高频活跃未知地址 ──
+    _mine_from_unknown_stats(db)
+
+
+# ── 新增：未知地址晋升 ──────────────────────────────────────
+
+# 从 dex_address_stats 晋升 watching 的阈值
+_PROMOTE_MIN_WINDOWS = 3      # 至少出现在 3 个 30min 窗口（= 1.5h+ 持续活跃）
+_PROMOTE_MIN_TX = 20           # 累积 20+ 笔交易
+_PROMOTE_MIN_TOKENS = 5        # 交易 5+ 不同代币
+
+
+def _mine_from_unknown_stats(db):
+    """从 dex_address_stats 找高频活跃地址 → 晋升 smart_wallets.watching"""
+    log.info("[TxnsMiner] 源2: 从 dex_address_stats 挖掘未知高频地址")
+
+    try:
+        res = (
+            db.table("dex_address_stats")
+            .select("wallet_address, chain, total_tx_count, total_unique_tokens, active_windows")
+            .gte("active_windows", _PROMOTE_MIN_WINDOWS)
+            .gte("total_tx_count", _PROMOTE_MIN_TX)
+            .gte("total_unique_tokens", _PROMOTE_MIN_TOKENS)
+            .is_("promoted_at", "null")
+            .limit(500)
+            .execute()
+        )
+        candidates = res.data or []
+    except Exception as e:
+        log.warning("[TxnsMiner] 查询 dex_address_stats 失败: %s", e)
+        return
+
+    if not candidates:
+        log.info("[TxnsMiner] 源2: 无达标候选")
+        return
+
+    log.info("[TxnsMiner] 源2: %d 个达标候选", len(candidates))
+
+    # 排除已在 smart_wallets 的
+    existing = set()
+    offset = 0
+    while True:
+        try:
+            r = db.table("smart_wallets").select("wallet").range(offset, offset + 999).execute()
+            batch = r.data or []
+            for row in batch:
+                existing.add(row["wallet"].lower())
+            if len(batch) < 1000:
+                break
+            offset += 1000
+        except Exception:
+            break
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    promoted = 0
+    for c in candidates:
+        addr = c["wallet_address"]
+        if addr.lower() in existing:
+            # 已存在但未标记 promoted → 更新标记
+            try:
+                db.table("dex_address_stats").update({
+                    "promoted_at": now_iso, "promoted_tier": "existing"
+                }).eq("wallet_address", addr).execute()
+            except Exception:
+                pass
+            continue
+
+        # 新地址 → 写入 smart_wallets
+        try:
+            db.table("smart_wallets").insert({
+                "wallet": addr,
+                "tier": "watching",
+                "total_trades": c.get("total_tx_count", 0),
+                "win_trades": 0,
+                "active_weeks": c.get("active_windows", 1),
+                "last_seen": now_iso,
+                "is_blacklisted": False,
+            }).execute()
+
+            # 标记已晋升
+            db.table("dex_address_stats").update({
+                "promoted_at": now_iso, "promoted_tier": "watching"
+            }).eq("wallet_address", addr).execute()
+
+            promoted += 1
+            existing.add(addr.lower())
+        except Exception as e:
+            log.debug("[TxnsMiner] 源2 写入 %s: %s", addr[:12], e)
+
+    log.info("[TxnsMiner] 源2 完成: %d 候选 → %d 新增 watching", len(candidates), promoted)
 
 
 if __name__ == "__main__":

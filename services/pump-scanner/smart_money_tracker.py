@@ -77,6 +77,11 @@ class SmartMoneyTracker:
         # 模拟盘去重：同一代币同一来源只触发一次买入
         self._sim_triggered: Set[str] = set()
 
+        # ── 未知地址发现：轻量内存计数（30min flush → DB）──
+        # 解决"DEX WS 捕获全量 swap 但只处理已知钱包"的盲区
+        self._unknown_addr_counter: Dict[str, int] = defaultdict(int)
+        self._unknown_addr_tokens: Dict[str, Set[str]] = defaultdict(set)
+
     async def init(self):
         self._session = aiohttp.ClientSession()
         await self._load_wallets()
@@ -167,6 +172,7 @@ class SmartMoneyTracker:
             self._run_sol_dex_monitor(),
             self._run_evm_dex_monitor(),
             self._run_evm_poll_loop(),  # 保留 OKX 轮询作为补充
+            self._unknown_addr_flush_loop(),  # 未知地址发现
         )
 
     # ──────────────────────────────────────────────
@@ -310,7 +316,16 @@ class SmartMoneyTracker:
                         break
 
             if not wallet:
-                return  # 不是我们的钱包
+                # ── 未知地址：轻量计数 ──
+                # feePayer 通常是交易发起者，最有价值
+                if fee_payer and len(fee_payer) >= 32:
+                    self._unknown_addr_counter[fee_payer] += 1
+                    # 尝试从 swap events 提取代币 mint
+                    for event in tx.get("events", {}).get("swap", {}).get("tokenOutputs", []):
+                        mint = event.get("mint", "")
+                        if mint and mint != "So11111111111111111111111111111111111111112":
+                            self._unknown_addr_tokens[fee_payer].add(mint)
+                return
 
             address = wallet["address"]
             parsed = []
@@ -548,6 +563,12 @@ class SmartMoneyTracker:
                         break
 
                 if not matched_wallet:
+                    # ── 未知地址：轻量计数（不调 API，不存 DB，只攒内存）──
+                    token_contract = result.get("address", "").lower()
+                    for addr in involved_addrs:
+                        self._unknown_addr_counter[addr] += 1
+                        if token_contract:
+                            self._unknown_addr_tokens[addr].add(token_contract)
                     continue
 
                 self._seen_txids.add(tx_hash)
@@ -1027,6 +1048,86 @@ class SmartMoneyTracker:
         if elite_buys >= 1 or net_flow >= 2 or unique_buyers >= 3:
             return "medium"
         return "weak"
+
+    # ──────────────────────────────────────────────
+    # 未知地址发现：30min flush → dex_address_stats
+    # ──────────────────────────────────────────────
+
+    _UNKNOWN_FLUSH_INTERVAL = 1800  # 30 min
+    _UNKNOWN_MIN_TX = 5             # 30min 内 5+ 笔交易才值得记录
+
+    async def _unknown_addr_flush_loop(self):
+        """每 30min 把高频未知地址写入 dex_address_stats 表"""
+        while self._running:
+            await asyncio.sleep(self._UNKNOWN_FLUSH_INTERVAL)
+            try:
+                self._flush_unknown_addresses()
+            except Exception as e:
+                logger.warning("[SM] unknown addr flush error: %s", e)
+
+    def _flush_unknown_addresses(self):
+        """筛选 30min 内 >= 5 笔交易的未知地址 → upsert 到 dex_address_stats"""
+        total_tracked = len(self._unknown_addr_counter)
+
+        # 筛选高频地址
+        active = {
+            addr: count for addr, count in self._unknown_addr_counter.items()
+            if count >= self._UNKNOWN_MIN_TX
+        }
+
+        # 清零内存（不管有没有 active，都要清）
+        self._unknown_addr_counter.clear()
+        self._unknown_addr_tokens.clear()
+
+        if not active:
+            logger.debug("[SM] 未知地址 flush: %d 追踪，0 通过阈值（>=%d）",
+                         total_tracked, self._UNKNOWN_MIN_TX)
+            return
+
+        logger.info("[SM] 未知高频地址: %d 个通过阈值（总追踪 %d，阈值 >=%d 笔/30min）",
+                     len(active), total_tracked, self._UNKNOWN_MIN_TX)
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        rows = []
+        for addr, count in active.items():
+            tokens = self._unknown_addr_tokens.get(addr, set())
+            chain = "solana" if not addr.startswith("0x") and len(addr) >= 32 else "evm"
+            rows.append({
+                "wallet_address": addr,
+                "chain": chain,
+                "total_tx_count": count,  # upsert 时 DB 侧会累加（见下方 RPC）
+                "total_unique_tokens": len(tokens),
+                "active_windows": 1,
+                "last_seen": now_iso,
+            })
+
+        # 批量 upsert — 累加式更新（PostgREST 不支持 increment，先 select 再 update）
+        for i in range(0, len(rows), 50):
+            batch = rows[i:i + 50]
+            for row in batch:
+                try:
+                    # 查是否存在
+                    existing = self.db.table("dex_address_stats").select(
+                        "total_tx_count, total_unique_tokens, active_windows"
+                    ).eq("wallet_address", row["wallet_address"]).limit(1).execute()
+
+                    if existing.data:
+                        old = existing.data[0]
+                        self.db.table("dex_address_stats").update({
+                            "total_tx_count": (old.get("total_tx_count") or 0) + row["total_tx_count"],
+                            "total_unique_tokens": max(
+                                (old.get("total_unique_tokens") or 0), row["total_unique_tokens"]
+                            ),
+                            "active_windows": (old.get("active_windows") or 0) + 1,
+                            "last_seen": now_iso,
+                        }).eq("wallet_address", row["wallet_address"]).execute()
+                    else:
+                        row["first_seen"] = now_iso
+                        self.db.table("dex_address_stats").insert(row).execute()
+                except Exception as e:
+                    logger.debug("[SM] dex_address_stats upsert %s: %s", row["wallet_address"][:12], e)
+
+        logger.info("[SM] dex_address_stats: %d 行已写入/更新", len(rows))
 
     # ──────────────────────────────────────────────
     # 信号统计重算（修复 unique_buyers 永远=1 的 bug）

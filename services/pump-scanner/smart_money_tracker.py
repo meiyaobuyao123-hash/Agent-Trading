@@ -82,6 +82,19 @@ class SmartMoneyTracker:
         self._unknown_addr_counter: Dict[str, int] = defaultdict(int)
         self._unknown_addr_tokens: Dict[str, Set[str]] = defaultdict(set)
 
+    # SOL / USDC mint 常量（用于识别 tokenTransfers 里的稳定币/包裹币）
+    _WSOL_MINT = "So11111111111111111111111111111111111111112"
+    _USDC_MINT = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+    def _sol_price(self) -> float:
+        """获取 SOL 当前 USD 价格，失败回退 $180"""
+        try:
+            from price_feed import price_feed
+            p = price_feed.get_major_price("SOL")
+            return p if p and p > 0 else 180.0
+        except Exception:
+            return 180.0
+
     async def init(self):
         self._session = aiohttp.ClientSession()
         await self._load_wallets()
@@ -330,18 +343,46 @@ class SmartMoneyTracker:
             address = wallet["address"]
             parsed = []
 
-            # 解析 swap events
-            native_sol = 0.0
+            # ── 计算钱包花费 / 收到的 SOL 等价值 ──
+            # 不只看 nativeTransfers（原生 SOL），还要看 tokenTransfers 里的 WSOL/USDC
+            # 因为 pump.fun / Jupiter / Raydium 的 SOL 经常被包装成 WSOL
+            sol_price = self._sol_price()
+            addr_lower = address.lower()
+
+            # 花费（buy）：钱包 fromUserAccount
+            spent_sol = 0.0
             for nt in tx.get("nativeTransfers", []):
-                if nt.get("fromUserAccount", "").lower() == address.lower():
-                    native_sol += abs(float(nt.get("amount", 0))) / 1e9
+                if nt.get("fromUserAccount", "").lower() == addr_lower:
+                    spent_sol += abs(float(nt.get("amount", 0))) / 1e9
+            for tt in tx.get("tokenTransfers", []):
+                if tt.get("fromUserAccount", "").lower() == addr_lower:
+                    mint = tt.get("mint", "")
+                    amount = abs(float(tt.get("tokenAmount", 0) or 0))
+                    if mint == self._WSOL_MINT:
+                        spent_sol += amount
+                    elif mint == self._USDC_MINT:
+                        spent_sol += amount / sol_price if sol_price > 0 else 0
+
+            # 收到（sell）：钱包 toUserAccount
+            received_sol = 0.0
+            for nt in tx.get("nativeTransfers", []):
+                if nt.get("toUserAccount", "").lower() == addr_lower:
+                    received_sol += abs(float(nt.get("amount", 0))) / 1e9
+            for tt in tx.get("tokenTransfers", []):
+                if tt.get("toUserAccount", "").lower() == addr_lower:
+                    mint = tt.get("mint", "")
+                    amount = abs(float(tt.get("tokenAmount", 0) or 0))
+                    if mint == self._WSOL_MINT:
+                        received_sol += amount
+                    elif mint == self._USDC_MINT:
+                        received_sol += amount / sol_price if sol_price > 0 else 0
 
             ts = tx.get("timestamp", 0)
             tx_time = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else datetime.now(timezone.utc).isoformat()
 
             for event in tx.get("events", {}).get("swap", {}).get("tokenOutputs", []):
                 mint = event.get("mint", "")
-                if not mint or mint == "So11111111111111111111111111111111111111112":
+                if not mint or mint == self._WSOL_MINT:
                     continue
                 token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
                 decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
@@ -349,7 +390,7 @@ class SmartMoneyTracker:
                 parsed.append({
                     "token_address": mint,
                     "type": "buy",
-                    "volume_usd": native_sol * 150,
+                    "volume_usd": spent_sol * sol_price,  # 用实际花费 + 实时 SOL 价格
                     "_token_qty": qty,
                     "_is_token_qty": True,
                     "timestamp": tx_time,
@@ -357,7 +398,7 @@ class SmartMoneyTracker:
 
             for event in tx.get("events", {}).get("swap", {}).get("tokenInputs", []):
                 mint = event.get("mint", "")
-                if not mint or mint == "So11111111111111111111111111111111111111112":
+                if not mint or mint == self._WSOL_MINT:
                     continue
                 token_amount = float(event.get("rawTokenAmount", {}).get("tokenAmount", 0) or 0)
                 decimals = int(event.get("rawTokenAmount", {}).get("decimals", 0) or 0)
@@ -365,7 +406,7 @@ class SmartMoneyTracker:
                 parsed.append({
                     "token_address": mint,
                     "type": "sell",
-                    "volume_usd": 0.0,
+                    "volume_usd": received_sol * sol_price,  # 卖出收到的 SOL × 价格
                     "_token_qty": qty,
                     "_is_token_qty": True,
                     "timestamp": tx_time,
@@ -894,16 +935,25 @@ class SmartMoneyTracker:
             sig["net_flow"] = sig.get("buy_count", 0) - sig.get("sell_count", 0)
             sig["signal_strength"] = self._calc_strength(sig)
 
-        # token数量 → USD（SOL + EVM 通用）
+        # token数量 → USD（SOL + EVM 通用）+ 回填 price_at_tx / market_cap_at_tx
         price_map = {sig["token_address"].lower(): sig.get("price_usd", 0) for sig in signals.values()}
+        mc_map = {sig["token_address"].lower(): sig.get("market_cap_usd", 0) for sig in signals.values()}
         for txn in txns:
+            token_addr = txn["token_address"].lower()
+            # 回填当时的价格和市值（之前一直是 0，APP 详情页全显示 $0）
+            price = price_map.get(token_addr, 0)
+            txn["price_at_tx"] = price
+            txn["market_cap_at_tx"] = mc_map.get(token_addr, 0)
+
             if txn.pop("_is_token_qty", False):
-                price = price_map.get(txn["token_address"].lower(), 0)
                 token_qty = txn.pop("_token_qty", 0)
                 if price > 0 and token_qty > 0:
+                    # 有 DexScreener 价格 → 用代币数量 × 实际价格（最准）
                     txn["volume_usd"] = token_qty * price
                 elif price > 0 and txn["volume_usd"] > 0:
+                    # 边界（EVM 某些情况）
                     txn["volume_usd"] = txn["volume_usd"] * price
+                # price == 0 → 保留 SOL path 已算好的 spent_sol * sol_price 或 received_sol * sol_price
             else:
                 txn.pop("_token_qty", None)
 

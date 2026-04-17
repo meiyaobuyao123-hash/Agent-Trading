@@ -98,8 +98,8 @@ class _MarketScreenState extends State<MarketScreen> {
 
   Future<void> _loadPicks() async {
     try {
-      final signals = await PumpSignalService.instance.fetchSignals();
-      if (mounted) setState(() { _picks = signals; _picksLoading = false; _picksError = null; });
+      final result = await PumpSignalService.instance.fetchSignals();
+      if (mounted) setState(() { _picks = result.signals; _picksLoading = false; _picksError = null; });
     } catch (e) {
       if (mounted && _picks.isEmpty) setState(() { _picksError = e.toString(); _picksLoading = false; });
     }

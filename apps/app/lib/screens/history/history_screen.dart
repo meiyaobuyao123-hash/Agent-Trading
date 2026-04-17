@@ -37,10 +37,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _load() async {
     try {
-      final signals = await PumpSignalService.instance.fetchSignals();
+      final result = await PumpSignalService.instance.fetchSignals();
       if (mounted) {
         setState(() {
-          _signals = signals;
+          _signals = result.signals;
           _loading = false;
           _error = null;
         });

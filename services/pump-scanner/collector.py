@@ -630,14 +630,19 @@ class PumpScanner:
                         if _supply is None or _supply <= 0:
                             _supply = 1_000_000_000
                         _price = _mc_usd / _supply if _supply > 0 else 0
-                        # 恢复垃圾币过滤：价格 < $0.0001 的代币通常是刚起步或已死
-                        if _price > 0.0001:
+                        # pump.fun 代币 supply=10亿，BC 3-35% 对应 MC $5K-$25K，
+                        # price $0.000005-$0.000025。原 $0.0001 门槛 = 要求 MC >= $100K
+                        # （pump.fun 毕业都才 $68K）→ 所有内盘代币永远触发不了。
+                        # 改成 price > 0（bc_progress 3-35% 已做了活跃过滤）
+                        if _price > 0:
                             get_sim_trader().on_token_enter(
                                 address=mint, chain="solana", symbol=f.symbol,
                                 price=_price, score=result.total, source="pump")
+                            log.info("[pump sim] %s 入池触发买入 price=$%.8f mc=$%.0f",
+                                     f.symbol, _price, _mc_usd)
                         else:
-                            log.debug("[pump sim] %s 价格过低跳过 price=%.8f mc_sol=%s",
-                                      f.symbol, _price, f.market_cap_sol)
+                            log.info("[pump sim] %s 价格为 0 跳过 mc_sol=%s",
+                                     f.symbol, f.market_cap_sol)
                     except Exception as e:
                         log.warning("[pump sim] 触发失败 %s: %s", f.symbol, e)
                     log.info(

@@ -13,7 +13,7 @@ import base64
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional, Any, Set
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 
 import aiohttp
 import websockets
@@ -68,9 +68,20 @@ class SmartMoneyTracker:
         self._okx_key = os.getenv("OKX_API_KEY", "")
         self._okx_secret = os.getenv("OKX_SECRET_KEY", "")
         self._okx_pass = os.getenv("OKX_PASSPHRASE", "")
-        # 去重：避免同一笔 tx 被重复处理
-        self._seen_txids: Set[str] = set()
+        # 去重：避免同一笔 tx 被重复处理。用 OrderedDict 模拟 FIFO 避免无限增长
+        # 单 txid ~88 bytes（SOL base58）, 100k 条 ~9MB，够用
+        self._seen_txids: "OrderedDict[str, None]" = OrderedDict()
+        self._SEEN_TXIDS_MAX = 100_000
         self._running = False
+
+    def _mark_seen_tx(self, tx_id: str) -> None:
+        """记录 tx_id 去重，FIFO 淘汰防止无限增长"""
+        self._seen_txids[tx_id] = None
+        if len(self._seen_txids) > self._SEEN_TXIDS_MAX:
+            # 删除最老的 10%（批量删比每次删一个快）
+            cull = self._SEEN_TXIDS_MAX // 10
+            for _ in range(cull):
+                self._seen_txids.popitem(last=False)
         # OKX toplist 冷却：每条链最多每10s调一次，防429
         self._last_okx_toplist: Dict[str, float] = {}
         self._okx_toplist_cooldown = 10.0
@@ -295,7 +306,7 @@ class SmartMoneyTracker:
                     err = value.get("err")
                     if not sig or err or sig in self._seen_txids:
                         continue
-                    self._seen_txids.add(sig)
+                    self._mark_seen_tx(sig)
                     # 异步处理，不阻塞 WS 读取
                     asyncio.create_task(self._process_sol_dex_tx(sig))
 
@@ -446,7 +457,7 @@ class SmartMoneyTracker:
                     sig = tx.get("signature", "")
                     if sig in self._seen_txids:
                         continue
-                    self._seen_txids.add(sig)
+                    self._mark_seen_tx(sig)
                     # Helius swap events: tokenOutputs = buy, tokenInputs = sell
                     # tokenAmount = raw amount, 需要除以 decimals 再乘价格（enrich 阶段）
                     # nativeTransfers 里有 SOL 金额可以近似 USD
@@ -617,7 +628,7 @@ class SmartMoneyTracker:
                             self._unknown_addr_tokens[addr].add(token_contract)
                     continue
 
-                self._seen_txids.add(tx_hash)
+                self._mark_seen_tx(tx_hash)
                 # 异步获取交易详情
                 asyncio.create_task(
                     self._process_evm_dex_swap(chain, tx_hash, matched_wallet)
@@ -759,7 +770,7 @@ class SmartMoneyTracker:
                             continue
                         if tx.get("txStatus") != "success":
                             continue
-                        self._seen_txids.add(tx_hash)
+                        self._mark_seen_tx(tx_hash)
 
                         token_addr = tx.get("tokenAddress", "")
                         if not token_addr or token_addr == "0x0000000000000000000000000000000000000000":

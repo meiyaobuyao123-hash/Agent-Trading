@@ -90,7 +90,21 @@ class PumpScanner:
         if not sig:
             return
         now = datetime.now(timezone.utc)
-        entered = sig.get("entered_at", now)
+
+        # 规范化 datetime：如果是 str 或 None 则转成 datetime
+        def _as_dt(v, default):
+            if isinstance(v, datetime):
+                return v
+            if isinstance(v, str):
+                try:
+                    return datetime.fromisoformat(v.replace("Z", "+00:00"))
+                except (ValueError, TypeError):
+                    return default
+            return default
+
+        entered = _as_dt(sig.get("entered_at"), now)
+        last_trade = _as_dt(sig.get("last_trade_at"), entered)
+
         self._recent_signals.append({
             "mint": sig.get("mint", mint),
             "symbol": sig.get("symbol", ""),
@@ -104,14 +118,11 @@ class PumpScanner:
             "twitter": sig.get("twitter"),
             "telegram": sig.get("telegram"),
             "website": sig.get("website"),
-            "entered_at": entered.isoformat() if isinstance(entered, datetime) else str(entered),
-            "last_trade_at": (sig.get("last_trade_at") or entered).isoformat()
-                if isinstance(sig.get("last_trade_at", entered), datetime)
-                else str(sig.get("last_trade_at", entered)),
+            "entered_at": entered.isoformat(),
+            "last_trade_at": last_trade.isoformat(),
             "exited_at": now.isoformat(),
             "exit_reason": reason,
-            "age_minutes": round((now - entered).total_seconds() / 60, 1)
-                if isinstance(entered, datetime) else 0,
+            "age_minutes": round((now - entered).total_seconds() / 60, 1),
             "is_history": True,
         })
 
@@ -623,7 +634,8 @@ class PumpScanner:
                     try:
                         from hot_sim_trader import get_sim_trader
                         from price_feed import price_feed
-                        _sol_usd = price_feed.get_major_price("SOL") or 150
+                        # 与 smart_money_tracker._sol_price() 统一 fallback
+                        _sol_usd = price_feed.get_major_price("SOL") or 180
                         _mc_usd = (f.market_cap_sol or 0) * _sol_usd
                         # pump.fun 代币 supply 固定 1_000_000_000
                         _supply = getattr(f, 'total_supply', None)

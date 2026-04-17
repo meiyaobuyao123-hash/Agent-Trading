@@ -238,7 +238,10 @@ def _mine_from_unknown_stats(db):
             local_db.mark_promoted(addr, "existing")
             continue
 
-        # 新地址 → 写入 Supabase smart_wallets
+        # 新地址 → 写入 smart_wallets + 标记已晋升
+        # 分两个独立 try：smart_wallets 失败时仍然 mark_promoted 避免下轮
+        # 无效重试（wallet 是主键冲突就是永久失败）
+        insert_ok = False
         try:
             db.table("smart_wallets").insert({
                 "wallet": addr,
@@ -249,12 +252,17 @@ def _mine_from_unknown_stats(db):
                 "last_seen": now_iso,
                 "is_blacklisted": False,
             }).execute()
-
-            local_db.mark_promoted(addr, "watching")
+            insert_ok = True
             promoted += 1
             existing.add(addr.lower())
         except Exception as e:
             log.debug("[TxnsMiner] 源2 写入 %s: %s", addr[:12], e)
+
+        # 无论 insert 成功失败，都标记为已处理（失败是主键冲突 = 并发已写，下轮不用再试）
+        try:
+            local_db.mark_promoted(addr, "watching" if insert_ok else "duplicate")
+        except Exception as e:
+            log.debug("[TxnsMiner] 源2 mark_promoted %s: %s", addr[:12], e)
 
     # 定期清理本地 PG 90 天前已晋升的旧数据
     try:

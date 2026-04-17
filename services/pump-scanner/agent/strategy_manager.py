@@ -158,18 +158,25 @@ class StrategyManager:
             data_source: 可选，只返回关联此数据源的策略
         """
         try:
-            query = (
+            # 迁移后 data_sources 从 TEXT[] 改为 JSONB，postgrest-py 的
+            # .contains() 语法不兼容 → 客户端过滤（表本身只有 13 行，无性能影响）
+            result = (
                 get_db()
                 .table("agent_strategies")
                 .select("*")
                 .eq("status", "active")
+                .execute()
             )
+            rows = result.data or []
 
             if data_source:
-                query = query.contains("data_sources", [data_source])
+                rows = [
+                    r for r in rows
+                    if isinstance(r.get("data_sources"), list)
+                    and data_source in r["data_sources"]
+                ]
 
-            result = query.execute()
-            return result.data or []
+            return rows
         except Exception as e:
             log.error(f"get_active_strategies error: {e}")
             return []

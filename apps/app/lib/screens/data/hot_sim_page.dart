@@ -50,6 +50,17 @@ class _HotSimPageState extends State<HotSimPage> {
 
   String get _cacheKey => '$_cachePrefix${_sourceKeys[_sourceTab]}';
 
+  /// 按当前 tab 返回空交易列表时的提示文案
+  String _emptyTradeHint() {
+    switch (_sourceTab) {
+      case 1: return '等待热币入榜触发...';
+      case 2: return '等待聪明钱买入触发...';
+      case 3: return '等待 pump.fun 内盘信号触发...';
+      case 4: return '等待 BTC/ETH 信号触发...';
+      default: return '等待信号触发...';  // 全部
+    }
+  }
+
   Future<void> _loadFromCache() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -343,7 +354,7 @@ class _HotSimPageState extends State<HotSimPage> {
         if (trades.isEmpty)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 20),
-            child: Center(child: Text('等待热币入榜触发...', style: TextStyle(fontSize: 13, color: _t4))),
+            child: Center(child: Text(_emptyTradeHint(), style: TextStyle(fontSize: 13, color: _t4))),
           )
         else
           ...trades.map((t) {

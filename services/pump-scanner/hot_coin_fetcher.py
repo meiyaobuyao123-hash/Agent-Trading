@@ -132,11 +132,23 @@ def apply_hard_filter(
     mc_max_usd: float = None,
     liq_max_usd: float = None,
 ) -> Tuple[bool, str]:
-    """返回 (通过, 拒绝原因)"""
+    """返回 (通过, 拒绝原因)
+
+    ETH 链特殊处理：gas 贵 + meme 爆发期短（48h），放宽年龄和 LP/MC 比率门槛
+    （2026-04-22 基于 GeckoTerminal ETH top gainers 分析：MYSTERY/CLUTCH/DANKDOGE/
+    GORK/SNOOPY 等暴涨 meme 都是因 AGE_DAYS=3 或 LIQ_MC_RATIO=8% 被漏扫）
+    """
+    chain = (coin.get("chain") or "").lower()
+    is_eth = chain in ("eth", "ethereum")
+
+    # 链特定参数
+    min_age = 1 if is_eth else HOT_MIN_AGE_DAYS
+    min_ratio = 0.04 if is_eth else HOT_MIN_LIQ_MC_RATIO
+
     age = coin.get("age_days")
     if age is None:
         return False, "年龄未知"
-    if not (HOT_MIN_AGE_DAYS <= age <= HOT_MAX_AGE_DAYS):
+    if not (min_age <= age <= HOT_MAX_AGE_DAYS):
         return False, f"年龄不符 {age:.1f}d"
 
     liq = coin.get("liquidity_usd", 0)
@@ -152,7 +164,7 @@ def apply_hard_filter(
     if coin.get("volume_24h_usd", 0) < HOT_MIN_VOL_24H_USD:
         return False, f"24h量不足 ${coin.get('volume_24h_usd', 0):,.0f}"
 
-    if mc > 0 and liq / mc < HOT_MIN_LIQ_MC_RATIO:
+    if mc > 0 and liq / mc < min_ratio:
         return False, f"流动性/市值比低 {liq/mc:.1%}"
 
     return True, ""

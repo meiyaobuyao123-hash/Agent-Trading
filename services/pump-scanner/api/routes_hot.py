@@ -19,19 +19,21 @@ async def get_hot_coins(
     """Get hot coins ordered by score, excluding risky and skipped tokens."""
     db = get_db()
     try:
-        # postgrest-py 不支持 .not_() / .neq()（supabase-py 特有），
-        # 改用客户端过滤
+        # postgrest-py 不支持 .not_() / .neq()，客户端过滤
+        # 放宽 recommendation 过滤：之前 != "skip" 导致 ETH 链（全部 skip）返回 0 个。
+        # 改为 score >= 30（至少有动量信号的代币都展示），APP UI 按 recommendation
+        # 显示颜色标签，用户自己判断。
         res = (
             db.table("hot_coins")
             .select("*")
             .eq("goplus_risk", False)
             .order("score", desc=True)
-            .limit(limit * 2)
+            .limit(limit * 3)  # 多拉一些，给客户端过滤余量
             .execute()
         )
         data = [
             r for r in (res.data or [])
-            if r.get("score") is not None and r.get("recommendation") != "skip"
+            if (r.get("score") or 0) >= 30
         ][:limit]
         return {"data": data, "count": len(data)}
     except Exception as e:

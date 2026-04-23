@@ -5,7 +5,7 @@
 | 字段 | 值 |
 |------|---|
 | Status | 🟢 Live（每次更新数据时同步） |
-| Version | v0.1 |
+| Version | v0.2 |
 | Last Updated | 2026-04-23 |
 
 ---
@@ -85,6 +85,80 @@
 | elite tier | 409 + 316 sell |
 | verified | 6 + 11 |
 | watching | 35 + 29 |
+
+### 1.6 DEX 程序级事件流 ⭐ 核心实时源
+
+> **这是本 Agent 最底层、最实时、最"链上原生"的数据源**。所有轮询式 API（OKX / GeckoTerminal / DexScreener）都只是**兜底或补充**。
+
+#### 1.6.1 监听范围
+
+| 链 | 监听对象 | 数据通道 | 实测延迟 | 覆盖率 |
+|----|---------|---------|---------|--------|
+| **SOL** | Raydium AMM V4 / CLMM / Orca Whirlpool / Meteora DLMM / Jupiter V6 / **Pump.fun** | Helius `logsSubscribe` WS | **~400ms**（1 slot）| 主流 DEX 100% |
+| **ETH** | Uniswap V2 + V3（Swap Topic）| 公共 RPC WS + OKX 轮询 | ~12s（块时间）| V2/V3 |
+| **BSC** | PancakeSwap V2/V3（同 Uniswap Topic）| 公共 RPC WS + OKX 轮询 | ~3s | V2/V3 |
+| **Base** | Uniswap V3 / Aerodrome | 公共 RPC WS + OKX 轮询 | ~2s | 主流 |
+| **Pump.fun 内盘** | pumpportal WS（newToken + trade）| 自建 WS | **<1s** | 100% |
+
+#### 1.6.2 事件能抓到什么
+
+✅ **已能解出**：
+- `token_in / token_out` mint 地址
+- `amount`（raw + USD 换算）
+- `wallet`（SOL: feePayer + accountData；EVM: topics Sender/Recipient）
+- `tx_hash / signature + timestamp`
+- `price_usd`（后查 DexScreener 或缓存）
+- `volume_usd`（SOL: nativeTransfers + WSOL/USDC tokenTransfers；EVM: topics 解析）
+- `market_cap_at_tx`（近实时补全）
+- `wallet_tier`（与 smart_wallets 表 join，得到 elite/verified/watching）
+
+❌ **当前抓不到**（需额外订阅 / 独立源）：
+- 池子 liquidity 深度（→ 用 OKX DEX API / DexScreener 补）
+- Holder 变化（→ 需单独订 Transfer 事件或用 Helius enhanced TX）
+- 多跳 swap 准确聚合（单 tx 多 swap 当前会记成多笔，去重用 signature 但会放大成交量 ~2%）
+
+#### 1.6.3 直接落表
+
+| 表 | 事件源 | 保留 |
+|----|--------|------|
+| `pump_tokens` | pumpportal newToken | 永久 |
+| `token_trades` | pumpportal trade | 30 天 |
+| `token_snapshots` | 1min 聚合快照（bc_progress / buy_sell_ratio / unique_buyers）| 90 天 |
+| `smart_money_txns` | SOL/EVM DEX swap 解析 | 14 天 |
+| `hot_coins` | （多源融合）| 实时 |
+
+#### 1.6.4 已知局限与漏洞
+
+| 局限 | 影响 | 处理方式 |
+|------|------|---------|
+| SOL 未监听 Phoenix（orderbook DEX）| ~2-3% SOL 成交漏数 | v1 接受，v2 补 |
+| EVM 未监听 Curve（稳定币池 / stable swap topic）| 稳定币大额漏数 | v1 接受（不是我们主战场）|
+| Helius 免费版 429 | 单 DEX 1 subscription，多触发易限流，触发后 10min 完全中断 | v1 必须付费升级，否则是 SEV-2 源 |
+| Multi-hop swap 按 signature 去重但会放大量 | Volume 虚高 ~2% | v1 接受，回测时按 tx 级聚合 |
+| 内部 tx（Jupiter router）| ~5% 漏数 | 大额交易改用 Helius enhanced TX API |
+| EVM 块时间延迟 | ETH 12s、BSC 3s、Base 2s | 这是链的物理限制，无法优化 |
+
+#### 1.6.5 "能替代什么 / 不能替代什么"
+
+| 场景 | 用 DEX 事件流？ | 说明 |
+|------|----------------|------|
+| 实时成交监测 | ✅ **主源** | OKX / Gecko 降级为兜底 |
+| 信号策略 evaluate（event-driven）| ✅ **主源** | 替代原 30s 轮询 |
+| 聪明钱追踪 | ✅ **主源** | 已是现状 |
+| Pump 早期发现 | ✅ **主源** | pumpportal WS |
+| 历史 K 线 | ❌ | 用 GeckoTerminal API（WS 不适合回放）|
+| 池子深度 / 滑点估算 | ❌ | OKX DEX API 必须 |
+| 交易执行 quote | ❌ | Jupiter / OKX aggregator 必须 |
+| Holder 分布 | ❌ | Helius enhanced / 独立源 |
+| 跨链 bridge 追踪 | ❌ | v1 不做 |
+
+**关键结论**：DEX 事件流是 **实时触发 / 实时感知** 的源；OKX / GeckoTerminal / Helius HTTP 是 **查询 / 深度 / 历史** 的源。**两者互补，不互斥**。
+
+#### 1.6.6 引用位置
+
+- [03 PRD § 8.7](./03-prd.md#87-event-driven-first-原则) — Event-Driven First 原则
+- [03 PRD § 3](./03-prd.md#3-signal-strategy-builder自定义信号策略--核心) — 信号策略 evaluate 的数据通道
+- [05 Tool Catalog](./05-tool-catalog.md) — T01/T04/T13 等 tool 的实现底层
 
 ---
 
@@ -197,6 +271,12 @@
 
 ## Change Log
 
+- **v0.2 (2026-04-23)**：新增 § 1.6 DEX 程序级事件流
+  - 基于代码盘点，把 DEX WS 事件流定性为 **P0 主源**（非 OKX API）
+  - 明确监听范围（SOL 6 DEX + EVM Uniswap V2/V3 + pumpportal）
+  - 盘点能抓到 / 抓不到的字段
+  - 明确能替代什么 / 不能替代什么（DEX 事件流给实时 / API 给深度和历史）
+  - 列出已知局限（Phoenix/Curve 未覆盖 / Helius 429 / multi-hop 重复计数）
 - **v0.1 (2026-04-23)**：首版创建
   - 列出当前生产数据（策略胜率 / 盈亏比 / 用户数 / 代币覆盖）
   - 标明所有推测数据的验证路径

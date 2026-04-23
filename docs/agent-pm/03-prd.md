@@ -4,8 +4,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 
@@ -37,6 +37,24 @@
 - Vision 的 6.5 节"Agent 与 APP 其他模块的边界"——**Agent 不做官方信号推送**
 - [02 Persona](./02-user-persona-journey.md) 主打中级用户的工作流
 
+### 0.5 核心数据源优先级（本 PRD 全局适用）
+
+> 所有 Tool 的数据源栏必须按这份优先级填。轮询式 API 永远是**兜底**，不是主源。详见 [00 Data Sources § 1.6](./00-data-sources.md#16-dex-程序级事件流--核心实时源)。
+
+| 等级 | 源 | 用途 | 延迟 |
+|------|----|------|------|
+| **P0（主源）** | **DEX 程序级事件流**（Helius WS / EVM RPC WS / pumpportal WS）| 实时成交 / 聪明钱 / Pump 早期 / 信号 evaluate 触发 | **SOL ~400ms / EVM 2-12s / Pump <1s** |
+| **P0（主源）** | 落表的事件结果（`smart_money_txns` / `pump_tokens` / `token_trades` / `token_snapshots`）| 历史查询 / 信号条件引用 | 实时 |
+| **P1（补充）** | `hot_coins` 聚合表 | 榜单 / 筛选 / 列表页 | 实时更新 |
+| **P2（兜底 / 深度）** | OKX DEX API / Jupiter Aggregator | 交易执行 quote / 池子深度 / 滑点 | 秒级 |
+| **P2（补充）** | GeckoTerminal API | 历史 K 线 / 代币元信息 | 秒级 |
+| **P2（补充）** | DexScreener / GoPlus / Helius enhanced TX | 价格校验 / 安全检测 / Holder 分布 | 秒级 |
+
+**原则**：
+- ✅ 实时性优先用 **P0 事件流**；查询、深度、历史、执行报价用 **P2 API**
+- ✅ P0 降级时（Helius 429 / RPC 断连）自动切 P2，**但产品必须显性降级提示**（UI 标"延迟模式"）
+- ❌ 不允许 Tool 默认用 P2 轮询当主源（这是"假实时"，严禁）
+
 ---
 
 ## 1. Market Query（查询行情）
@@ -57,15 +75,17 @@
 | 🟠 | 近期大额交易 | 最近 20 笔大额买卖记录（> $1K）|
 | 🟡 | 社交数据 | Twitter / Telegram 关注数、最近 24h 提及量 |
 
-### 1.3 数据源
+### 1.3 数据源（按 § 0.5 优先级）
 
-| 数据 | 来源 | 是否已有 |
-|------|------|---------|
-| 行情（价格/MC/LP/涨幅）| `hot_coins` 表 + DexScreener API | ✅ 已有 |
-| 风险标记 | `hot_coins.goplus_risk` + GoPlus API | ✅ 已有 |
-| Holder 分布 | `hot_coin_top_holders` 表 + Helius/OKX | ✅ 已有 |
-| K 线 | DexScreener + GeckoTerminal | ⚠️ API 接入已有，未聚合到单一端点 |
-| 社交数据 | LunarCrush / Twitter API | 🟡 有 LunarCrush 但不充分 |
+| 数据 | P0 主源 | P2 兜底 / 补充 | 说明 |
+|------|---------|--------------|------|
+| 当前价格 / 实时成交 | **DEX 事件流**（`smart_money_txns` + `token_snapshots` 实时聚合）| DexScreener | 事件流给秒内最新价，API 兜底 |
+| MC / 24h 涨幅 / LP | `hot_coins` 表（P1，聚合表，事件流驱动更新）| OKX DEX / Gecko | 聚合层读 |
+| 风险标记 | `hot_coins.goplus_risk` | GoPlus API | 独立源，事件流无法替代 |
+| Holder 分布 | `hot_coin_top_holders` 表 | Helius enhanced TX / OKX | 当前 DEX 事件只订 Swap，holder 变化需独立源 |
+| K 线 | GeckoTerminal API | DexScreener | **历史数据不用 WS**，这是 API 的强项 |
+| 交易执行 quote / 滑点 | **OKX DEX / Jupiter**（P2 是主）| - | 现货报价必须用 aggregator |
+| 社交数据 | LunarCrush | Twitter API | 🟡 数据不充分 |
 
 ### 1.4 Tool 映射（harness 规范）
 
@@ -111,12 +131,14 @@
 
 每条 thesis 必须融合以下 4 维（缺任一标注"数据不足"）：
 
-| 维度 | 数据源 | 分析要点 |
-|------|--------|---------|
-| **技术面** | K 线 / RSI / MA / ATR / 支撑阻力 | 趋势 + 入场区 + 止损位 |
-| **链上面** | 聪明钱买卖 / holder 变化 / 流动性 | 主力方向 + 流动性健康度 |
-| **情绪面** | 社交提及 / KOL 喊单 / 恐贪指数 | FOMO 还是 fear |
-| **风险面** | GoPlus / Top10 持仓 / 代币年龄 / dev 钱包 | rugpull 概率 + 集中度风险 |
+| 维度 | 数据源（P0 主 / P2 补）| 分析要点 |
+|------|----------------------|---------|
+| **技术面** | P2: GeckoTerminal K 线 / 本地计算 RSI/MA/ATR/支撑阻力 | 趋势 + 入场区 + 止损位 |
+| **链上面** | **P0: DEX 事件流**（`smart_money_txns` 实时聚合买卖力量 / 流动性变化）+ P2: holder 独立源 | 主力方向 + 流动性健康度 |
+| **情绪面** | P1: 社交提及 / KOL 喊单（`kol_signals`）+ 恐贪指数 API | FOMO 还是 fear |
+| **风险面** | P2: GoPlus / `hot_coin_top_holders` / 代币年龄（来自 DEX 事件流的 first_trade_at）/ dev 钱包 | rugpull 概率 + 集中度风险 |
+
+> **链上面必须用 P0 事件流聚合**，不许用 P2 API 轮询伪装（否则 thesis 里"最近 5 分钟聪明钱净买入"这种结论根本不成立）。
 
 ### 2.4 Tool 映射
 
@@ -204,11 +226,25 @@
 }
 ```
 
-### 3.4 数据源（已有）
+### 3.4 数据源与触发通道
 
+**策略持久层**：
 - ✅ `agent_strategies` 表已有结构
 - ✅ `StrategyEvaluator` + `RuleEngine`（`services/pump-scanner/agent/evaluator.py`）
-- ✅ `EventListener` 已监听 4 类数据事件
+
+**触发通道（必须全部是 P0 事件驱动，不是轮询）**：
+
+| 数据源 | P0 事件通道 | 事件语义 |
+|-------|------------|---------|
+| `smart_money_signals` | `smart_money_txns` 新插入（DEX swap 解析后写入）| 聪明钱买 / 卖 |
+| `hot_coins` 条件 | HotCoinManager 在 PriceFeed 回调里重算 score → 状态变更事件 | 进榜 / 涨幅突破 / 流动性变化 |
+| `token_snapshots`（pump）| `token_trades` 1min 聚合写入 | BC 进度变化 / 独立买家增长 |
+| `kol_signals` | KOL 抓取器 15min 轮询（P1，不是 P0）| KOL 喊单 |
+
+**评估引擎**（关键架构决策）：
+- ✅ **Event-Driven**：`EventListener` 订阅 EventBus，毫秒级触发策略 evaluate（现有 `event_listener.py`）
+- ❌ **禁止 30s 轮询全表**（旧实现，已废弃，v1 不接受）
+- ⚠️ KOL 类 P1 数据允许定时批量评估（不是 hot path）
 
 ### 3.5 Tool 映射
 
@@ -273,12 +309,18 @@
 - **白名单**：只对特定代币 / 链 / 策略有效
 - **随时可撤**：UI 一键 kill switch
 
-### 4.5 数据源（已有）
+### 4.5 数据源与执行通道
 
+**数据层**：
 - ✅ `agent_strategies` 表（添加 trade_strategy 字段）
 - ✅ `hot_sim_trades` 表（模拟盘记录）
 - ✅ `HotSimTrader` + `PaperEngine`（现有代码）
-- ✅ `DexRouter`（真金执行已有）
+
+**执行层**：
+- **信号触发**：P0 DEX 事件流 → EventBus → `event_listener.py` → 匹配 trade_strategy
+- **成交价 / quote**：P2 主源——Jupiter / OKX DEX aggregator（事件流不能替代，现货必须走 aggregator 拿实时深度）
+- **模拟盘价格基准**：P0 事件流（保证模拟与真金用同一价格源，避免失真）
+- **真金执行**：`DexRouter`（已有，SOL + EVM 双路径）
 
 ### 4.6 Tool 映射
 
@@ -378,12 +420,15 @@
 
 ### 6.3 历史数据来源
 
-| 数据 | 粒度 | 来源 | 已有 |
-|------|------|------|------|
-| 代币价格 K 线 | 1h | `token_snapshots` 表（已有）| ✅ 90 天 |
-| 代币表现 | D1/D3/D7 best | `token_performance` 表 | ✅ 30 天 |
-| 聪明钱交易历史 | 秒级 | `smart_money_txns` 表 | ✅ 14 天 |
-| 热币历史 | 30s 快照 | `hot_coins` 快照归档 | ⚠️ 当前只有当前状态，需加归档 |
+| 数据 | 粒度 | 来源 | 数据性质 | 已有 |
+|------|------|------|---------|------|
+| 代币价格 K 线 | 1h | `token_snapshots` 表（DEX 事件流 1min 聚合归档）| P0 事件落表 | ✅ 90 天 |
+| 代币表现 | D1/D3/D7 best | `token_performance` 表 | P0 事件聚合 | ✅ 30 天 |
+| 聪明钱交易历史 | 秒级 | `smart_money_txns` 表（DEX swap 事件落表）| **P0 事件原始数据** | ✅ 14 天 |
+| 热币历史 | 30s 快照 | `hot_coins` 快照归档 | P1 聚合归档 | ⚠️ 当前只有当前状态，需加归档 |
+| pump trade 流水 | 秒级 | `token_trades` 表（pumpportal WS 落表）| P0 事件原始数据 | ✅ 30 天 |
+
+**关键优势**：**回测数据就是事件流原样落的**——模拟盘的触发条件和回测的历史触发用同一套数据结构，避免"回测环境 vs 生产环境价格源不一致"的经典坑。
 
 **v1 MVP 限制**：回测窗口最长 30 天（数据够），90 天窗口依赖数据归档改造。
 
@@ -500,6 +545,33 @@
 
 引用 [15 Observability Spec](./15-observability-tracing.md)：所有 tool 调用必有 trace。
 
+### 8.7 Event-Driven First 原则 ⭐
+
+> 本 Agent 的实时性底座。违反此原则的 PR 一律打回。详见 [00 Data Sources § 1.6](./00-data-sources.md#16-dex-程序级事件流--核心实时源)。
+
+**硬规定**：
+1. **实时路径必须走事件流**：信号策略 evaluate、聪明钱检测、pump 发现、价格更新推送——全部 P0（DEX 程序级 WS）驱动
+2. **禁止 30s 轮询当主源**：已废弃的旧实现不得复活
+3. **P2 API 只做三件事**：
+   - 查询报价 / quote（交易执行）
+   - 查询深度 / 滑点（交易前校验）
+   - 查询历史（K 线 / 归档数据）
+4. **P0 降级必须显性**：Helius 429 / RPC 断连时，UI 标红"延迟模式"，不静默切 P2 装正常
+
+**对应 Tool 约束**：
+| Tool | 实时性要求 | 强制数据源 |
+|------|----------|-----------|
+| T01 query_market | 秒内最新价 | DEX 事件 + 聚合表 |
+| T03 query_onchain_activity | 秒内最新交易 | `smart_money_txns` / `token_trades`（事件流落表）|
+| T04/T06 analyze_technical/onchain | 调用时刻最新状态 | 事件流聚合 |
+| T13 策略 evaluate | **毫秒级** | EventBus 订阅（非轮询）|
+| T15 execute_trade_strategy | 毫秒级触发 + 秒级成交 | 事件流触发 + P2 aggregator 执行 |
+
+**工程落地要求**（对齐现有代码）：
+- ✅ `event_listener.py` 的 EventBus 订阅模式必须保留
+- ✅ 新增 tool 默认应**订阅事件**，不新增轮询任务
+- ⚠️ 历史上的 30s 轮询代码需审计并废弃（技术债 § 10.3）
+
 ---
 
 ## 9. Out of Scope（v1 明确不做）
@@ -525,9 +597,12 @@
 |------|------|---------|---------|
 | Anthropic API | 分析师 / 辩论 / 决策 / 复盘 | 🔴 高 | 降级到规则引擎 + 历史 thesis |
 | OpenAI API | 部分备用 | 🟠 中 | 同上 |
-| Jupiter / 1inch | DEX 路由 | 🔴 高 | 失败降级 OKX DEX |
-| Helius（SOL） | 实时 txns | 🟠 中 | 免费额度已紧张，需付费升级 |
-| DexScreener | 行情 | 🟡 低 | 多源（GeckoTerminal）备份 |
+| **Helius WS（SOL 事件流 P0）** | **实时成交 / 聪明钱 / pump（Agent 实时性底座）** | 🔴 **致命** | **必须付费升级**；失败时 UI 显性降级，不静默切 API |
+| **pumpportal WS** | pump.fun 内盘事件 | 🔴 高 | 无兜底，失败即 pump 能力离线 |
+| **EVM 公共 RPC WS** | ETH/BSC/Base 事件流 P0 | 🟠 中 | 多个 RPC 源冗余，OKX 轮询补 |
+| Jupiter / OKX DEX | DEX 路由（P2，交易执行必须）| 🔴 高 | Jupiter 失败降级 OKX DEX |
+| DexScreener | 行情兜底（P2）| 🟡 低 | 多源（GeckoTerminal）备份 |
+| GeckoTerminal | K 线 / 历史（P2）| 🟠 中 | 历史查询无兜底，失败时回测不可用 |
 | GoPlus | 安全检测 | 🟠 中 | 无兜底，失败直接标"未知风险" |
 
 ### 10.2 已识别风险
@@ -549,6 +624,9 @@
 | 无 prompt eval 套件 | 改 prompt 后无数据反馈 | [09 Eval Plan](./09-eval-plan.md)落地 |
 | Memory 只在进程内内存 | 重启丢规则 | v1 接 Redis / DB |
 | 无 HITL 队列 | 大额只能 block 不能 pending | v1 新建 `pending_approvals` 表 |
+| 历史 30s 轮询代码尚未完全废弃 | 违反 § 8.7 Event-Driven First | v1 审计 + 迁移到 EventBus 订阅 |
+| Helius 免费版 429 限流 | P0 事件流 10min 全断，SEV-2 | v1 前必须付费升级 |
+| Multi-hop swap 重复计数 | 成交量虚高 ~2% | v1 接受，v2 按 tx 级聚合 |
 
 ---
 
@@ -567,6 +645,13 @@
 
 ## Change Log
 
+- **v0.2 (2026-04-23)**：引入 DEX 程序级事件流作为 P0 数据源
+  - § 0.5 新增 核心数据源优先级表（P0 事件流 / P1 聚合表 / P2 API 兜底）
+  - § 1.3 / 2.3 / 3.4 / 4.5 / 6.3 各 Tool 数据源栏按新优先级重写
+  - § 8.7 新增 **Event-Driven First 原则**（硬规定：实时路径必走事件流，禁止轮询当主源）
+  - § 10.1 依赖表：Helius WS / pumpportal WS 升级为 🔴 致命级依赖
+  - § 10.3 技术债新增 3 项：废弃轮询代码 / Helius 付费 / multi-hop 聚合
+  - 同步更新 [00 Data Sources § 1.6](./00-data-sources.md#16-dex-程序级事件流--核心实时源)
 - **v0.1 (2026-04-23)**：首版完整填充
   - 6 大能力按 MoSCoW 展开功能需求
   - 每能力对应 tool 映射（T01-T19）

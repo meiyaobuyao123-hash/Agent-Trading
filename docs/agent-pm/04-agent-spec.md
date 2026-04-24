@@ -41,7 +41,7 @@
 ### 0.3 术语
 
 - **Loop**：Agent 的主循环，本 Agent 有 4 条（Scout / Thesis / Notify / Reflect）
-- **L1 / L2 / L3**：决策分级（规则 / Sonnet 快判 / 多分析师+辩论）
+- **L1 / L2 / L3**：决策分级（规则 / Opus 单次 / Opus 多分析师+辩论）
 - **HITL**：Human-In-The-Loop，用户当次拍板
 - **Event-Driven First**：实时路径必走事件流，详见 [03 PRD § 8.7](./03-prd.md#87-event-driven-first-原则)
 
@@ -124,15 +124,15 @@
 │                          ▼                                            │
 │  ┌───────────────────────────────────────────────────────────────┐    │
 │  │  分级决策 / Decision Grading                                  │    │
-│  │  L1 规则 Rule  /  L2 Sonnet 快判  /  L3 多角色 Multi-role     │    │
+│  │  L1 规则 Rule  /  L2 Opus 单次  /  L3 多角色 Multi-role Opus  │    │
 │  └──────┬──────────────────────────┬─────────────────────────────┘    │
 │         │                          │                                  │
 │     ┌───▼───────┐          ┌───────▼──────────┐                       │
-│     │ 规则引擎  │          │ 多角色编排器     │ 3 Haiku 分析师（技术/ │
+│     │ 规则引擎  │          │ 多角色编排器     │ 3 Opus 分析师（技术/  │
 │     │ Rule Eng. │          │ Multi-Role Orch. │ 情绪/链上 并行）+     │
 │     └───┬───────┘          └───────┬──────────┘ 牛熊 Bull vs Bear     │
-│         └────────────┬─────────────┘            Sonnet + 风控审查     │
-│                      ▼                          RiskReviewer Sonnet   │
+│         └────────────┬─────────────┘            Opus + 风控审查       │
+│                      ▼                          RiskReviewer Opus     │
 │  ┌───────────────────────────────────────────────────────────────┐    │
 │  │  风控 Risk Manager（9 项检查）                                │    │
 │  │  + HITL 人审门 HITL Gate  + 决策 Agent Decision Agent         │    │
@@ -172,8 +172,8 @@
 | # | 决策 | 理由 |
 |---|------|------|
 | D1 | **Event-Driven First** | 实时路径必走事件流（[PRD §8.7](./03-prd.md#87-event-driven-first-原则)）|
-| D2 | **三级决策分级 L1/L2/L3** | 成本 $0 / $0.003 / $0.015，绝大多数走 L1，复杂/大额才升级 |
-| D3 | **模型分层 Haiku/Sonnet/Opus** | Haiku 跑分析（并行快），Sonnet 辩论 + 决策，Opus 暂不用 |
+| D2 | **三级决策分级 L1/L2/L3** | 成本 $0 / ~$0.025 / ~$0.35，绝大多数走 L1，复杂/大额才升级 |
+| D3 | **v1 全链 Claude Opus（质量优先）** | 分析师 / 辩论 / 风控 / 复盘 / NL 建策略全部 Opus；Sonnet / Haiku 仅作**预算降级**兜底；详见 [03 PRD § 8.8.0](./03-prd.md#880-模型分层决策v1-采用质量优先方案) |
 | D4 | **本地 Postgres + PostgREST** | 已从 Supabase 迁移，减少依赖 |
 | D5 | **Memory 分三层** | Episodic(14d) / Semantic(30d) / Reflection（promotion）|
 | D6 | **Paper 默认，Auto 需授权** | 策略 ≥ 30d + ≥ 30 闭仓 + EV ≥ +1% 才能切 auto |
@@ -318,8 +318,8 @@ async def on_event(event):
 | 级别 | 触发条件 | 流程 | 模型 | 成本 |
 |------|---------|------|------|------|
 | **L1** | 简单查询 / 已决定 | RuleEngine | 无 LLM | $0 |
-| **L2** | 常规分析 | 单 prompt + tool-use | Sonnet | ~$0.003 |
-| **L3** | 大额（>$200）/ 低置信度（<0.6）/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | 3×Haiku + 5×Sonnet | ~$0.015 |
+| **L2** | 常规分析 | 单 prompt + tool-use | **Opus** | **~$0.025** |
+| **L3** | 大额（>$200）/ 低置信度（<0.6）/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | **3×Opus + 5×Opus + 1×Opus** | **~$0.35** |
 
 **L3 伪代码**：
 ```python
@@ -328,11 +328,11 @@ async def thesis_l3(token, context):
         technical_analyst(token),
         sentiment_analyst(token),
         onchain_analyst(token),
-    )  # ~1s Haiku 并行
+    )  # ~3s Opus 并行（3 个分析师）
     past = recall_memory(situation=context)  # T12
-    debate = await run_debate(reports, past)  # 5 × Sonnet 串行 ~10s
+    debate = await run_debate(reports, past)  # 5 × Opus 串行 ~12s
     decision = decision_agent.decide(debate, past, regime)  # 规则
-    review = await risk_reviewer.review(decision)  # Sonnet ~2s
+    review = await risk_reviewer.review(decision)  # Opus ~3s
     return thesis_from(debate, decision, review)
 ```
 
@@ -409,9 +409,9 @@ async def reflect(period="daily"):
 | 级别 | 延迟 P95 | 成本 / 次 | 日预算占比 |
 |-----|---------|----------|----------|
 | L1  | < 200ms | $0       | - |
-| L2  | < 5s    | ~$0.003  | ≤ 20% |
-| L3  | < 15s   | ~$0.015  | ≤ 60% |
-| Reflect | < 30s | ~$0.02  | ≤ 20% |
+| L2  | < 6s    | ~$0.025  | ≤ 20% |
+| L3  | < 18s   | ~$0.35   | ≤ 60% |
+| Reflect | < 40s | ~$0.15 / 日 · $0.40 / 周  | ≤ 20% |
 
 详见 [13 Cost Budget](./13-cost-budget.md)。
 
@@ -525,7 +525,7 @@ async def reflect(period="daily"):
 | 失败类型 | 检测方式 | 降级行为 | 告警级别 | 状态转移 |
 |---------|---------|---------|---------|---------|
 | **LLM 超时**（>10s）| timeout 捕获 | 退避重试 1 次 → 失败则返回默认 thesis（conviction=0.3 hold）| P2 | → IDLE |
-| **LLM rate limit** | 429 响应 | 退避 + fallback 到更低模型（Sonnet → Haiku）| P2 | 继续 |
+| **LLM rate limit** | 429 响应 | 退避 + fallback 降级链（Opus → Sonnet → Haiku，UI 显性标"降级模式"）| P2 | 继续 |
 | **Tool 执行失败** | 异常 / 非 2xx | 重试 1 次 → 返回 TOOL_FAILED | P1 | → IDLE |
 | **数据不可用**（代币 < 1h / 数据缺失）| 预检查 | 返回 DATA_INSUFFICIENT，不启动 LLM | P3 | → IDLE |
 | **Memory 读取失败** | DB 异常 | 降级为无 memory 的分析（记 P2 告警）| P2 | 继续 |

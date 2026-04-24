@@ -4,8 +4,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.4 Draft |
-| Version | v0.4 |
+| Status | 🟢 v0.5 Draft |
+| Version | v0.5 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 
@@ -53,23 +53,28 @@
 - 用户可随时切换视图（Profile → 模式切换）
 - 不做后台自动识别（隐私 + 准确性差）
 
-### 0.6 Identity Model（身份模型 · 无注册账户）
+### 0.6 Identity Model（身份模型 · 无注册账户 · 托管模式）⭐ v0.4 修订
 
-> ⚠️ **关键产品决策**：本产品**没有注册账户能力，也不需要**。
+> ⚠️ **关键产品决策**：
+> ① 本产品**没有注册账户能力，也不需要**
+> ② 真金执行采用 **托管模式**（用户导入助记词 → 服务端代签名）—— 详见 [08 Safety § 6A](./08-safety-policy.md#6a-托管钱包安全专章v02-新增)
 
 | 身份类型 | 生成时机 | 用途 | 存储 |
 |---------|---------|------|------|
 | **device_id** | APP 首次启动生成 UUID | 默认主身份；策略/记忆/模拟盘/复盘所有权 | 本地 Keychain / SharedPreferences + 服务端 `devices` 表 |
-| **wallet_address** | 用户主动 connect wallet | 真金交易**必需**；跨设备同步（同钱包下数据可迁移）| 本地 + 服务端关联 device_id |
+| **wallet_address** | 用户主动 **导入助记词**（Flutter 本地生成 4 链地址）| 真金交易**必需**；跨设备同步 | Flutter 本地 `FlutterSecureStorage`（助记词）+ 服务端 KMS（签名密钥）|
 | **session_id** | 每次 Chat 前端生成 | Chat 会话隔离 | 本地 + trace 日志 |
 
 **关键规则**：
 1. ❌ **无注册、无登录、无密码、无邮箱、无手机号**
 2. ❌ **无"账号注销"概念**——用户卸载 APP 即失去本地 device_id；服务端数据依据下文保留策略清理
 3. ✅ 所有策略 / 记忆 / 模拟盘记录**绑定 device_id**（可选绑定 wallet_address）
-4. ✅ 真金操作：**必须 wallet connect + 签名授权**（无 wallet 则禁所有真金能力）
-5. ✅ **跨设备同步**（可选）：用户可在新设备 connect 同一 wallet，按 wallet_address 拉取策略 / 记忆。**非强制**，不绑定新设备也能用
-6. ✅ **数据所有权迁移**：APP 内可"导出本地数据 → 签 wallet → 上传绑定 wallet"，用于换机 / 多设备
+4. ✅ 真金操作：**必须用户导入助记词 + 首启托管模式声明**（`devices.custodial_consent_at`）
+5. ✅ 助记词**仅存 Flutter 本地** `FlutterSecureStorage`，**不上传服务端明文**
+6. ✅ 服务端签名密钥通过 **KMS / Secrets Manager** 管理（严禁 .env / DB 明文，[08 § 6A.2](./08-safety-policy.md#6a2-v1-必修的-3-个灾难级漏洞-上线前必须修复)）
+7. ✅ **跨设备同步**（可选）：用户可在新设备导入同助记词，按 wallet_address 拉取策略 / 记忆
+8. ✅ **用户一键擦除**本地 + 服务端凭证：**< 60s 生效**（HR11）
+9. ✅ **v2 评估迁移**：Session Key / Smart Account（DAU > 500 或合规压力触发）
 
 **身份相关的数据保留**（见 [10 Data Privacy](./10-data-privacy-sheet.md) 待写）：
 - device_id 30 天无活跃 → 标记 `inactive`（策略自动 pause，保留数据）
@@ -879,6 +884,54 @@ RiskManager 9 项检查通过
 | 中级 | paper → notify_only 30 天过渡 → auto | § 5.4 硬条件 + HITL 授权 | auto $500 硬顶 |
 | 专业 | notify_only / auto 自由 | 同上但可跳过 30 天过渡（需签"理解风险"）| auto $500 硬顶（v2 考虑开放 $2000 for 白名单 wallet）|
 
+### 4.14 跟单交易（Copy Trading）⭐ v0.4 新增
+
+> **产品决策**：v1 支持跟单，作为交易策略的一种特殊信号源。所有跟单约束对齐 [08 Safety HR26-HR31](./08-safety-policy.md#36-跟单交易v02-新增--替代旧-hr20)。
+
+#### 4.14.1 跟单目标（4 类）
+
+| 目标 | 说明 | 数据源 |
+|------|------|-------|
+| **官方聪明钱** | elite / verified 级别钱包 | `smart_wallets` 表 |
+| **KOL 链上地址** | 用户关注的 KOL 钱包 | 用户手动添加 |
+| **其他 Agent 用户** | 社交跟单，需被跟方 opt-in | `copy_trade_permissions` 表 |
+| **用户自定义地址** | 用户自己发现的钱包 | 手动添加 |
+
+#### 4.14.2 功能需求
+
+| 优先级 | 功能点 | 验收标准 |
+|-------|-------|---------|
+| 🔴 | 跟单信号策略 | 可作为 signal_strategy 的 data_source 之一 |
+| 🔴 | 跟单金额模式 | **固定 USD** / **账户百分比** / **按被跟方等比例**（三选一）|
+| 🔴 | 硬限继承 | 继承所有 HR01-HR03（$500/$2K/$20K）|
+| 🔴 | 跟单延迟明示 | UI 显示"检测到被跟方交易 X 秒前" |
+| 🔴 | 滑点容忍 | 实际成交价 vs 被跟方 > 5% → skip + 通知 |
+| 🔴 | 跟单黑名单 | 被跟方异常 / 被盗 → 自动暂停（CB11）|
+| 🟠 | 跟单仅买不卖 | 用户选项：只跟买入，卖出自己决策 |
+| 🟠 | 跟单停止条件 | 达到目标涨幅 / 时长 / 笔数 自动停 |
+| 🟡 | 跟单分析 | 被跟方近 30d 胜率 / 盈亏比 展示 |
+
+#### 4.14.3 跟其他 Agent 用户的 opt-in 流程
+
+```
+用户 A 发起跟单 → 选择用户 B（按 wallet_address）
+  ↓
+用户 B APP 内推："用户 A 想跟你的交易，是否同意？"
+  ↓
+B 同意 → copy_trade_permissions 表记录（双向 reference）
+  ↓
+A 的 signal_strategy 开始接收 B 的交易事件
+  ↓
+B 可随时 revoke → A 的跟单策略自动 pause
+```
+
+#### 4.14.4 跟单的 Safety 约束（对齐 HR26-HR31）
+
+- 跟单单笔 ≤ $500（硬限）
+- 跟单不豁免 HITL：单笔 > $200 仍走 HITL 流程
+- 跟单不豁免熔断：连续亏 3 笔仍暂停
+- 被跟方**首次成交**或**超 7 天无活跃** → 跟单前需用户再确认
+
 ---
 
 ## 5. Paper Trading（模拟盘）
@@ -1542,7 +1595,7 @@ Claude Opus pricing（v1 基准）：**input $15 / M tokens，output $75 / M tok
 - **紧急回滚**：直接把 feature flag 置 OFF，影响范围 < 5s
 
 - ⚫ Agent 主动推送官方信号（APP 其他 Tab 已做）
-- ⚫ 社交复制交易（social copy）
+- ~~社交复制交易（social copy）~~ → **v0.4 改为支持**（见 § 4.14 跟单交易）
 - ⚫ 多账户 / 子账户
 - ⚫ Agent 代表用户与其他 on-chain agent 交互（v3 愿景）
 - ⚫ 合约 / 期货 / 杠杆
@@ -1714,6 +1767,17 @@ Claude Opus pricing（v1 基准）：**input $15 / M tokens，output $75 / M tok
 
 ## Change Log
 
+- **v0.5 (2026-04-24)**：产品决策调整 —— 托管模式 + 跟单支持
+  - **§ 0.6 Identity Model 重大修订**：
+    * 明确采用"托管模式 A"（用户导入助记词 + 服务端 KMS 代签名）
+    * 移除"真金必须 wallet connect + 签名"的原 non-custodial 假设
+    * 增加托管模式 9 条关键规则（FlutterSecureStorage / KMS / 一键擦除 < 60s / v2 评估 Session Key）
+  - **§ 4.14 新增 跟单交易模块**（替代原 § 9 Out of Scope 的"社交复制"）：
+    * 4 类跟单目标（官方聪明钱 / KOL / 其他用户 / 自定义）
+    * 3 种金额模式 + 继承硬限
+    * 其他用户跟单的 opt-in 流程
+    * 6 条 Safety 约束（对齐 08 HR26-HR31）
+  - **§ 9 Out of Scope 调整**：跟单从禁止 → 支持
 - **v0.4 (2026-04-24)**：模型策略升级 + 共创流程明确
   - § 3.2.1 新增 **共创流程 Co-creation Flow**（7 阶段 + 关键原则 + 反例/正例 + Tool 调用链）
   - § 3.2 功能需求首行新增"共创式建策略"为核心

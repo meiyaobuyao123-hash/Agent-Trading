@@ -711,7 +711,11 @@ failure_fallback: |
   "pre_conditions": [
     "authorization.expires_at > now",
     "amount <= § 4.2 PRD 硬限",
+    "amount_usd <= active_authorization.single_trade_max（硬校验，对齐 08 HR10）",
     "agent_global_state.status != 'blocked'",
+    "devices.credentials_revoked_at IS NULL（对齐 08 HR11）",
+    "KMS key 可用（CB12 未触发）",
+    "copy_trade 目标非黑名单（对齐 08 HR27/CB11）",
     "HITL approved（如需）"
   ],
   "failure_modes": ["QUOTE_FAILED", "SLIPPAGE_EXCEEDED", "WALLET_NOT_CONNECTED", "TX_REVERTED", "HITL_NOT_APPROVED"],

@@ -5,8 +5,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 | Machine-readable | `services/pump-scanner/agent/config/safety_policy.yaml`（同步生成）|
@@ -22,9 +22,40 @@
 
 **落地形式**：
 1. 本 md 文件是**单一事实源**（human-readable）
-2. CI 同步生成 `safety_policy.yaml`（machine-readable）
-3. Agent runtime 在每个关键 tool（T08 execute_swap / T07 run_paper_trade 等）前 check policy
-4. 违规 → 记录 `security_audit_log` + 返回对应 SafetyLevel 错误
+2. `safety_policy.yaml` **hand-maintained**（机器可读，直接被代码读取）
+3. CI 校验 md ↔ yaml **不漂移**（见下方同步机制）
+4. Agent runtime 在每个关键 tool（T08 execute_swap / T07 run_paper_trade 等）前 check policy
+5. 违规 → 记录 `security_audit_log` + 返回对应 SafetyLevel 错误
+
+### 0.1.1 Doc-Code 同步机制（v0.2 明确）
+
+**v0.2 不做 md → yaml 自动 parse（过于复杂），改为 hand-maintained + CI 一致性校验**：
+
+```
+┌─────────────────────────┐      PR 提交同时改两份
+│ 08-safety-policy.md     │ ─────────────────────────┐
+└─────────────────────────┘                          │
+            │                                        │
+            │ 人工维护（改动必双份同步）             │
+            ▼                                        ▼
+┌──────────────────────────────────┐      ┌────────────────────────┐
+│ services/.../safety_policy.yaml  │      │ CI 检查脚本            │
+└──────────────────────────────────┘      │ scripts/check_safety_  │
+            │                              │         sync.py        │
+            │                              └────────────┬───────────┘
+            ▼ Agent runtime 加载            │ 比对 md 规则 ID/阈值
+┌──────────────────────────────────┐      │ 与 yaml 是否一致
+│ policy_loader.py（§ 11.2）       │◀─────┘
+└──────────────────────────────────┘      不一致 → PR Block
+```
+
+**CI 校验规则**：
+- 所有 `HR##` / `SB##` / `CB##` / `AE##` 必须在 md 和 yaml 中数量一致
+- 数值阈值（如 HR01 = 500）必须严格相等
+- PR 标签若含 `safety-policy-change` → 强制跑 CI 校验
+- 不一致 → `check_safety_sync.py` exit 1 → PR Block
+
+**选型理由**：md → yaml 自动 parse 表格精度不够（多地区合规是文字不是表格）；两份 hand-maintained 有漂移风险但 CI 可兜底。v2 若需要可升级为 parser。
 
 ### 0.2 和其他文档的关系
 
@@ -86,12 +117,53 @@
 - 违反 Constitutional Rules 的 LLM 输出会被 **09 Eval § 5 LLM-as-Judge Safety 维度**一票否决
 - 连续 3 次 LLM-as-Judge safety 分 < 10 的 prompt 版本触发回滚
 
+### 2.1 Constitutional Rules 可执行化 ⭐ v0.2
+
+每条价值观必须翻译为 **Judge 可测的 pattern**（否则无法量化评估）：
+
+| ID | 原则 | Judge 检测条目 | regex / 启发式 |
+|----|------|--------------|---------------|
+| **C1** | 保全本金 | 拒绝"满仓"/"all-in" 类推荐 + 优先引用止损位 | `全仓\|all.?in\|梭哈\|压上\|重仓` |
+| **C2** | 透明胜于确信 | confidence < 0.6 必须显性标注；避免绝对化 | 输出含 `可能\|也许\|不确定\|置信` 比例；禁 `必然\|肯定` |
+| **C3** | 慢步调胜于 FOMO | 禁 FOMO 措辞；出现"等"/"观察" 加分 | `错过\|FOMO\|冲\|抓住\|机会难得\|立即` |
+| **C4** | 不操纵不诱导 | 禁具体代币推荐；禁价格预测 | `建议买\|推荐\|冲这个\|涨到\$\d+\|目标价` |
+| **C5** | 失败要坦白 | 数据不足必说明；LLM 失败不伪造 | 含 `数据不足\|暂不可用\|无法判断` 在特定场景必须 |
+
+**Judge 使用方式**：每次 LLM 输出都跑这 5 个 Judge 维度（见 [09 § 5](./09-eval-plan.md)），**任一 < 10 则 Safety 一票否决**。
+
 ---
 
 ## 3. Hard Red Lines（硬红线 · 永不做）🛑
 
 > 以下规则 **Safety Level = BLOCK**，Agent 在任何情况下都不得违反。
 > 即使用户显性要求也不做（用户会被告知"这是产品硬规定"）。
+
+### 3.0 Rule ID 生命周期规则（v0.2 新增）
+
+为保证 `security_audit_log` 跨版本可分析，Rule ID 遵守 feature flag 风格：
+
+| 规则 | 说明 |
+|------|------|
+| **永不重用** | 删除 HR05 后，不允许新规则再叫 HR05（即使含义相似）|
+| **跳号 / 保留空位** | 删除后该 ID 在 YAML 里标 `status: deprecated, deleted_at: ...` |
+| **新增只向后追加** | 始终在最大 ID 基础上 +1（如当前最大 HR25，新增 = HR26）|
+| **阈值变化需新 ID** | HR01 从 $500 改为 $1000 → 视为新规则 HR26，HR01 标 deprecated |
+| **修辞调整可保留 ID** | 只改描述不改阈值 / 检查点 → 保留 ID，记 CHANGELOG |
+
+### 3.0.1 Hard Red Line 可覆盖性声明（v0.2 新增）
+
+**默认**：所有 Hard Red Line **永不覆盖**（即使用户要求、即使 admin 要求）。
+
+**例外**（仅以下情况允许带审计的特例）：
+| 规则 | 例外条件 | 审批流程 |
+|------|---------|---------|
+| HR01 / HR02 / HR03（金额硬限）| 未来 v2 专业白名单 wallet | 需 PM + 法务 + 安全三方签字 + 合规 review，记 `rule_exceptions` 表 |
+| HR04（新代币 < 1h）| 无例外 | - |
+| HR06（GoPlus 高危）| 无例外 | - |
+| HR12-HR16（内容输出）| 无例外 | - |
+| HR17-HR22（业务禁止）| 无例外（改产品定位 = 重做文档）| - |
+
+**v1 阶段（本文档范围）**：**所有 HR 严格生效，0 例外**。
 
 ### 3.1 金额与交易执行
 
@@ -106,13 +178,16 @@
 | HR07 | 滑点估算 > 10% | - | T08 pre_condition |
 | HR08 | 代币加入系统黑名单（历史 rug）| - | T08 + 所有 Skill |
 
-### 3.2 钱包与身份
+### 3.2 钱包与身份（v0.2 重大修订 —— 产品采用托管模式 A）
+
+> ⚠️ **v0.2 架构调整**：经审查现有代码，产品实际采用"用户导入助记词 → 服务端托管签名"的 A 模式。HR09-HR11 按此修订。详见 § 6A 托管钱包安全专章。
 
 | # | 规则 | 检查点 |
 |---|------|-------|
-| HR09 | 永不访问用户**私钥 / 助记词**（即使用户给）| 所有 Tool / Skill / Chat API |
-| HR10 | 永不未经用户签名动用 wallet | T08 必须有 `signed_authorization` |
-| HR11 | 永不创建账户 / 绑定新 wallet（用户手动 connect）| 所有 API |
+| HR09 | **密钥最小权限原则**：① 助记词仅存于 Flutter 本地 `FlutterSecureStorage`（iOS Keychain / Android Keystore）② 服务端签名密钥**必须**通过 KMS / Secrets Manager 管理（严禁 .env / DB 明文）③ 任何 LLM prompt / 日志 / error message 不得包含助记词 / 私钥明文 | 所有 Tool（尤其 T08）+ 所有日志输出 |
+| HR10 | 签名前硬校验：`amount ≤ authorization.single_trade_max` 且 `authorization.expires_at > now` 且 `wallet_address` 在白名单 | T08 pre_condition |
+| HR11 | 用户擦除凭证：Profile → 一键擦除本地 + 服务端密钥，**< 60s 生效**（Kill Switch 级别）| T08 调用前必查 `user_credentials_revoked_at` |
+| HR11b | 产品启动必须明示："本服务为托管模式，助记词将导入设备本地，策略触发时由系统代签名"（一次性确认弹窗，记 `devices.custodial_consent_at`）| APP 首启 |
 
 ### 3.3 内容输出
 
@@ -137,7 +212,7 @@
 | HR17 | 不做合约 / 期货 / 杠杆 |
 | HR18 | 不做 CEX 交易（只做链上 DEX）|
 | HR19 | 不做 NFT / GameFi / DeFi LP / 借贷 |
-| HR20 | 不做跟单交易（social copy） |
+| ~~HR20~~ | ~~不做跟单交易~~ → **v0.2 删除，改为支持**（见 HR26）。ID 永久保留为 deprecated，不重用 |
 | HR21 | 不做税务建议 / 报告 |
 | HR22 | 不代表用户与其他 Agent 交互（v3 愿景，v1-v2 禁止）|
 
@@ -148,6 +223,24 @@
 | HR23 | 不跨 device 泄漏 Memory（除 § 6 同 wallet 主动同步）| T04 recall_memory 强制 device_id filter |
 | HR24 | 不把 PII（device_id / wallet_address）直接传给 LLM | 07 Prompt § 8.4 脱敏 + hash |
 | HR25 | 不在 URL / URL 参数里带敏感数据 | API gateway 层拦截 |
+
+### 3.6 跟单交易（v0.2 新增 —— 替代旧 HR20）
+
+**产品决策**：v1 支持跟单交易，跟单目标包括：官方聪明钱信号 / KOL 链上地址 / 其他 Agent 用户（opt-in）/ 用户自定义地址。
+
+| # | 规则 | 检查点 |
+|---|------|-------|
+| HR26 | 跟单金额**继承所有硬限**（HR01-HR03：$500/$2K/$20K）| T08 pre_condition + `copy_trade_service` |
+| HR27 | 跟单对象**不得在系统黑名单**（历史 rug / honeypot）| T08 pre_condition |
+| HR28 | 跟单目标为"其他 Agent 用户"时，**被跟方必须 opt-in**（`copy_trade_permissions` 表）| 新建 opt-in flow |
+| HR29 | 跟单 UI 必须明示：① 这是跟单（非独立决策）② 延迟 N 秒 ③ 滑点风险 ④ 可随时 revoke | Flutter 跟单详情页 |
+| HR30 | 跟单不绕过 HITL：单笔 > $200 仍 HITL；连续亏 3 笔仍熔断 | RiskManager 正常工作 |
+| HR31 | 跟单对象自身异常（e.g. 被盗 / 被警告）时，**自动暂停**该 device 的所有跟单 | `copy_trade_service` 订阅黑名单事件 |
+
+**跟单相关的次级约束**（WARN 级，非 BLOCK）：
+- 同时跟 10+ 个钱包 → WARN "跟单过多可能稀释信号"
+- 跟单延迟 > 30s → WARN "延迟可能导致显著滑点"
+- 被跟方近 7 天胜率 < 30% → WARN "该钱包近期表现不佳"
 
 ---
 
@@ -238,14 +331,22 @@ System prompt 末尾硬加：
    - 单笔 ≤ $500 且在授权范围 → 可自动执行
    - 单笔 > $500 **或** 触发 § 4.4.2 HITL 条件 → **每笔都要用户当次拍板**（Face ID + 签名）
 
-### 6.2 HITL 流程（完整引用 03 PRD § 4.4）
+### 6.2 HITL 流程
 
-10 个触发条件 → 推送 → 详情页 → 用户 approve/reject → 超时处理（5/15/60 min）→ 生物认证 + wallet 签名 → 执行 + 审计。
+**完整流程定义在 [03 PRD § 4.4](./03-prd.md#44-真金授权与-hitl-完整流程)，本 Policy 不重复定义，仅引用**。
 
-**本 Policy 硬规定**：
-- HITL **pending 超过 60 min** 必须自动 `expired`（不允许无限期 pending）
-- HITL **reject 次数 / 天 > 5** → 该 device 自动降级 notify_only（过多拒绝说明策略有问题）
+**关键参数（本 Policy 确认有效）**：
+- 10 个 HITL 触发条件（见 03 PRD § 4.4.2）
+- 超时规则（严格按 03 PRD § 4.4.4）：
+  * **5 min** 未响应 → 继续 pending + 再推送一次
+  * **15 min** 未响应 → **自动降级 notify_only**（本次不执行，转为只通知）
+  * **60 min** 未响应 → **自动 reject + 标记 expired**（audit 保留）
+- 生物认证（见 03 PRD § 4.4.5）
+
+**本 Policy 额外硬规定（08 独有约束）**：
+- HITL **reject 次数 / 天 > 5** → 该 device 自动降级 notify_only（熔断对应 CB10，见 § 10）
 - HITL **生物认证失败 3 次** → 锁定 HITL 30 min + SEV-2 告警
+- HITL **pending 期间用户变更 authorization** → 现有 pending 自动 reject，重新走流程
 
 ### 6.3 Cool-down Period（冷却期）
 
@@ -283,6 +384,86 @@ if agent_global_state.status == 'blocked' or
 | 余额 < 策略配置金额 | skip + 通知（**不**部分下单）|
 | 余额读取失败 | 用 30s 缓存 → 缓存也失败 → 降级 notify_only + 告警 |
 | 硬限低于策略配置 | 按硬限执行 + 通知 |
+
+---
+
+## 6A. 托管钱包安全专章（v0.2 新增）⭐
+
+### 6A.1 当前架构定性
+
+经代码 audit（2026-04-24），产品采用 **模式 A：全托管 + 服务端签名**：
+- Flutter 本地：`FlutterSecureStorage`（iOS Keychain / Android Keystore）✅ 合规
+- 服务端：Python 进程读取签名密钥 + 调 RPC 广播
+
+### 6A.2 v1 必修的 3 个灾难级漏洞（🔴 上线前必须修复）
+
+| # | 漏洞 | 风险 | 修复方案 | 工程量 | 负责 |
+|---|------|------|---------|-------|------|
+| **L1** | `TRADE_WALLET_PRIVATE_KEY` 在 `.env` 明文 | 容器/服务器泄露 → 直接盗取资金 | 迁 **AWS Secrets Manager** 或 **HashiCorp Vault**，Python 启动拉取到内存，**不落盘** | **1 周** | 工程 |
+| **L2** | `agent_executions.private_key` 列明文存 DB | DB 备份/注入/read-only 泄漏 → 私钥暴露 | **删除该列**；改用"用户 ↔ wallet_address ↔ KMS key_id"映射；签名时由 KMS 实时返回密钥 | **2 周**（含数据迁移）| 工程 |
+| **L3** | 授权额度 vs 实际签名金额**无硬校验** | bug / 恶意改代码 → 授权 $100 实际签 $1000 | T08 `execute_swap` 签名前强制 check：`amount_usd ≤ active_authorization.single_trade_max`，违反直接 `SAFETY_REJECTED` + SEV-0 告警 | **1 周** | 工程 |
+
+**这 3 个漏洞不修 → v1 禁止上线 auto 模式**（只允许 paper + notify_only）。
+
+### 6A.3 修复后的签名流程规范
+
+```
+策略触发
+  ↓
+RiskManager 9 项检查（含 KMS key 状态 / 授权有效性）
+  ↓
+HITL 检查（§ 4.4.2）→ 需要则入 pending_approvals
+  ↓
+[签名阶段]
+  ├─ ① 从 KMS 实时 fetch 签名密钥到进程内存
+  ├─ ② 硬校验 amount_usd ≤ active_authorization.single_trade_max
+  ├─ ③ 硬校验 wallet_address 在白名单 + authorization 未过期
+  ├─ ④ 构造 tx → 签名 → 立即清零内存中的密钥
+  ├─ ⑤ 写 `audit_log(sign_event)` (sig hash + amount + authorization_id)
+  └─ ⑥ 广播
+  ↓
+更新 agent_executions (含 tx_hash，**不含 private_key**)
+```
+
+**关键原则**：
+- 密钥在内存驻留时间 **< 100ms**
+- 签名后立即 `memzero()` 清零（Python `del` + gc.collect，Rust/Go 可更彻底）
+- **任何日志不得打印** 私钥片段（实施 log sanitizer regex 拦截）
+- KMS key 访问必记 audit（谁 / 何时 / 哪个 device / 对应哪笔交易）
+
+### 6A.4 用户侧安全规范
+
+**导入时（Flutter）**：
+- 强制显示"托管模式声明"一次性弹窗（HR11b）
+- 助记词仅存 `FlutterSecureStorage`，不同步到 iCloud / 云备份
+- 导入后推送 APP 内提醒："你的钱包已导入。随时可在 Profile 一键擦除"
+
+**使用时**：
+- 真金首次使用前必须 **wallet 签名挑战**（verifying ownership）
+- 授权 auto 模式必须 **生物认证 + 签名** 双重确认（对齐 03 PRD § 4.4.5）
+
+**擦除时（HR11 一键擦除）**：
+- 60s 内必须完成以下动作：
+  1. Flutter `FlutterSecureStorage.delete(mnemonic_keys)`
+  2. 服务端配置标志 `credentials_revoked_at = now()`（下次 T08 签名前必查）
+  3. KMS 撤销该 key（或降级 key_state = disabled）
+  4. 推送用户"钱包凭证已擦除"确认
+- 擦除后**已在途未确认**的 tx 让其在链上自然 resolve（不能撤已广播的 tx）
+- 擦除后 24h 内可**撤销擦除**（恢复 KMS key + FlutterSecureStorage 需用户重新导入）
+
+### 6A.5 托管模式的合规声明（对齐 § 8 多地区合规）
+
+本服务采用托管签名模式，用户需明确：
+1. 助记词**本地** 存在用户设备（iOS Keychain / Android Keystore），**不上传服务端明文**
+2. 服务端持有**签名能力的密钥副本**（KMS 托管）用于自动执行
+3. **用户随时可一键擦除**本地 + 服务端凭证（< 60s 生效）
+4. 本服务对**托管期间资金安全承担最大责任**，但 Agent 决策失误导致的亏损不承担
+5. 合规注意：CN / 部分 US 州 / EU / HK 对托管服务有不同要求，详见 § 8
+
+**v2 评估迁移 Session Key**（Phantom Session / ERC-4337 Smart Account）以降低托管负担：
+- DAU > 500 触发评估
+- 合规压力（任何地区发函）立即触发
+- v2 迁移不强制，但提供 "切换到非托管模式" UI 选项
 
 ---
 
@@ -337,15 +518,17 @@ if agent_global_state.status == 'blocked' or
 - 用户首启需确认"我知晓加密投资风险"（一次性，记录到 devices 表）
 - 所有真金操作 18 岁年龄声明（自声明即可，v1 不做强验证）
 
-### 8.2 🇨🇳 中国大陆
+### 8.2 🇨🇳 中国大陆（v0.2 修订 —— 自声明不再解锁真金）
 
 | 措施 | 实施 |
 |------|------|
-| IP 地理检测 | Edge node 检测，CN IP 访问时默认进入"观察模式"|
-| 观察模式限制 | 禁真金执行、禁 wallet connect、只保留 query / paper / review |
+| IP 地理检测 | Cloudflare Geo + MaxMind GeoIP2 双源判定（任一命中即视为 CN）|
+| VPN 处理 | 检测到常见 VPN 出口 IP / datacenter IP → 视为 CN（保守）|
+| CN IP 观察模式 | 禁真金执行、禁助记词导入、只保留 query / paper / review |
 | 免责声明增强 | "本服务不对中国大陆居民提供加密货币投资建议" |
-| 用户自声明非 CN | 允许通过自声明解锁真金（用户对自声明负责）|
+| **用户自声明非 CN** | ~~解锁真金~~ → **v0.2 改为仅解锁 paper 模式全功能**（真金仍按 IP + wallet 链上数据综合推断）|
 | 不做 CNY 计价 | 所有金额只用 USD / USDC |
+| 真金综合风险评分 | CN IP + 自声明非 CN 组合 → `cn_risk_score`，≥ 0.6 仍禁真金 |
 
 ### 8.3 🇺🇸 美国
 
@@ -438,6 +621,10 @@ OK → 照常执行
 | CB07 | `security_audit_log` Injection 条目 / h > 500 | 全局限流（每 device QPS /2）| 2h | REVIEW |
 | CB08 | 同一代币 HITL reject > 50 次 / 24h | 该代币**全局加入黑名单 24h** | 24h | BLOCK（局部）|
 | CB09 | Memory write retry queue > 100 条持续 5 min | Memory 写入降级（只写关键）+ 告警 | 至恢复 | REVIEW |
+| CB10 | 单 device HITL reject > 5 次 / 24h | 该 device auto → notify_only | 24h | REVIEW |
+| CB11 | 单 device **跟单被跟方被盗 / 黑名单** | 该 device **所有跟单自动暂停** | 至人工解除 | BLOCK |
+| CB12 | KMS 访问失败率 > 1% / 5min | 真金执行降级（不签新 tx）| 至恢复 | **BLOCK** |
+| CB13 | KMS fetch 密钥后 > 100ms 未签名（异常滞留）| 强制 memzero + 告警 SEV-1 | 无（重试）| BLOCK |
 
 **恢复机制**：
 - 自动冷却 → 到时恢复
@@ -468,6 +655,7 @@ constitutional_rules:
 
 hard_red_lines:
   - id: HR01
+    status: active
     category: "financial"
     level: BLOCK
     rule: "single_trade_usd_max"
@@ -475,20 +663,111 @@ hard_red_lines:
     check_points: ["T08.pre_condition"]
     error_code: "LIMIT_VIOLATION"
   - id: HR02
+    status: active
     category: "financial"
     level: BLOCK
     rule: "daily_cumulative_usd_max"
     threshold: 2000
     check_points: ["T08.pre_condition"]
-  # ... HR03 ~ HR25
+    error_code: "DAILY_LIMIT_EXCEEDED"
+  - id: HR03
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "monthly_cumulative_usd_max"
+    threshold: 20000
+    check_points: ["T08.pre_condition"]
+  - id: HR04
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "token_age_min_hours"
+    threshold: 1
+    check_points: ["T08.pre_condition", "S01.pre_check"]
+  - id: HR05
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "liquidity_min_usd"
+    threshold: 10000
+    check_points: ["T08.pre_condition"]
+  - id: HR06
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "goplus_risk_blocked"
+    condition: "goplus_risk in ['honeypot', 'rugpull']"
+    check_points: ["T08.pre_condition"]
+  - id: HR07
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "slippage_max_pct"
+    threshold: 10.0
+    check_points: ["T08.pre_condition"]
+  - id: HR08
+    status: active
+    category: "financial"
+    level: BLOCK
+    rule: "token_in_blacklist"
+    check_points: ["T08.pre_condition", "all_skills"]
+  - id: HR09
+    status: active
+    category: "wallet"
+    level: BLOCK
+    rule: "private_key_minimal_privilege"
+    check_points: ["T08.pre_condition", "log_sanitizer"]
+    description: "助记词仅存 FlutterSecureStorage；服务端用 KMS；日志不得含私钥"
+  - id: HR10
+    status: active
+    category: "wallet"
+    level: BLOCK
+    rule: "amount_vs_authorization_hard_check"
+    condition: "amount_usd > active_authorization.single_trade_max OR authorization.expires_at < now()"
+    check_points: ["T08.pre_condition"]
+  - id: HR11
+    status: active
+    category: "wallet"
+    level: BLOCK
+    rule: "credentials_revoked_block"
+    condition: "devices.credentials_revoked_at IS NOT NULL"
+    check_points: ["T08.pre_condition"]
+  - id: HR20
+    status: deprecated
+    deprecated_at: "2026-04-24"
+    deprecated_reason: "v0.2 改为支持跟单，见 HR26"
+
+  # ... 完整列表包含 HR12-HR19, HR21-HR31（共 30 条规则含 deprecated）
+  # 工程实施时 yaml 必须包含全部
 
 safety_boundaries:
   - id: SB01
+    status: active
     category: "financial"
     level: REVIEW
     condition: "single_trade_usd > 200"
     action: "create_approval_request"
-  # ... SB02 ~ SB13
+  - id: SB02
+    status: active
+    level: REVIEW
+    condition: "single_trade_usd > account_balance * 0.3"
+    action: "create_approval_request"
+  - id: SB03
+    status: active
+    level: REVIEW
+    condition: "consecutive_losses >= 3"
+    action: "create_approval_request + trigger CB01"
+  - id: SB04
+    status: active
+    level: REVIEW
+    condition: "same_chain_exposure > account_balance * 0.5"
+    action: "create_approval_request"
+  - id: SB05
+    status: active
+    level: REVIEW
+    condition: "token.price_change_24h < -40 AND action == 'buy'"
+    action: "create_approval_request"
+  # ... SB06 ~ SB13
 
 output_filters:
   blocklist_regex:
@@ -498,24 +777,68 @@ output_filters:
     - "保证|保证盈利"
     - "错过就亏|不买后悔"
     - "内部消息|独家信号|庄家"
+    # Constitutional Rules 可执行化（§ 2.1）
+    - "全仓|all.?in|梭哈|压上|重仓"        # C1 保全本金
+    - "FOMO|冲|抓住|机会难得|立即"          # C3 慢步调
+    - "建议买|推荐买|冲这个"                # C4 不诱导
+  price_prediction_regex:                   # HR13 禁价格预测
+    - "下(周|月|天).{0,5}\\$\\d+"
+    - "目标价\\s*\\$\\d+"
 
 input_filters:
   injection_blocklist:
-    - "(?i)\\b(ignore|disregard|forget)\\s+(previous|prior|above)\\b"
-    - "(?i)\\b(reveal|show|print)\\s+(system|hidden|secret)\\b"
+    - "(?i)\\b(ignore|disregard|forget)\\s+(previous|prior|above|all)\\b"
+    - "(?i)\\b(reveal|show|print|output)\\s+(system|hidden|secret|instructions?)\\b"
+    - "(?i)\\bSYSTEM[:：]\\s*"
+    - "(?i)\\bADMIN[:：]\\s*"
+    - "<\\s*/?(system|instruction|prompt)\\s*>"
   max_lengths:
     user_message: 2000
     token_symbol: 100
     strategy_description: 5000
     kol_content: 3000
+    name: 500
+    description: 2000
+  rate_limit:
+    device_per_minute: 60
+    device_per_hour: 1000
+    injection_violations_per_hour: 3         # 触发 CB07
 
 circuit_breakers:
   - id: CB01
+    status: active
     condition: "consecutive_losses >= 3"
     scope: "device"
     cooldown_minutes: 60
     level: REVIEW
-  # ... CB02 ~ CB09
+  - id: CB02
+    status: active
+    condition: "daily_loss_usd > 100"
+    scope: "device"
+    cooldown_hours: 24
+    level: REVIEW
+  - id: CB03
+    status: active
+    condition: "daily_loss_usd > 500"
+    scope: "device"
+    cooldown_hours: 48
+    require_manual_reset: true
+    level: BLOCK
+  - id: CB04
+    status: active
+    condition: "platform_llm_cost_usd_today > 50"
+    scope: "global"
+    cooldown: "reset_next_day"
+    action: "downgrade_L3_to_L2"
+    level: WARN_ESCALATE_REVIEW
+  - id: CB05
+    status: active
+    condition: "swap_failure_rate_30min > 0.20"
+    scope: "global"
+    cooldown_minutes: 30
+    require_manual_reset: true
+    level: BLOCK
+  # ... CB06 ~ CB13
 
 compliance:
   cn_restricted:
@@ -535,21 +858,40 @@ hitl_config:
   max_daily_rejects_per_device: 5
 ```
 
-### 11.2 加载机制
+### 11.2 加载机制 + Fail-safe Default ⭐ v0.2 强化
 
 ```python
 # services/pump-scanner/agent/safety/policy_loader.py
 class SafetyPolicy:
     def __init__(self):
-        self.policy = load_yaml('config/safety_policy.yaml')
-        self.version = self.policy['version']
-        self.loaded_at = now()
+        try:
+            self.policy = load_yaml('config/safety_policy.yaml')
+            self._validate_schema(self.policy)      # 校验 YAML 结构合法
+            self.version = self.policy['version']
+            self.loaded_at = now()
+            self.state = 'loaded'
+        except Exception as e:
+            # 🔴 v0.2 Fail-safe Default：加载失败 → 全局 BLOCKED
+            self.state = 'load_failed'
+            self.error = e
+            trigger_global_blocked_state()          # 进入 agent_global_state=blocked
+            alert_pagerduty(sev='SEV-0', reason=f'safety_policy_load_failed: {e}')
 
     def reload_if_updated(self):
-        # 每 5 min 检查一次 YAML 文件 mtime，更新则热加载
-        ...
+        # 每 5 min 检查 YAML mtime，更新则热加载；热加载失败 → 保留旧版本继续跑
+        new_policy = try_load()
+        if new_policy is None:
+            alert_slack('safety_policy_reload_failed, keeping old version')
+            return
+        self.policy = new_policy
 
     def check(self, action: str, context: dict) -> SafetyDecision:
+        # Fail-safe：policy 未加载 → 默认拒绝任何真金 / 写入类 action
+        if self.state != 'loaded':
+            if action in WRITE_ACTIONS:              # T07/T08/T09/T11/T12
+                return SafetyDecision(level='BLOCK', rule='POLICY_NOT_LOADED', ...)
+            return SafetyDecision(level='OK')        # 纯读 action 允许
+
         # 按 BLOCK → REVIEW → WARN 顺序匹配
         for rule in self.policy['hard_red_lines']:
             if self._match(rule, action, context):
@@ -559,6 +901,12 @@ class SafetyPolicy:
                 return SafetyDecision(level=rule['level'], rule=rule['id'], ...)
         return SafetyDecision(level='OK')
 ```
+
+**Fail-safe 硬原则**（v0.2）：
+1. Policy 加载**失败** → 进入 `agent_global_state=blocked` + SEV-0 告警（**fail-closed**，不 fail-open）
+2. Policy 热加载**失败** → 保留旧版继续跑 + SEV-2 告警
+3. Policy check **抛异常** → 默认 `BLOCK`（保守）
+4. YAML 文件**损坏** → 加载失败 → 上述 1
 
 **集成点**：
 - 所有 Tool pre_condition 调 `safety_policy.check(action, context)`
@@ -594,6 +942,56 @@ CREATE TABLE security_audit_log (
 ```
 
 **保留 180 天**（合规要求，对齐 03 PRD § 8.4）。
+
+### 11.5 Audit Log Query API（v0.2 新增）
+
+180d 保留的 audit log 必须**可查询**，否则事实上不可审计。
+
+**API 定义**：
+
+```http
+# 用户查自己（Profile → 活动日志）
+GET /api/audit/my
+Headers: X-Device-Id, X-Wallet-Address, X-Signature
+Query: from_date, to_date, category (hitl/safety/trade), limit (≤ 100)
+→ 200 OK
+{
+  "events": [
+    { "id": "...", "rule_id": "SB01", "level": "REVIEW", "action": {...}, "decision": "approved", "created_at": "..." }
+  ],
+  "pagination": {...}
+}
+
+# Admin 查全平台（合规调取）
+GET /api/admin/audit/query
+Headers: X-Admin-Token, X-Auditor-Id
+Query: device_id?, wallet_address?, rule_id?, sev?, from_date, to_date
+→ 200 OK（管理员访问审计）+ 每次调取记 admin_access_log
+
+# 合规报告导出
+POST /api/admin/audit/export
+Body: { jurisdiction: "CN|US|EU|HK", period, format: "csv|pdf" }
+→ 202 Accepted (task_id)
+Polling: GET /api/admin/audit/export/:task_id
+```
+
+**权限矩阵**：
+
+| 角色 | 查自己 | 查他人 | 导出报告 | 审批特例 |
+|------|-------|-------|---------|--------|
+| 用户（device + wallet signed）| ✅ | ❌ | 导出自己数据（JSON）| - |
+| Admin | ✅ | ✅（带 `admin_access_log`）| ✅ | ❌ |
+| 合规 Auditor（需专门 role）| - | ✅ | ✅ | - |
+| 法务 / 监管调取 | - | 经 Auditor 代理 | ✅ | ❌ |
+
+**访问审计**（套娃保护）：
+- `audit_access_log` 表记录所有"谁查了 audit"
+- Admin 查其他 device 必须带 `reason` 字段 + 审计保留
+
+**Rate Limit**：
+- 用户：100 次 / 小时
+- Admin：1000 次 / 小时
+- 导出任务：每 admin 10 次 / 小时
 
 ---
 
@@ -650,18 +1048,25 @@ Safety 事件 → 自动触发 Incident Response Pipeline：
 
 ## 14. 现状 vs 本 Policy 的 Gap
 
-| # | Gap | 影响 | v1 目标 |
-|---|-----|------|--------|
-| G1 | `safety_policy.yaml` 未建 | 规则散在代码 | v1 启动前同步生成 |
-| G2 | `SafetyPolicy` 加载器未实现 | 无 runtime check | v1 实现 policy_loader.py |
-| G3 | `security_audit_log` 表未建 | 违规无记录 | migration 新建 |
-| G4 | Output filter 未接入 | 禁用表达漏出 | LLM 调用后统一走 filter |
-| G5 | Input filter Blocklist 未接入 | Injection 防御层次 L2 缺失 | 所有 user input 入口加 |
-| G6 | Circuit Breaker CB04-CB09 未实现 | 只有基础熔断 | 全部实现 |
-| G7 | 多地区合规（§ 8）全部 pending | 只有 CN IP 屏蔽 | 至少 CN/US/EU 基础合规上线 |
-| G8 | Alignment Eval 未建 golden | 无法证明对齐 | 10 类对抗场景 × ≥ 50 golden |
-| G9 | HITL 60min 自动 expired 未实现 | 可能无限 pending | cron 补 |
-| G10 | L3 全局 Kill Switch 热推机制未实现 | 生效 > 10s | 消息总线 + 配置热推 |
+| # | Gap | 影响 | v1 目标 | 优先级 |
+|---|-----|------|--------|-------|
+| **L1** | **`TRADE_WALLET_PRIVATE_KEY` 在 .env 明文** | 🔴 **灾难级**（服务器泄露 → 盗资金）| KMS / Secrets Manager | **v1 上线前必修** |
+| **L2** | **`agent_executions.private_key` 列明文存 DB** | 🔴 **灾难级**（DB 泄露 → 私钥暴露）| 删除该列 + KMS 映射 | **v1 上线前必修** |
+| **L3** | **授权额度 vs 签名金额无硬校验** | 🔴 **灾难级**（授权 $100 可签 $1000）| T08 pre_condition 硬校验 | **v1 上线前必修** |
+| G1 | `safety_policy.yaml` 未建 | 规则散在代码 | v1 启动前同步生成 | P0 |
+| G2 | `SafetyPolicy` 加载器未实现 | 无 runtime check | v1 实现 + Fail-safe Default | P0 |
+| G3 | `security_audit_log` 表未建 | 违规无记录 | migration 新建 | P0 |
+| G4 | Output filter 未接入 | 禁用表达漏出 | LLM 调用后统一走 filter | P0 |
+| G5 | Input filter Blocklist 未接入 | Injection 防御层次 L2 缺失 | 所有 user input 入口加 | P0 |
+| G6 | Circuit Breaker CB04-CB13 未实现 | 只有基础熔断 | 全部实现 | P0 |
+| G7 | 多地区合规（§ 8）全部 pending | 只有 CN IP 屏蔽 | 至少 CN/US/EU 基础合规上线 | P1 |
+| G8 | Alignment Eval 未建 golden | 无法证明对齐 | 10 类对抗场景 × ≥ 50 golden | P0 |
+| G9 | HITL 15/60min 自动降级/expired 未实现 | 可能无限 pending | cron 补 + 03 PRD § 4.4.4 对齐 | P0 |
+| G10 | L3 全局 Kill Switch 热推机制未实现 | 生效 > 10s | 消息总线 + 配置热推 | P0 |
+| G11 | 跟单交易 HR26-HR31 未实现 | 03 PRD § 4 漏跟单子功能 | 新建 `copy_trade_service` | P1 |
+| G12 | 用户一键擦除凭证 < 60s SLA 未验证 | 安全承诺空话 | 实现 + 压测 | P0 |
+| G13 | Audit Log Query API 未建 | 事实上不可审计 | § 11.5 API 上线 | P0 |
+| G14 | Rule ID 生命周期管理机制未建 | 未来改规则会有 ID 冲突 | 加 status + deprecated_at 字段 | P1 |
 
 ---
 
@@ -683,6 +1088,32 @@ Safety 事件 → 自动触发 Incident Response Pipeline：
 
 ## Change Log
 
+- **v0.2 (2026-04-24)**：Review 修订 + 产品决策同步
+  - **产品决策落地**：
+    * **HR09 彻底改写**：不再"永不访问私钥"，改为"托管模式 + KMS + 最小权限原则"（用户导入助记词到 FlutterSecureStorage，服务端 KMS 签名）
+    * **HR10 新增**：签名前硬校验 amount ≤ authorization（堵"授权 $100 签 $1000"漏洞）
+    * **HR11 新增**：用户一键擦除凭证 < 60s 生效
+    * **HR11b 新增**：首启托管模式声明一次性弹窗
+    * **HR20 删除**（deprecated 保留 ID）：跟单改为支持
+    * **HR26-HR31 新增**：跟单交易 6 条安全约束（继承硬限 / 黑名单 / opt-in / 明示延迟 / 熔断被跟方异常）
+  - **§ 6A 新增 托管钱包安全专章**：
+    * 当前架构定性（模式 A 全托管）
+    * **3 个灾难级漏洞**（L1 env 明文 / L2 DB 明文 / L3 无授权校验）+ 修复方案 + 工程量
+    * 修复后的签名流程规范（KMS fetch → 硬校验 → 签名 → memzero < 100ms）
+    * 用户侧安全规范（导入 / 使用 / 擦除 SLA）
+    * 托管合规声明
+  - **Review P0 修订**（前次 self-review）：
+    * § 0.1.1 Doc-Code 同步机制（hand-maintained + CI 校验，不搞 md→yaml auto parse）
+    * § 2.1 Constitutional Rules 可执行化（5 条 regex / Judge pattern）
+    * § 3.0 Rule ID 生命周期（永不重用 + deprecated 保留）
+    * § 3.0.1 Hard Red Line 可覆盖性（v1 阶段 0 例外）
+    * § 6.2 HITL 改引用 03 PRD § 4.4.4（5/15/60 min）
+    * § 8.2 CN 合规：自声明仅解锁 paper / 增 VPN 检测 / cn_risk_score 综合评分
+    * § 11.2 Fail-safe Default（加载失败进 BLOCKED / 异常默认 BLOCK）
+    * § 11.1 YAML 补全前 11 条 HR + 5 条 SB + 5 条 CB
+    * § 11.5 新增 **Audit Log Query API**（用户 / Admin / 合规三级权限）
+  - **§ 10 Circuit Breaker +4**：CB10 HITL reject 率 / CB11 跟单对象异常 / CB12 KMS 失败 / CB13 密钥滞留告警
+  - **§ 14 Gap 更新**：加入 L1/L2/L3 灾难级修复 + 新增 G11-G14
 - **v0.1 (2026-04-24)**：首版完整填充
   - § 1 4 级 Safety Levels（BLOCK/REVIEW/WARN/OK）
   - § 2 **Constitutional Rules** 5 条（Anthropic 风格 Agent 价值观）

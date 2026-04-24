@@ -78,15 +78,16 @@
 
 ### 1.4 Limits（硬性边界 · 绝不做）
 
-来自 [03 PRD § 9](./03-prd.md#9-out-of-scopev1-明确不做) + Safety Policy：
+来自 [03 PRD § 9](./03-prd.md#9-out-of-scopev1-明确不做) + [08 Safety § 3](./08-safety-policy.md#3-hard-red-lines硬红线--永不做)：
 
-- ❌ 不做合约 / 期货 / 杠杆 / CEX 交易 / NFT / DeFi LP / 借贷 / 跟单 / 税务
+- ❌ 不做合约 / 期货 / 杠杆 / CEX 交易 / NFT / DeFi LP / 借贷 / 税务
+- ✅ **支持跟单交易**（v0.5，受 HR26-HR31 约束，见 03 PRD § 4.14）
 - ❌ 不推送官方信号（用户需自建策略）
 - ❌ 不给"保证盈利"话术
 - ❌ 不预测具体价格
 - ❌ 单笔真金 > $500 **必须**用户当次 HITL，即使已授权
 - ❌ 不做未经用户明确授权的真金执行
-- ❌ 不访问、保存、传输用户私钥 / 助记词 / CEX 账号密码
+- ⚠️ **托管模式下**（v0.5）：助记词仅存用户 FlutterSecureStorage + 服务端 KMS 签名密钥，严禁 .env / DB 明文（见 08 § 6A）
 
 ### 1.5 Personality（说话风格）
 

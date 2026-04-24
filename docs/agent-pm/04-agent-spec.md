@@ -450,71 +450,82 @@ async def reflect(period="daily"):
 **v1 要做**：显式化为统一 state enum。
 
 ```
-       ┌─────────┐
-       │  IDLE   │◀──────────────────────────────┐
-       └────┬────┘                               │
-            │ event / user_request               │
-            ▼                                    │
-       ┌─────────┐                               │
-       │ SCANNING│ ── rule no match ─────────────┤
-       └────┬────┘                               │
-            │ rule match OR user ask analysis    │
-            ▼                                    │
-       ┌──────────┐                              │
-       │ANALYZING │ ── data insufficient ────────┤
-       └────┬─────┘                              │
-            │ thesis ready                       │
-            ▼                                    │
-       ┌──────────────┐                          │
-       │ RISK_CHECK   │ ── rejected ─────────────┤
-       └──────┬───────┘                          │
-              │                                  │
-      ┌───────┴────────┐                         │
-      ▼                ▼                         │
- ┌─────────┐   ┌──────────────────┐              │
- │EXECUTING│   │AWAITING_APPROVAL │── timeout ───┤
- │(paper/  │   │(HITL)            │── reject ────┤
- │ auto)   │   └─────┬────────────┘              │
- └────┬────┘         │ user approve              │
-      │              ▼                           │
-      │        ┌──────────┐                      │
-      │        │EXECUTING │                      │
-      │        └────┬─────┘                      │
-      │             │                            │
-      └─────────────┴──────────────┐             │
-                                   ▼             │
-                            ┌─────────────┐      │
-                            │  MONITORING │      │
-                            │(位置跟踪)   │      │
-                            └──────┬──────┘      │
-                                   │ closed      │
-                                   ▼             │
-                            ┌─────────────┐      │
-                            │ REFLECTING  │──────┘
-                            └─────────────┘
+       ┌─────────────┐
+       │  IDLE       │
+       │  空闲       │◀───────────────────────────────────┐
+       └──────┬──────┘                                    │
+              │ event / user_request                      │
+              │ 事件 / 用户请求                           │
+              ▼                                           │
+       ┌─────────────┐                                    │
+       │  SCANNING   │  rule no match                     │
+       │  扫描       │── 规则未命中 ──────────────────────┤
+       └──────┬──────┘                                    │
+              │ rule match OR user ask analysis           │
+              │ 规则命中 或 用户请求分析                  │
+              ▼                                           │
+       ┌─────────────┐                                    │
+       │  ANALYZING  │  data insufficient                 │
+       │  分析        │── 数据不足 ────────────────────────┤
+       └──────┬──────┘                                    │
+              │ thesis ready / 分析完成                   │
+              ▼                                           │
+       ┌─────────────┐                                    │
+       │  RISK_CHECK │  rejected                          │
+       │  风控       │── 风控拒绝 ────────────────────────┤
+       └──────┬──────┘                                    │
+              │                                           │
+      ┌───────┴────────┐                                  │
+      ▼                ▼                                  │
+ ┌─────────────┐  ┌───────────────────┐                   │
+ │  EXECUTING  │  │ AWAITING_APPROVAL │  timeout / 超时   │
+ │  执行       │  │ 待授权 (HITL)     │── reject / 拒绝 ──┤
+ │ (paper/auto)│  └─────┬─────────────┘                   │
+ └──────┬──────┘        │ user approve                    │
+        │               │ 用户通过                        │
+        │               ▼                                 │
+        │        ┌─────────────┐                          │
+        │        │  EXECUTING  │                          │
+        │        │  执行       │                          │
+        │        └──────┬──────┘                          │
+        │               │                                 │
+        └───────────────┴───────────────┐                 │
+                                        ▼                 │
+                              ┌─────────────┐             │
+                              │ MONITORING  │             │
+                              │ 持仓监控    │             │
+                              └──────┬──────┘             │
+                                     │ closed / 平仓      │
+                                     ▼                    │
+                              ┌─────────────┐             │
+                              │ REFLECTING  │─────────────┘
+                              │ 反思        │
+                              └─────────────┘
 
-           横切：BLOCKED（熔断 / Kill Switch）可从任何状态进入
+       横切状态 / Cross-cutting state：
+       BLOCKED 熔断（Kill Switch）可从任何状态进入
+       Can be entered from any state.
 ```
 
-### 7.2 状态列表
+### 7.2 状态列表（State List）
 
-| 状态 | 含义 | 允许的行为 | 表达位置 |
-|------|------|-----------|---------|
-| `IDLE` | 空闲 | 订阅事件 | 默认 |
-| `SCANNING` | 规则评估中 | RuleEngine | 极短（ms 级）|
-| `ANALYZING` | LLM 分析中 | Tool 调用 | `agent_executions.state='analyzing'` |
-| `RISK_CHECK` | 风控检查 | 9 项 rule check | 同上 |
-| `AWAITING_APPROVAL` | 等待 HITL | 用户决策 | `pending_approvals` 表（v1 新建）|
-| `EXECUTING` | 下单中 | swap / paper_open | `agent_executions.status='pending'` |
-| `MONITORING` | 持仓监控 | 止盈止损 check | `agent_paper_trades.status='open'` / `agent_executions.status='confirmed'` |
-| `REFLECTING` | 反思中 | LLM call + memory write | `reflection_jobs` 表（v1 新建）|
-| `BLOCKED` | 熔断 / Kill Switch | 只响应解除命令 | `agent_global_state.status='blocked'`（v1 新建）|
+| State 状态 | 含义 Meaning | 允许行为 Allowed Actions | 表达位置 Persisted At |
+|-----------|-------------|------------------------|---------------------|
+| `IDLE` 空闲 | 等待事件 / 请求 | 订阅事件 Subscribe events | 默认 Default |
+| `SCANNING` 扫描 | 规则评估中 Rule eval | RuleEngine | 极短 ms 级 Ephemeral |
+| `ANALYZING` 分析 | LLM 分析中 LLM in flight | Tool 调用 Tool calls | `agent_executions.state='analyzing'` |
+| `RISK_CHECK` 风控 | 9 项风控检查 9 risk checks | RiskManager | 同上 Same as above |
+| `AWAITING_APPROVAL` 待授权 | 等待 HITL Waiting for HITL | 用户决策 User decision | `pending_approvals` 表（v1 新建 new in v1）|
+| `EXECUTING` 执行 | 下单中 Placing order | swap / paper_open | `agent_executions.status='pending'` |
+| `MONITORING` 持仓监控 | 持仓跟踪 Position tracking | 止盈止损 TP/SL check | `agent_paper_trades.status='open'` / `agent_executions.status='confirmed'` |
+| `REFLECTING` 反思 | 反思生成中 Reflection in flight | LLM call + memory write | `reflection_jobs` 表（v1 新建 new in v1）|
+| `BLOCKED` 熔断 | Kill Switch / 熔断器 Circuit breaker | 只响应解除命令 Unblock only | `agent_global_state.status='blocked'`（v1 新建 new in v1）|
 
-### 7.3 非法转移（必须报错）
+### 7.3 非法转移（必须报错 / Illegal Transitions · Must Reject）
 
-- `IDLE` → `EXECUTING`（跳过 ANALYZING）❌
-- `EXECUTING` → `AWAITING_APPROVAL`（执行中不能再审批）❌
-- `BLOCKED` → 任何状态（除 admin 手动解除）❌
+- `IDLE` → `EXECUTING`（跳过 ANALYZING / skipping ANALYZING）❌
+- `EXECUTING` → `AWAITING_APPROVAL`（执行中不能再审批 / cannot approve mid-execution）❌
+- `BLOCKED` → 任何状态（除 admin 手动解除 / admin manual unblock only）❌
 
 ---
 

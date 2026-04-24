@@ -5,8 +5,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 | Tool 选型 | pytest + 自建轻量框架（无 SaaS 依赖）|
@@ -458,6 +458,26 @@ Return strict JSON: {scores, overall, issues[], verdict: pass|warn|fail}
 - Judge vs 人工的 Pearson 相关性 **< 0.7** → 重调 judge prompt
 - 公布校准报告（内部团队），作为 Judge prompt 版本迭代的 evidence
 
+### 5.5 Judge 冷启动信任流程（v0.2 新增）⭐
+
+**问题**：v1 启动时**没有历史 Judge 打分作为基线**，首批 Judge 结果是否可信？
+
+**冷启动校准（必做）**：
+
+| 阶段 | 操作 | 门槛 |
+|------|------|------|
+| **Phase 1 双打**（v1 上线前，必做）| 首批 **100 条** golden：**人工 + Judge 同时打分** | 计算 Pearson 相关性 |
+| **Phase 2 校准**（如相关性 < 0.7）| 调 Judge prompt → 重跑 → 再测 | 循环直到 **≥ 0.7** |
+| **Phase 3 独立**（相关性 ≥ 0.7 后）| Judge 可独立跑新 case，人工抽检 10% | 月度复核 |
+| **Phase 4 持续**（v1 后）| 每月 20 条人工 + Judge 对照 | 维持 ≥ 0.7 |
+
+**Judge 独立可信的硬条件**：
+- Phase 1 完成 ≥ 100 条
+- 最终 Pearson ≥ 0.7
+- Safety 维度人工-Judge 差异 100% 一致（Safety 零容忍）
+
+**未完成 Phase 1 / 2 时**：Judge 结果仅作**辅助参考**，Launch Gate 必须**人工复核**所有 SEV-0 相关 case。
+
 ### 5.5 Judge 可靠性 Eval
 
 对 Judge 本身做 eval（meta-eval）：
@@ -505,6 +525,28 @@ Return strict JSON: {scores, overall, issues[], verdict: pass|warn|fail}
   - thumbs_down > 3 次同类 → 入 eval golden 作为 "hard case"
   - 单 Prompt 点踩率 > 20% → 自动回归跑 Prompt golden
 ```
+
+#### 6.4.1 "同类"的聚类规则（v0.2 明确）
+
+"3 次同类" 的 "同类" 定义为以下维度**组合 match**：
+
+| 聚类键 | 阈值 |
+|-------|------|
+| `prompt_id` + `persona` + `regime` | 3 次点踩 |
+| `prompt_id` + `chain` + `token_type` | 3 次点踩 |
+| `skill_id` + `stage`（如 S04 的 clarifying/refining）| 3 次点踩 |
+| `category`（如"价格预测失准" / "分析空泛"）| 5 次（需用户 free_text 归类）|
+
+**3 次阈值的统计依据**：
+- 假设单 Prompt 默认点踩率基线 15%
+- 3 次点踩在**单一聚类组合**内发生 → 二项分布 p < 0.1（统计意义）
+- v2 可调（有历史基线数据后）
+
+#### 6.4.2 反馈回流的处理节奏
+
+- 阈值命中 → 自动创建 `golden_candidate` 条目（待 PM review）
+- PM 每周审批 → 决定是否入库（避免噪音污染 golden）
+- 被入库的 hard case 标 `source: user_feedback`
 
 ---
 
@@ -612,9 +654,48 @@ jobs:
 
 ### 9.4 Rollback 触发
 
-- Canary 期间 Pass rate 跌 **≥ 5pp** → 自动 rollback（配置热推 < 5s）
+- Canary 期间 Pass rate 跌 **≥ 5pp 且统计显著**（见 §9.5）→ 自动 rollback（配置热推 < 5s）
 - Safety violation（任意）→ 立即 rollback + SEV-1 告警
 - Cost 超预算 1.5× → 告警 + 24h 内 rollback 或修复
+
+### 9.5 Flakiness Handling（v0.2 新增）⭐
+
+**问题**：LLM 调用**天然非确定**（即使 temp=0，模型 side 可能静默微调），pass rate 会有噪声。
+一刀切 "pass rate < 99%" 阈值会误伤正常 PR。
+
+#### 9.5.1 统计显著性判定
+
+| PR 场景 | 判定方法 |
+|--------|---------|
+| **L1 Tool**（纯函数，应确定）| Pass rate 直接比较，下降 > 0pp 即 block |
+| **L1 Prompt / L2 Skill / L3 Agentic** | **McNemar's test**（配对检验）`p < 0.05 且 下降 ≥ 2pp` 才 block |
+| **Safety Eval** | 任一 case fail（不用统计）即 block |
+| **月度 Drift** | **bootstrap CI 95%** 下界下降 ≥ 3pp 才视为真漂移 |
+
+#### 9.5.2 重跑机制
+
+- Pass rate 在阈值附近（borderline）→ **重跑 3 次取中位数**
+- 重跑 3 次**仍有 flaky**（3 次结果 spread > 5pp）→ 标 `flaky_case`，人工 review 修 golden 或 prompt
+- `flaky_case` 超过 5% 的 Prompt → 触发 prompt 版本审查
+
+#### 9.5.3 Flaky Golden 清理
+
+- 同一 golden 过去 30 天内 pass / fail 交替 > 3 次 → 标记 `unstable`
+- `unstable` golden 不计入 pass rate（但仍记录），PM 审后决定：修 / 删 / 保留作 stress test
+
+#### 9.5.4 GitHub Actions 示例
+
+```yaml
+- name: Run eval with flakiness handling
+  run: |
+    python scripts/run_eval.py --layer l2 --output result.json
+    python scripts/check_regression.py \
+      --result result.json \
+      --baseline main_branch_result.json \
+      --method mcnemar \
+      --min-effect 2 \
+      --retry-borderline 3
+```
 
 ---
 
@@ -665,7 +746,7 @@ cases:
     last_verifier: "..."
 ```
 
-### 10.3 维护流程
+### 10.3 维护流程 + 人工标注共识机制（v0.2 强化）
 
 | 操作 | 频率 | 负责人 |
 |------|------|-------|
@@ -675,6 +756,28 @@ cases:
 | Re-verify（golden 本身是否还正确）| 每季 | PM 抽 10% 重跑 |
 | Owner 更新（人员变动）| 持续 | HR 联动 |
 
+#### 10.3.1 人工标注共识规则（v0.2 新增）⭐
+
+**问题**：40% 真实数据抽样的 `expected` 是人工标注，但不同标注员可能意见不一致。
+
+**共识机制**：
+
+| 类型 | 规则 |
+|------|------|
+| **关键 golden**（Tool Critical / Safety / Launch Gate 依赖）| ≥ **2 人独立标注** 且 Kappa > **0.7** 才入库 |
+| **普通 golden** | 1 人标注 + 1 人 review approve |
+| **Trajectory / Skill（主观性高）**| ≥ 3 人 + 多数投票 + 分歧 case 记 `has_disagreement=true` |
+| Safety 一票否决类 | 任何一人判 fail → 入库为 fail 基准（最保守） |
+
+**Kappa 系数计算**（Cohen's Kappa 或 Fleiss' Kappa for n≥3）：
+- 内置 `scripts/annotation_consensus.py` 自动算
+- Kappa < 0.7 → **标注集合标红**，组织讨论会对齐标准
+- 标注标准变化 → 重新校准影响的 golden
+
+**分歧 case 的处理**：
+- 即使最终入库，`disagreement_notes` 字段保留原始分歧
+- 这些 case 优先被 Judge 的"易错样本"用于校准 Judge bias
+
 ### 10.4 数据权属
 
 - Golden 入 Git（版本化 + 可追溯）
@@ -682,20 +785,55 @@ cases:
 - 如涉及真实用户数据（40% 抽样部分）→ 脱敏 + 用户知情
 - 遵守 [08 Safety § 7 User Data Protection]
 
-### 10.5 v1 冷启动策略（分阶段建 golden）⭐
+### 10.5 v1 冷启动策略（v0.2 重算 —— 人力 + Tool 优先级修订）⭐
 
-**现状：0 条 golden。v1 上线前必须达到的最低量**：
+#### 10.5.1 真实工程量估算
 
-| 阶段 | 周 | 目标 | 累计 golden |
-|-----|----|------|------------|
-| Week 1 | Tool Unit | T01-T17 × 10 条 = 170 条 | **170** |
-| Week 2 | Prompt Unit | P01-P18 × 30 条 = 540 条 | **710** |
-| Week 3 | Skill Integration | S01-S05,S07,S08 × 50 条 = 350 条 | **1060** |
-| Week 4 | Composition + Memory | 4 chains × 10 + Memory 100 = 140 条 | **1200** |
-| Week 5 | Safety Eval | AE01-AE10 × 270 条 | **1470** |
-| Week 6 | Trajectory + 优化 | 16 Traj × 20 条 + 补全 | **1600+** |
+**v0.1 "50 条 / 工程 day" 不现实**。真实数据：
+- 单条高质量 golden 20-40 min（设计 → 编写 → peer review → 验证）
+- 单工程 day **8-15 条 / 人**
+- 1660 条 ≈ **110-200 人日**
 
-**每日产出目标**：≥ 50 条 / 工程 day（人工 golden）或 ≥ 200 条 / day（自动化辅助生成 + 人工审核）
+**3 种人力配置**：
+
+| 配置 | 投入 | 周期 | 适用 |
+|------|-----|------|------|
+| **A. 4 人并行 6 周**（推荐）| 120 人日 | **6 周** | v1 MVP 2026 Q3 目标可达 |
+| B. 2 人并行 10-12 周 | 110 人日 | 11 周 | 人力有限 |
+| C. 1 人 24-32 周 | 150 人日 | 28 周 | 早期单工程师 |
+
+#### 10.5.2 Tool Eval 按关键路径加权（v0.2 修订）
+
+v0.1 "平均每 Tool 10 条" 不合理。关键路径加权后：
+
+| Tier | Tool | Golden |
+|------|------|--------|
+| **Critical** | T08 execute_swap | **30** |
+| Critical | T09 create_approval_request / T14 calc_indicators / T15 calc_risk | 20 × 3 = **60** |
+| Tier 2 | T01/T02/T03 (query) / T04 recall_memory / T12 save_strategy / T16 backtest | 15 × 7 = **105** |
+| Tier 3 | T05-T07 / T10-T11 / T13 / T17 | 10 × 7 = **70** |
+| **Tool 合计** | | **265 条**（v0.1 170 条 → v0.2 265 条）|
+
+#### 10.5.3 新路线图（配置 A · 4 人并行 6 周）
+
+| 周 | 重点 | 目标 | 累计 |
+|----|------|-----|-----|
+| Week 1 | 基础设施 + Tool Critical | pytest 框架 + T08/T09/T14/T15 (90) + 其他 Tool (175) = 265 | **265** |
+| Week 2 | Prompt Unit | P01-P18 × 30 = 540 | **805** |
+| Week 3 | Skill Integration | 7 Skill × 50 = 350 | **1155** |
+| Week 4 | Composition + Memory | 4 chain × 10 + Memory 100 = 140 | **1295** |
+| Week 5 | **Safety Eval ⭐** | AE01-AE10 × 270 | **1565** |
+| Week 6 | Trajectory + Dashboard + Judge 校准 | Traj 20 + 补全 = 95 | **1660** |
+
+**总投入 120 人日**（4 × 6 × 5）。
+
+#### 10.5.4 最低可行路线（人力不足时）
+
+若只能 1-2 人：
+- **绝不砍**：Tool Critical (90) + Safety AE (270) = 360 条
+- **可减量**：Skill 50 → 30 / Prompt 30 → 20
+- **可延后**：Composition L3 v1 仅 2 chain × 5 条；Trajectory v1 后建
+- **最小 launch golden ≈ 700-900 条**（Launch Gate 需相应调整）
 
 ---
 
@@ -756,18 +894,48 @@ cases:
 - **Git**: `tests/evals/` 目录，按 layer / target 分组
 - **Run 结果**: Postgres `eval_runs` 表（保留 90 天）+ S3 archive（长期）
 
-### 11.4 LLM 调用的录像 / 回放
+### 11.4 LLM 调用的录像 / 回放（v0.2 强化）
 
 为降低 eval 成本：
 - 首次跑 golden → 录像 LLM response 到 `eval_recordings/`
 - 后续 regression → 对比（input 相同时直接回放，不再调 API）
-- Prompt 改版 → 强制 re-record
 
-**成本估算**：
-- 全量 L1+L2+L3 eval ≈ 1000 LLM 调用 × $0.02 avg = **$20/次**
-- 每 PR 增量 ≈ $2-5
-- 每周全量 ≈ $20-40
-- **月度预算 $500-1000 足够**（对比 SaaS 月费 $200-500 省不了多少，但可控性强）
+#### 11.4.1 回放的局限性（v0.2 明确）
+
+**回放 pass ≠ 真 pass**。以下场景回放不可信：
+- **Prompt 改版**（system prompt 或 few-shot 变）→ 回放仍用旧 prompt 的 output
+- **模型升级**（Claude Opus 4.5 → 4.6）→ 回放不反映新模型行为
+- **模型侧静默微调**（Anthropic 可能持续优化，不版本号变化）
+- **Eval 自身标准变化**（rubric 改了）
+
+#### 11.4.2 强制 Re-record 节奏（v0.2 硬规定）
+
+| 触发 | 操作 |
+|------|------|
+| Prompt minor / major 版本升级 | **该 Prompt 相关 golden 全部作废**，重录 |
+| Skill version 升级 | 该 Skill + 依赖 Prompt 全部重录 |
+| Model 版本切换（e.g. Opus 4.5 → 4.6）| **全量 re-record** |
+| **每月 1 日** | 抽 **20% 录像**随机真调 API 对比（差异 > 5% 触发该类全量重录）|
+| `eval_recordings/<name>.meta` 显示录制 > 90 天 | 标 `stale` + PR 必须先 re-record |
+
+#### 11.4.3 Re-record 成本 vs 回放成本权衡
+
+- 纯回放：接近 $0
+- 全量 re-record（1600 条）：约 $30-50 一次
+- 月度抽 20% 对比：约 $6-10
+- **实际月度预算**（v0.2 重算）：
+  * 日常 PR CI（回放为主）：$50-100 / 月
+  * 周 full regression（含部分真调）：$150-300 / 月
+  * 月度 re-record + drift check：$100-200 / 月
+  * Prompt 改版带来的 re-record：$50-150 / 月
+  * **合计月度 $500-1500**（v0.1 写的 $500-1000 偏低）
+
+### 11.4.4 回放完整性校验
+
+每次回放必须：
+- 计算 `input_hash = sha256(prompt + variables)` 匹配 recording
+- 记录 recording 时间 + 模型版本到 trace
+- 超过 30 天的 recording 在 CI 里显性 warn（不 block 但提醒）
 
 ### 11.5 CI 集成
 
@@ -843,6 +1011,44 @@ jobs:
 | 管理员 | 可配置告警阈值 + 人工打分权限 |
 
 ### 12.4 与 Observability 集成
+
+对齐 [15 Observability](./15-observability-tracing.md)：
+- Eval run 写入同一 trace 系统（Langfuse）
+- 每条 golden case → 有 trace_id 可追溯完整 LLM 调用
+- Dashboard 可跳转到 Langfuse trace 详情
+
+### 12.5 合规报告导出（v0.2 新增）⭐
+
+**用途**：合规 / 法务 / 监管调取时提供结构化证据。
+
+**导出类型**：
+
+| 类型 | 内容 | 格式 | 权限 |
+|------|------|------|------|
+| **Safety Compliance Report** | AE01-AE10 pass rate + SEV 违规次数 | PDF / CSV | 合规 Auditor |
+| **Jurisdiction Report** | 按地区（CN/US/EU/HK）统计 Safety 事件 | PDF | 法务 |
+| **Eval Coverage Report** | Golden 数量 + Pass rate 按 layer | Excel | PM / 内部 |
+| **Incident Report**（合规触发）| 某时间段的 SEV-0/1 事件完整 trace | PDF + raw JSON | 监管 |
+
+**API**:
+
+```http
+POST /api/admin/eval/compliance-report
+Headers: X-Admin-Token, X-Auditor-Role
+Body: {
+  "type": "safety | jurisdiction | coverage | incident",
+  "period": { "from": "...", "to": "..." },
+  "jurisdiction": "CN|US|EU|HK",
+  "format": "pdf|csv|json"
+}
+→ 202 Accepted + task_id
+GET /api/admin/eval/compliance-report/:task_id → 下载链接
+```
+
+**规则**：
+- 导出任务**必记 audit log**（谁导出什么 / 对应合规诉求编号）
+- Rate limit：10 次 / admin / 小时
+- 敏感数据（device_id / wallet 明文）仅 `role=legal` 可见，其他角色 hashed
 
 对齐 [15 Observability](./15-observability-tracing.md)：
 - Eval run 写入同一 trace 系统（Langfuse）
@@ -944,6 +1150,36 @@ Launch Gate: 达标后 v1 MVP 上线
 
 ## Change Log
 
+- **v0.2 (2026-04-24)**：Review 修订（P0 5 个 + P1 4 个）
+  - **§ 10.5 冷启动路线重算**：
+    * v0.1 "50 条 / 工程 day" 不现实 → v0.2 真实 8-15 条 / 人日
+    * 3 种人力配置（4 人 6 周 / 2 人 11 周 / 1 人 28 周）
+    * Tool 按关键路径加权：T08 30 / T09 T14 T15 各 20 / 其他梯度
+    * 总 golden 170 → 265（Tool 加权后）→ 1660 条合计
+    * 新增"最低可行路线"（人力不足时砍法）
+  - **§ 11.4 LLM 录像回放机制强化**：
+    * 明确"回放 pass ≠ 真 pass"局限性
+    * 5 类强制 re-record 触发（Prompt 改版 / Skill 升级 / 模型切换 / 月度 20% 抽 / 录制 > 90d）
+    * 月度 eval 成本 $500-1000 → **$500-1500**（更真实）
+    * 回放完整性校验（input_hash / 录制时间 / 模型版本）
+  - **§ 10.3.1 新增 人工标注共识机制**：
+    * Kappa > 0.7 门槛
+    * 关键 golden ≥ 2 人独立 / 主观高 Skill ≥ 3 人投票
+    * 分歧 case 保留 `disagreement_notes`
+  - **§ 9.5 新增 Flakiness Handling**：
+    * McNemar's test 统计显著性（不是一刀切 pp 阈值）
+    * 重跑 3 次取中位数
+    * `unstable` golden 自动识别 + 人工 review
+  - **§ 5.5 新增 Judge 冷启动信任流程**：
+    * 首批 100 条人工 + Judge 双打
+    * Pearson ≥ 0.7 才独立 Judge
+    * Safety 维度 100% 一致硬要求
+  - **§ 6.4.1 "同类"聚类规则明确**：
+    * 4 种聚类键组合（prompt_id + persona / chain / token_type / category）
+    * 3 次阈值的统计依据（p < 0.1）
+  - **§ 12.5 新增 合规报告导出**：
+    * 4 种报告类型（Safety / Jurisdiction / Coverage / Incident）
+    * API 定义 + 权限 + 敏感数据 hash
 - **v0.1 (2026-04-24)**：首版完整填充
   - § 1 **4 层金字塔**（原 3 层 → 扩展 L4 Trajectory）+ 各层 Golden 数量 + 运行频率
   - § 2 Unit Eval：

@@ -5,8 +5,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 
@@ -216,35 +216,87 @@ CREATE INDEX idx_memory_relevance ON agent_memory(device_id, chain, trigger_sour
 - ❌ 未闭仓的中间状态
 - ❌ Agent 自己产生的内部日志
 
-### 3.5 检索算法（T04 recall_memory 启发式评分）
+### 3.5 检索算法（T04 recall_memory 启发式评分）⭐ v0.2 改严
 
 v1 使用**规则化评分**（不用 embedding，简单可解释）：
 
 ```python
+# Regime 距离表（避免二元匹配丢失相关 regime 转换期案例）
+REGIME_DISTANCE = {
+    ("BULL", "BULL"): 0, ("SIDEWAYS", "SIDEWAYS"): 0, ("CRISIS", "CRISIS"): 0,
+    ("BULL", "SIDEWAYS"): 1, ("SIDEWAYS", "BULL"): 1,
+    ("SIDEWAYS", "CRISIS"): 1, ("CRISIS", "SIDEWAYS"): 1,
+    ("BULL", "CRISIS"): 2, ("CRISIS", "BULL"): 2,
+}
+
 def relevance_score(memory, situation):
-    score = 0
+    score = 0.0
     # 精确匹配加分（关键维度）
     if memory.trigger_source == situation.trigger_source: score += 3
     if memory.chain == situation.chain:                    score += 2
-    if memory.regime == situation.regime:                  score += 2
     if memory.token_type == situation.token_type:          score += 2
     if memory.mcap_bucket == situation.mcap_bucket:        score += 1
-    # 重要性和新鲜度加成
-    score += memory.importance / 10                        # 0-1 贡献
-    score += freshness_bonus(memory.created_at)            # 最近 7d +1 / 7-14d +0.5 / >14d +0
-    # 返回 Top K
-    return score
 
-def freshness_bonus(ts):
-    age_days = (now - ts).days
-    if age_days < 7: return 1.0
-    if age_days < 14: return 0.5
-    return 0
+    # Regime 用距离（而非二元）
+    dist = REGIME_DISTANCE[(memory.regime, situation.regime)]
+    score += {0: 2, 1: 0.5, 2: -1}[dist]   # 同 regime +2 / 邻近 +0.5 / 对立 -1
+
+    # 重要性和新鲜度加成
+    score += memory.importance / 10                        # 0-1
+    score += freshness_bonus(memory.created_at)            # 7d +1 / 14d +0.5 / >14d +0
+
+    # 命中反哺（被反复召回的 memory 更有价值）
+    score += min(memory.match_count * 0.1, 0.5)            # 上限 +0.5
+
+    return score
 ```
 
+**Top K 检索 + 最低分阈值**（v0.2 新增）：
+
+```python
+def retrieve(situation, top_k=3):
+    scored = [(m, relevance_score(m, situation)) for m in candidates]
+    scored.sort(key=lambda x: -x[1])
+    # 最低分阈值：score < 3 视为不相关（强行返回会误导 thesis）
+    results = [m for m, s in scored[:top_k] if s >= 3.0]
+    if not results:
+        return { "memories": [], "low_relevance": true }   # 显性告诉调用方
+    return { "memories": results }
+```
+
+**Empirical 召回示例**（给工程 + eval 的参考）：
+
+| Situation（查询）| 候选 Memory | Score | 会召回吗？ |
+|----------------|-----------|-------|----------|
+| `chain=solana, trigger=smart_money, regime=BULL, mcap=100k-1m` | solana+smart_money+BULL+100k-1m 的旧 trade，14d 前 | 3+2+2+1+0.5 = 8.5 | ✅ Top 1 |
+| 同上 | eth+smart_money+BULL+100k-1m 的旧 trade | 3+0+2+1+0.5 = 6.5 | ✅ Top 2 |
+| 同上 | solana+hot+BULL 的旧 trade | 0+2+2+0+0.5 = 4.5 | ✅ Top 3（低分）|
+| 同上 | solana+smart_money+**CRISIS**+100k-1m（regime 对立）| 3+2-1+1+0.5 = 5.5 | ✅（但降权）|
+| 同上 | eth+hot+SIDEWAYS+1m-10m，50d 前 | 0+0+0.5+0+0 = 0.5 | ❌ 低于 3 阈值 |
+
+**关键：regime 对立（BULL ↔ CRISIS）的 Memory 会降权但不完全排除**——避免错失"regime 转换期"的宝贵经验（如 "曾在 CRISIS 抄底失败"是 BULL 期也应该参考的）。
+
 **v2 考虑**：
-- 若启发式召回率 < 60% → 升级到 embedding（Voyage AI / OpenAI 小模型，~$0.0001/次）
-- 混合（starting with heuristic, embedding only on tie-break）
+- 若启发式召回 precision@3 < 60% → 升级到 embedding（Voyage AI / OpenAI 小模型，~$0.0001/次）
+- 混合（heuristic 预筛 → embedding 重排）
+
+### 3.5.1 Situation 提取规则（谁构造 situation）
+
+T04 recall_memory 要求 `situation` 字段。**情境由调用方根据 context 自动提取**，规则如下：
+
+| 字段 | 从哪拿 | 默认值（未知时）|
+|------|-------|---------------|
+| `chain` | context.chain / URL 参数 | 必填（无则报错）|
+| `token_type` | hot_coins.tag 或根据 mcap / age 推断 | `"unknown"` |
+| `trigger_source` | 调用者传入（Scout Loop 知道）| `"user_manual"` |
+| `mcap_bucket` | 根据当前 market_cap 分桶 | 按 mcap 计算 |
+| `regime` | 调用 RegimeDetector（缓存 5min）| 上次已知 regime |
+
+**各 Skill 调用示例**：
+- **S08 thesis-writer**：从 thesis 上下文提取（chain + 当前 token 属性）
+- **S07 review-engine**：多次调用，每个策略一次（按策略的典型触发 source）
+- **S04 signal-strategy-builder**：澄清阶段按用户已表达偏好推断（用户只说 SOL → chain=solana）
+- **S01/S02/S03 分析师**：上游 Thesis Loop 编排层提取后直接注入
 
 ### 3.6 索引策略
 
@@ -260,6 +312,70 @@ def freshness_bonus(ts):
 | 同 device `type=episodic` > 500 条 | 保留最高 importance 的 400 条 + 最近 100 条 |
 | wallet 绑定转移 | 保留（见 § 6 跨设备）|
 
+**500 条上限的依据**：
+- 单 device 活跃交易者日均 5-10 笔闭仓 → 一年 ~1800-3650 条
+- 500 条 ≈ 保留 2-3 月 "最有代表性" 的 Episodic
+- 配合 14-30d TTL，实际稳态在 200-400 条
+- 存储开销：单 device ~500 KB（可接受）
+
+### 3.8 Write Reliability（写入可靠性）⭐ v0.2 新增
+
+**问题**：交易闭仓 → 要写 Episodic，但 DB 故障 / 超时 → 这次 trade outcome 永久丢失，直接影响记忆系统的价值。
+
+**解决方案：WAL（Write-Ahead Log）+ Retry Queue**
+
+```
+关键写入流程：
+   memory write request
+        ↓
+   ① 先写本地 WAL（memory_write_wal 表，写入 < 10ms）
+        ↓
+   ② 异步入主 DB（agent_memory 表）
+        ↓
+   ③ 成功 → 从 WAL 删除
+        ↓
+   ③' 失败 → 进入 memory_write_retry_queue
+                ├─ 60s 退避重试
+                ├─ 5min 退避重试
+                ├─ 30min 退避重试
+                └─ 3 次仍失败 → P1 告警 + WAL 保留（人工介入）
+```
+
+**幂等键**（防重复写入）：
+```
+idempotency_key = hash(device_id + event_id + truncate_minute(timestamp))
+```
+
+**关键写入类别**（必须走 WAL）：
+- Episodic: `trade_outcome` / `risk_lesson` / `异常事件`
+- Semantic: T11 approve_rule（用户采纳）
+- Reflection: 自动晋升启动 Shadow Mode
+
+**非关键写入**（直接 DB，失败即丢）：
+- Episodic: `market_pattern`（噪音，丢了影响小）
+- Working Memory（本身短期）
+
+**Schema（v1 新建表）**：
+```sql
+CREATE TABLE memory_write_wal (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  device_id UUID NOT NULL,
+  idempotency_key TEXT UNIQUE NOT NULL,
+  payload JSONB NOT NULL,          -- 完整 agent_memory 行数据
+  category TEXT NOT NULL,           -- 'critical' | 'normal'
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  attempts INT DEFAULT 0,
+  last_error TEXT,
+  next_retry_at TIMESTAMPTZ
+);
+CREATE INDEX idx_wal_retry ON memory_write_wal(next_retry_at) WHERE attempts < 3;
+```
+
+**监控指标**：
+- WAL 积压数（> 100 条持续 5min → P1 告警）
+- Retry 成功率（< 95% → 调查）
+- 3 次失败告警次数（> 0 → 立即人工）
+
 ---
 
 ## 4. Semantic Memory（语义记忆 / 活跃规则）⭐ 产品价值核心
@@ -270,7 +386,9 @@ def freshness_bonus(ts):
 
 这是 **"Agent 变成懂我的专家"** 的唯一落地机制。
 
-### 4.2 Schema（同 `agent_memory`，type='semantic'）
+### 4.2 Schema（同 `agent_memory`，type='semantic'）⭐ v0.2 可解释性硬要求
+
+**每条 Semantic 规则必带 3 个可解释性字段**（用户必须能看懂 + 验证）：
 
 ```json
 {
@@ -278,51 +396,145 @@ def freshness_bonus(ts):
   "device_id": "...",
   "type": "semantic",
   "category": "trading_rule | filter | preference | market_wisdom",
-  "content": "周五不交易 SOL 链",
-  "structured_data": {
+
+  // ⭐ 3 个可解释性字段（v0.2 硬要求）
+  "human_readable": "周五不交易 SOL 链",           // 一句话（用户采纳前必须看得懂）
+  "formal_condition": {                            // 机器可执行的结构化条件
     "rule_type": "temporal_filter",
     "condition": { "weekday": 5, "chain": "solana" },
-    "action": "skip_signal",
-    "source": "user_approved | auto_promoted",
-    "evidence": {
-      "sample_size": 12,
-      "win_rate_delta_vs_other_days": -0.28,
-      "from_reflection_id": "uuid"
-    }
+    "action": "skip_signal"
   },
+  "examples": [                                    // 3 条历史匹配样本（证据）
+    { "trade_id": "uuid1", "date": "2026-04-11", "pnl_pct": -15.2, "matched_because": "周五 + SOL" },
+    { "trade_id": "uuid2", "date": "2026-04-18", "pnl_pct": -8.5, "matched_because": "..." },
+    { "trade_id": "uuid3", "date": "2026-04-04", "pnl_pct": -22.1, "matched_because": "..." }
+  ],
+
+  // 来源与证据
+  "source": "user_approved | auto_promoted",
+  "evidence": {
+    "sample_size": 20,
+    "win_rate_delta_vs_other_days": -0.28,
+    "wilson_ci_lower_pp": -8.5,                    // v0.2 新增：95% Wilson CI 下界
+    "p_value": 0.018,                              // v0.2 新增：单尾 t-test
+    "from_reflection_id": "uuid"
+  },
+
+  // Regime 交互（v0.2 新增）
+  "active_regimes": ["BULL", "SIDEWAYS"],          // 只在这些 regime 生效；CRISIS 时自动 mute
+
   "importance": 8,
   "last_matched_at": "...",
   "match_count": 23,
+  "last_health_check_at": "...",                   // v0.2：周期性规则有效性复检
   "expires_at": "..."
 }
 ```
 
-### 4.3 规则晋升机制（Reflection → Semantic）
+**`active_regimes` 的默认值**：
+- 用户手动创建的规则：`["BULL", "SIDEWAYS", "CRISIS"]`（全覆盖，尊重用户意图）
+- 自动晋升的规则：**只填晋升时观察到的 regime**（e.g. 在 BULL 期间观察到的规律 → 只在 BULL 生效，CRISIS 自动 mute）
+
+### 4.3 规则晋升机制（Reflection → Semantic）⭐ v0.2 门槛改严
 
 两条晋升路径：
 
 | 路径 | 条件 | 触发者 |
 |------|------|-------|
-| **A. 手动晋升** | 用户点"采纳"（T11 approve_rule）| 用户 |
-| **B. 自动晋升** | 连续 **3 次反思提出同条规则** **AND** ≥ **5 笔样本** **AND** 胜率领先 **≥ 15pp** | S07 review-engine |
+| **A. 手动晋升** | 用户点"采纳"（T11 approve_rule），**采纳前强制 Dry Run Preview**（见 §4.5.1）| 用户 |
+| **B. 自动晋升** | **全部** 5 条硬条件同时满足 | S07 review-engine |
 
-自动晋升的安全网：
-- ❌ 自动晋升后首次匹配必须走 **Shadow Mode**（只记录不生效）7 天
-- ❌ Shadow 期间若实际表现差于预期 → 降级回 Reflection
-- ✅ Shadow 通过 7 天 → 正式激活，用户可事后撤销
+**B 路径自动晋升的 5 条硬条件**（v0.2 改严，v0.1 的 "5 笔样本" 统计上不成立）：
 
-### 4.4 活跃规则上限
+1. **重复提议**：连续 **3 次反思**（跨 ≥ 7 天）提出同条规则（condition JSON diff < 20%）
+2. **样本量**：关联 Episodic 样本 **≥ 20 笔**（v0.1 为 5 笔，远低于统计意义）
+3. **效果显著**：胜率 / EV 差 Wilson CI 95% 下界 **> 0**（不是点估计 +15pp，而是下界为正）
+4. **p-value**：单尾 t-test **p < 0.05**
+5. **Regime 覆盖**：样本跨至少 **2 个 regime**（避免只在 BULL 学到的规则错误应用到 CRISIS）
+
+**v1 启动阈值说明**：
+- 上述为 v1 保守启动值
+- v2 根据 Shadow Mode 的实际通过率调整（若通过率 < 40% → 放宽；> 80% → 收紧）
+- 所有阈值写入 config，不写入代码
+
+**自动晋升后的 Shadow Mode**（v0.2 加强）：
+- Shadow 时长：**14 天**（v0.1 为 7 天）
+- Shadow 期间必须满足：**实际触发 ≥ 10 次** + 实际表现不劣于预期 20% 以上
+- 任一不满足 → 降级回 Reflection，记录失败原因
+- Shadow 通过 → 正式激活，`active_regimes` 自动设为观察期的 regime 集合
+
+**Shadow Mode 实现**：
+- `agent_memory.structured_data.shadow_mode = true` + `shadow_started_at`
+- T04 recall_memory 时**不**注入 shadow 规则到 prompt
+- 但每次 thesis / 策略 evaluate 时**后台记录** "如果此规则生效，决策会如何不同"
+- 14 天后统计对比
+
+### 4.4 活跃规则上限（数字依据）
 
 - 单 device `type=semantic` 硬限 **50 条活跃**
 - 满时：新规则要替换旧规则，按 `importance × recency × match_count` 加权排序，最低的被挤出（移到 `archived_rules` 表保留 90 天）
+
+**50 条上限的推导**（v0.2 补）：
+- Thesis Loop 注入 Semantic 规则到 prompt 的 token 预算：**2K tokens**
+- 单条规则平均 40-50 tokens（含 human_readable + formal_condition 简化）
+- 理论上限：2000 / 45 ≈ 44 条 → 留 safety buffer → **50 条**
+- 实际命中前 10-15 条（按相关性过滤），超过 50 条也难注入 → 50 是合理截止
 
 ### 4.5 冲突解决
 
 | 冲突类型 | 解决规则 |
 |---------|---------|
-| 两条规则条件互斥（e.g. "周五不交易" vs "周五必买 SOL"）| 保留 `importance` 更高的；若相同，保留 `match_count` 更高的 |
-| 新晋升规则与旧规则重叠 > 80% | 合并（保留新版的 evidence）|
-| 用户手动规则 vs 自动晋升规则 | **用户规则永远胜出**（即使自动晋升数据更漂亮）|
+| 两条规则条件互斥（e.g. "周五不交易" vs "周五必买 SOL"）| **强制人工解决**（弹窗让用户选保留哪条，不自动胜负）|
+| 新晋升规则与旧规则重叠 > 80% | 合并（保留新版的 evidence）+ 通知用户"已合并 X 规则"|
+| 用户手动规则 vs 自动晋升规则冲突 | 用户规则**默认优先**，但触发**冲突告警 + preview**（见 §4.5.1）|
+
+### 4.5.1 新规则采纳 Dry Run Preview ⭐ v0.2 新增
+
+**问题**：用户可能误点 T11 approve，或规则在他没理解的情况下被采纳 → 永久影响所有 thesis。
+
+**解决**：T11 approve_rule 接受后、写入 DB **之前**，强制弹窗显示：
+
+```
+你即将采纳规则：
+"周五不交易 SOL 链"
+
+🔮 若此规则 30 天前已生效：
+- 会 skip 4 次信号触发（过去 30 天周五 SOL 触发次数）
+- 其中 3 次后来亏损（-8% / -15% / -12%）
+- 1 次后来盈利（+18%）→ 本次会被错过
+- 净影响：本来 -17% → 采纳后 -0%（减少亏损，但错过 1 次机会）
+
+确认采纳？[确认] [取消]
+```
+
+**Dry Run 实现**：
+- 后台调 T16 run_backtest（范围 = 最近 30 天）
+- 对比 "采纳 vs 未采纳" 两种情况的决策差异
+- 计算净 PnL 影响 + 触发次数变化
+- < 10s 内返回（若超时则允许 skip preview，但显性告知用户"未验证影响"）
+
+**硬规定**：
+- 所有 Semantic 规则采纳（手动 T11 或自动晋升转正）**必须** 走 Preview
+- 自动晋升的 Preview 在 **Shadow Mode 结束时** 触发（给用户看 14 天数据）
+- 用户可在 Profile → 隐私 开关关闭 Preview（默认开）
+
+### 4.6 规则失效周期检测（v0.2 新增）
+
+**问题**：用户生活习惯会变，"周五不交易"半年前对，现在可能不对了。
+
+**解决**：S07 周复盘固定环节"Semantic 规则健康检查"：
+
+| 检查维度 | 阈值 | 行动 |
+|---------|------|------|
+| **最近 30 天命中 0 次** | `match_count_30d == 0` | 标 `dormant`，90 天后废弃 |
+| **最近 30 天胜率差 < 3pp** | 规则生效 vs 不生效 PnL 差不显著 | 提议用户废弃（Reflection proposal）|
+| **Regime 变化**（如从 BULL → CRISIS）| `active_regimes` 不含当前 regime | 自动 mute（不删，等 regime 回来恢复）|
+| **用户多次忽略该规则指导的决策** | 手动覆盖 ≥ 3 次 | 提议降级或废弃 |
+
+**复检节奏**：
+- 每周日 S07 周复盘时对全部 active Semantic 跑一次（< 5s）
+- 检查结果写入 `last_health_check_at`
+- 退化提议作为 Reflection 出现在周报 proposals 里
 
 ### 4.6 注入 prompt 的策略
 
@@ -576,6 +788,26 @@ S07 每次生成新 proposal 前，查询已有 reflection：
 
 ## Change Log
 
+- **v0.2 (2026-04-24)**：Review 修订（P0 + P1 全补）
+  - **§3.5 启发式评分改严**：
+    * Regime 用距离（BULL-CRISIS 距离 2）替代二元匹配
+    * 最低分阈值（score < 3 返回空 + `low_relevance: true`，不强行凑数）
+    * 命中反哺（match_count × 0.1，上限 +0.5）
+    * 5 条 empirical 召回示例表
+  - **§3.5.1 新增 Situation 提取规则**（字段来源 + 默认值 + 各 Skill 调用示例）
+  - **§3.7 500 条上限的推导**（2-3 月代表性数据 + 存储开销）
+  - **§3.8 新增 Write Reliability**（WAL + Retry Queue + 幂等键 + 监控指标）
+  - **§4.2 Semantic 3 可解释性字段硬要求**：
+    * `human_readable` / `formal_condition` / `examples`
+    * `evidence` 新增 Wilson CI 下界 + p-value
+    * `active_regimes` 字段（regime 交互）
+  - **§4.3 自动晋升门槛 v0.1 → v0.2**：
+    * 5 条硬条件（3 次重复 + 20 笔样本 + CI 下界 > 0 + p<0.05 + 跨 2 regime）
+    * Shadow 14 天 + 10 次触发 + 表现不劣于预期
+  - **§4.4 50 条上限 token 预算推导**
+  - **§4.5 冲突解决加"人工解决"**（强制弹窗，不自动胜负）
+  - **§4.5.1 新增 Dry Run Preview**（采纳前必跑 30 天回溯对比）
+  - **§4.6 新增 规则失效周期检测**（4 维健康检查 + S07 周报 proposal）
 - **v0.1 (2026-04-24)**：首版完整填充
   - § 0 为什么要记忆 + 映射到 Vision / PRD
   - § 1 4 层记忆总览（Working / Episodic / Semantic / Reflection）+ 层级关系图

@@ -159,11 +159,14 @@ tools_required: [T01, T03, T14]       # 硬依赖 Tool
 sub_skills_allowed: [S08]              # 可选嵌套（≤ 2 层）
 model: claude-opus-latest              # v1 固定 Opus
 version: 0.1
+prompt_version_range: ">=0.1, <1.0"   # v0.2 新增：兼容的 prompt 版本范围
 owner: TBD
 failure_fallback: |
   当 Skill 失败时返回的 safe default（见各 Skill 具体定义）
 ---
 ```
+
+**注意（v0.2）**：SKILL.md **只**装 metadata；具体 System Prompt / Few-shot / Domain Knowledge 全部在 [07 Prompt Library](./07-prompt-library.md) 的对应 prompt 文件中。边界严禁混淆。
 
 ### 3.1 S01: technical-analysis
 

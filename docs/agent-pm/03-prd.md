@@ -1690,7 +1690,7 @@ Claude Opus pricing（v1 基准）：**input $15 / M tokens，output $75 / M tok
 - ✅ 策略 NL 转换成功率 ≥ 90%
 
 **安全与合规**：
-- ✅ Safety Policy 100% 覆盖（[06 Safety Alignment](./06-safety-alignment.md)）
+- ✅ Safety Policy 100% 覆盖（[08 Safety Policy](./08-safety-policy.md)）
 - ✅ HITL 流程所有分支测试通过（§ 4.4）
 - ✅ Kill Switch 实测 < 10s
 - ✅ 审计字段完整（§ 4.4.6）

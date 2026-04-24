@@ -33,7 +33,7 @@
 [04 Agent Spec] ← 本文档：Agent 本体 / Loop / 状态 / 失败
     ↓
 [05 Tool Catalog]    每个 Tool 的 schema
-[07 Memory]          三层记忆详细
+[06 Memory]          三层记忆详细
 [08 Prompt Library]  prompt 版本管理
 [09 Eval Plan]       golden set
 ```
@@ -438,7 +438,7 @@ async def reflect(period="daily"):
 - `T12 recall_memory(situation, top_k=3)` → 相关 episodic / semantic 条目
 - 写入在 Loop 内部，不暴露为 Tool
 
-详见 [07 Memory & Learning](./07-memory-learning.md)。
+详见 [06 Memory Spec](./06-memory-spec.md)。
 
 ---
 
@@ -681,7 +681,7 @@ PR 改动 agent/ 下代码 → 自动触发对应 Eval。失败不得合入。�
 - ✅ 状态机所有非法转移 100% rejected（[09 Eval](./09-eval-plan.md)）
 - ✅ 所有失败模式有对应 runbook（[12 Incident Response](./12-incident-response.md)）
 - ✅ Kill Switch 1 键关闭 < 10s
-- ✅ 成本预算 + HITL 阈值写入 [06 Safety](./06-safety-alignment.md)
+- ✅ 成本预算 + HITL 阈值写入 [08 Safety Policy](./08-safety-policy.md)
 - ✅ 观测覆盖所有 Tool 调用 + Loop 入口
 
 ---

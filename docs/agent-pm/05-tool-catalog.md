@@ -620,7 +620,7 @@ failure_fallback: |
   },
   "idempotent": true, "p95_latency_ms": 300, "cost_usd": 0,
   "permission": "device_only",
-  "scoring_algorithm": "v1 启发式（trigger_source+3 / chain+2 / regime+2 / pnl+1，见 [07 Memory § 4](./07-memory-learning.md)）；v2 考虑 embedding",
+  "scoring_algorithm": "v1 启发式（trigger_source+3 / chain+2 / regime+2 / pnl+1，见 [06 Memory § 3.3](./06-memory-spec.md)）；v2 考虑 embedding",
   "cost_note": "v1 启发式 $0；v2 embedding 约 $0.0001/次"
 }
 ```

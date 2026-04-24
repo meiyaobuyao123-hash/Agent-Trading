@@ -103,59 +103,68 @@
 
 ## 2. Architecture
 
-### 2.1 分层架构
+### 2.1 分层架构（Layered Architecture）
 
 ```
-┌───────────────────────────────────────────────────────────────────┐
-│                         User Surface                              │
-│  Flutter APP (Chat UI / Strategy UI / Review UI / HITL UI)        │
-└────────────────────────────┬──────────────────────────────────────┘
-                             │  REST/WebSocket
-┌────────────────────────────┴──────────────────────────────────────┐
-│                    Agent Orchestration Layer                      │
-│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐              │
-│  │ Scout Loop   │ │ Thesis Loop  │ │ Notify Loop  │   Reflect    │
-│  │ (event-drv)  │ │ (on-demand)  │ │ (event-drv)  │    Loop      │
-│  └──────┬───────┘ └──────┬───────┘ └──────┬───────┘   (cron)     │
-│         │                │                │                       │
-│         └────────────────┼────────────────┘                       │
-│                          ▼                                        │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │ Decision Grading (L1 rule / L2 Sonnet / L3 multi-role)    │   │
-│  └──────┬─────────────────────┬─────────────────────────────┘    │
-│         │                     │                                   │
-│     ┌───▼───┐           ┌─────▼──────┐                            │
-│     │ Rule  │           │ Multi-Role │ (3 Haiku analysts          │
-│     │Engine │           │ Orchestr.  │  + Bull vs Bear Sonnet     │
-│     └───┬───┘           └─────┬──────┘  + RiskReviewer Sonnet)    │
-│         └────────────┬────────┘                                   │
-│                      ▼                                            │
-│  ┌───────────────────────────────────────────────────────────┐   │
-│  │ Risk Manager (9 checks) + HITL Gate + Decision Agent      │   │
-│  └──────┬─────────────────────────────┬──────────────────────┘   │
-│         │                             │                           │
-│    ┌────▼──────┐                ┌─────▼──────┐                    │
-│    │ Paper     │                │ Trade      │                    │
-│    │ Engine    │                │ Executor   │                    │
-│    └───────────┘                └─────┬──────┘                    │
-└───────────────────────────────────────┼───────────────────────────┘
-                                        │
-┌───────────────────────────────────────┴───────────────────────────┐
-│                       Tool & Data Layer                           │
-│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐  │
-│  │ T01-T19     │ │ Memory      │ │ Regime      │ │ DEX Router  │  │
-│  │ Tool Catalog│ │ (Epi/Sem/Ref│ │ Detector    │ │ (Jup/OKX)   │  │
-│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘  │
-└─────────┼───────────────┼───────────────┼───────────────┼─────────┘
+┌───────────────────────────────────────────────────────────────────────┐
+│  用户层 / User Surface                                                │
+│  Flutter APP（对话 Chat / 策略 Strategy / 复盘 Review / 授权 HITL）   │
+└────────────────────────────┬──────────────────────────────────────────┘
+                             │  REST / WebSocket
+┌────────────────────────────┴──────────────────────────────────────────┐
+│  编排层 / Agent Orchestration Layer                                   │
+│                                                                       │
+│  ┌──────────────┐ ┌──────────────┐ ┌──────────────┐ ┌──────────────┐  │
+│  │  Scout Loop  │ │ Thesis Loop  │ │ Notify Loop  │ │ Reflect Loop │  │
+│  │  扫描 / 触发 │ │ 分析 / 决策  │ │ 推送 / 执行  │ │ 复盘 / 反思  │  │
+│  │ (事件驱动)   │ │  (按需)      │ │ (事件驱动)   │ │  (定时)      │  │
+│  └──────┬───────┘ └──────┬───────┘ └──────┬───────┘ └──────────────┘  │
+│         │                │                │                           │
+│         └────────────────┼────────────────┘                           │
+│                          ▼                                            │
+│  ┌───────────────────────────────────────────────────────────────┐    │
+│  │  分级决策 / Decision Grading                                  │    │
+│  │  L1 规则 Rule  /  L2 Sonnet 快判  /  L3 多角色 Multi-role     │    │
+│  └──────┬──────────────────────────┬─────────────────────────────┘    │
+│         │                          │                                  │
+│     ┌───▼───────┐          ┌───────▼──────────┐                       │
+│     │ 规则引擎  │          │ 多角色编排器     │ 3 Haiku 分析师（技术/ │
+│     │ Rule Eng. │          │ Multi-Role Orch. │ 情绪/链上 并行）+     │
+│     └───┬───────┘          └───────┬──────────┘ 牛熊 Bull vs Bear     │
+│         └────────────┬─────────────┘            Sonnet + 风控审查     │
+│                      ▼                          RiskReviewer Sonnet   │
+│  ┌───────────────────────────────────────────────────────────────┐    │
+│  │  风控 Risk Manager（9 项检查）                                │    │
+│  │  + HITL 人审门 HITL Gate  + 决策 Agent Decision Agent         │    │
+│  └──────┬─────────────────────────────────────┬──────────────────┘    │
+│         │                                     │                       │
+│    ┌────▼────────┐                    ┌───────▼─────────┐             │
+│    │ 模拟盘引擎  │                    │ 真金执行器      │             │
+│    │ Paper Eng.  │                    │ Trade Executor  │             │
+│    └─────────────┘                    └───────┬─────────┘             │
+└────────────────────────────────────────────────┼──────────────────────┘
+                                                 │
+┌────────────────────────────────────────────────┴──────────────────────┐
+│  工具与数据层 / Tool & Data Layer                                     │
+│  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐      │
+│  │ Tool 目录   │ │ 记忆 Memory │ │ 市场状态    │ │ DEX 路由    │      │
+│  │ T01-T19     │ │ 情景/语义/  │ │ Regime      │ │ Router      │      │
+│  │ Tool Cat.   │ │ 反思        │ │ Detector    │ │ (Jup/OKX)   │      │
+│  └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘      │
+└─────────┼───────────────┼───────────────┼───────────────┼─────────────┘
           │               │               │               │
-┌─────────┴───────────────┴───────────────┴───────────────┴─────────┐
-│                    Event & Data Infrastructure                    │
-│  EventBus (asyncio)  │ Postgres (local) │ Redis (v1+) │ PostgREST │
-│  DEX WS P0 sources ─▶ smart_money_txns / pump_tokens / token_*    │
-│  EVM RPC WS P0     ─▶ token_snapshots / hot_coins                 │
-│  pumpportal WS P0  ─▶ agent_memory / agent_executions / ...       │
-│  OKX/Gecko P2      ─▶ (fallback / depth / history)                │
-└───────────────────────────────────────────────────────────────────┘
+┌─────────┴───────────────┴───────────────┴───────────────┴─────────────┐
+│  事件与数据基础设施 / Event & Data Infrastructure                     │
+│  EventBus (asyncio)  │ Postgres (local) │ Redis (v1+) │ PostgREST     │
+│                                                                       │
+│  P0 主源 / Primary Sources（实时事件流 Real-time Event Streams）      │
+│    Helius WS (SOL)  ─▶ smart_money_txns / pump_tokens / token_trades  │
+│    EVM RPC WS       ─▶ token_snapshots / hot_coins                    │
+│    pumpportal WS    ─▶ agent_memory / agent_executions / ...          │
+│                                                                       │
+│  P2 兜底 / Fallback（查询式 API，仅用于深度/历史/报价）               │
+│    OKX DEX / GeckoTerminal / DexScreener / GoPlus / Helius Enhanced   │
+└───────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 关键设计决策
@@ -174,14 +183,18 @@
 
 ## 3. Input / Output Contract
 
+> **身份模型（Identity Model）**：本产品**无注册账户**。身份 = **device_id（匿名设备标识，APP 首启生成，本地保存）** + 可选 **wallet_address（用户 connect wallet 后绑定，真金交易必需）**。详见 [03 PRD § 0.6](./03-prd.md#06-identity-model身份模型--无注册账户)。
+
 ### 3.1 对外 API（Agent 接口）
 
-**入口 1：用户 Chat**
+所有 API 使用 HTTP header `X-Device-Id`（必需）+ `X-Wallet-Address`（真金场景必需）鉴权，不用 session cookie / user_id。
+
+**入口 1：Chat 对话**
 ```http
 POST /api/agent/chat
+Headers: X-Device-Id: <uuid>
 {
-  "user_id": "uuid",
-  "session_id": "uuid",
+  "session_id": "uuid",           # 本次会话 ID（前端生成）
   "message": "帮我分析 TRUMP",
   "context": { "chain": "solana", "address": "..." }
 }
@@ -197,18 +210,20 @@ POST /api/agent/chat
 **入口 2：策略 CRUD**
 ```http
 POST   /api/agent/strategies         # 建策略（自然语言 or 结构化）
-GET    /api/agent/strategies         # 列表
+GET    /api/agent/strategies         # 该 device 的策略列表
 PATCH  /api/agent/strategies/:id     # 改
-DELETE /api/agent/strategies/:id     # 删
+DELETE /api/agent/strategies/:id     # 软删（保留已触发仓位）
 POST   /api/agent/strategies/:id/pause
 POST   /api/agent/strategies/:id/resume
+Headers: X-Device-Id: <uuid>
 ```
 
 **入口 3：HITL 审批**（v1 新增）
 ```http
 GET    /api/agent/approvals/pending         # 待审列表
-POST   /api/agent/approvals/:id/approve
+POST   /api/agent/approvals/:id/approve     # 需 wallet signature
 POST   /api/agent/approvals/:id/reject
+Headers: X-Device-Id: <uuid>, X-Wallet-Address: <addr>, X-Signature: <sig>
 ```
 
 **入口 4：复盘**
@@ -216,6 +231,7 @@ POST   /api/agent/approvals/:id/reject
 GET    /api/agent/reviews/daily?date=
 GET    /api/agent/reviews/weekly?week=
 POST   /api/agent/reviews/rules/:id/approve  # 采纳规则提议
+Headers: X-Device-Id: <uuid>
 ```
 
 ### 3.2 Error Model（统一错误码）

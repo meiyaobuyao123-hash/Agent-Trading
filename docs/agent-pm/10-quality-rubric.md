@@ -5,8 +5,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 
@@ -209,6 +209,27 @@ MA20 金叉 MA50（$1.15 vs $1.05）。支撑位 $1.10，阻力位 $1.25。
 - 纯套话风险密度："注意" + "风险管理" 等模糊词**独立出现**计算
 - 风险项 < 2 → 强制 ≤ 3 分
 
+### 5.4 "中间地带"判定（v0.2 新增）
+
+中间地带表述（非完全套话也非完全具体），Judge 按以下顺序评估：
+
+| 表述 | 判定 |
+|------|-----|
+| "Top10 持仓 68%" | ✅ 具体（含数字）|
+| "持仓集中度高（Top10 占 60%+）" | ✅ 具体（含范围数字）|
+| "持仓相对集中" | ❌ 套话（无数字）|
+| "前 10 持仓占多数" | ❌ 套话（"多数"不具体）|
+| "代币创建 < 3 天" | ✅ 具体（含时间）|
+| "代币较新" | ❌ 套话 |
+| "LP 仅 $80K，> $5K 单笔滑点显著" | ✅ 具体（数字 + 因果）|
+| "流动性偏低，注意滑点" | ⚠️ **半具体**（提了"流动性""滑点"但无数字）→ 计 0.5 项 |
+
+**计数规则**：
+- 完全具体 = 1 项
+- 半具体 = 0.5 项
+- 套话 = 0 项
+- ≥ 2 完整项（或 4 个 0.5 项）→ 满足"≥ 2 个具体风险" 要求
+
 ---
 
 ## 6. Calibration（置信度校准）
@@ -235,30 +256,77 @@ MA20 金叉 MA50（$1.15 vs $1.05）。支撑位 $1.10，阻力位 $1.25。
 | 代币 < 24h / 数据严重不足 | 0.0 - 0.3（且 `data_gaps` 必填）|
 | confidence < 0.6 时 | direction 必须为 `hold` / `avoid`（对齐 PRD） |
 
-### 6.3 Calibration 的量化验证
+### 6.3 Calibration 的两层评估（v0.2 修正）
 
-**Brier Score**（长期校准度量）：
-- 累积生产数据：每个 thesis 给 confidence（如 0.72）→ 跟踪实际 outcome（win / loss）
-- 计算 Brier = mean((confidence - outcome)²)
-- Brier < 0.2 → calibration 良好（目标）
-- Brier > 0.3 → 系统性偏差（需调 Prompt）
+**问题**：v0.1 把"单条评分"和"长期 Brier"混为一谈，导致 Judge 不知道实操怎么打分。
+**v0.2 明确分两层**：
+
+#### 6.3.1 单条评分（Per-Output Calibration · Judge 实操）
+
+Judge 看一条 thesis 的 `confidence` 值是否合理：
+- 数据齐 + confidence 0.7-0.9 → **5 分**
+- 数据齐但 confidence 仅 0.4 → **3 分**（过于保守）
+- 数据不足却 confidence 0.8 → **1-2 分**（夸大）
+- 严重偏差（数据 < 1h token 给 0.9）→ **1 分** + Safety Compliance 也扣分
+
+#### 6.3.2 长期校准（Brier Score · 系统级监控）
+
+**outcome 定义（v0.2 明示）**：
+
+| Thesis 输出 direction | outcome = 1（"对"）的条件 | outcome = 0（"错"）|
+|---------------------|------------------------|------------------|
+| `bullish` + entry_zone | **30 天内**触及 take_profit 任一档（按 thesis 的 target）| 触及 stop_loss 之前未达 target |
+| `bearish` | 30 天内跌破 stop_loss 等价位（实际 thesis 不允许 bearish 真金，但 paper 可有）| 反向 |
+| `hold` / `avoid` | 30 天内**未发生大涨/大跌**（绝对值 < 30%）| 否则 outcome = 0 |
+| `direction = avoid` | 同 hold | 同 hold |
+
+**未闭环的 thesis（30d 内未达任一目标）**：
+- 按"未触发"处理，不计入 Brier 样本
+- 但记录为 `inconclusive`，长期 > 50% inconclusive 触发产品反思
+
+**Brier Score 计算**：
+```python
+def brier_score(theses_with_outcome):
+    """
+    theses_with_outcome = [
+      { 'confidence': 0.72, 'outcome': 1 },   # bullish 30d 内达 target
+      { 'confidence': 0.45, 'outcome': 0 },   # bullish 30d 内爆止损
+      ...
+    ]
+    """
+    valid = [t for t in theses_with_outcome if t['outcome'] is not None]
+    if len(valid) < 30:
+        return None  # 样本不足
+    return mean((t['confidence'] - t['outcome'])**2 for t in valid)
+```
+
+**门槛**：
+- Brier < 0.20 → 良好（目标）
+- Brier 0.20-0.30 → 可接受
+- Brier > 0.30 → 系统性偏差，必须调 Prompt 或 retire
+
+**计算节奏**：
+- 每月 1 日跑一次（基于过去 30 天闭环 thesis）
+- 样本 < 30 → 跳过本月
+- 持续 3 月 Brier > 0.30 → 触发 Prompt 大改
 
 ---
 
-## 7. Aggregate Score（聚合打分）
+## 7. Aggregate Score（聚合打分）⭐ v0.2 数学修正
 
-### 7.1 计算规则
+### 7.1 计算规则（v0.2 修订 —— 全部归一化到 0-100）
 
 ```python
-def aggregate(scores):
+def aggregate(scores, skill_id=None):
     """
     scores = {
+      # 本 Rubric 5 维（1-5 分）
       'relevance': 1-5,
       'reasoning': 1-5,
-      'actionability': 0-5 (0 = fail),
-      'risk': 0-5 (0 = fail),
-      'calibration': 1-5,
-      # + 09 Eval § 5 的 5 维
+      'actionability': 0-5 (0 = fail) | 'N/A',
+      'risk': 0-5 (0 = fail) | 'N/A',
+      'calibration': 1-5 | 'N/A',
+      # 09 Eval § 5 的 5 维（0-10 分）
       'schema': 0-10,
       'factual': 0-10,
       'instruction': 0-10,
@@ -266,58 +334,113 @@ def aggregate(scores):
       'safety': 0-10  # 一票否决
     }
     """
-    # 1. Safety 一票否决
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 1. 一票否决（任一命中 → overall = 0, fail）
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if scores['safety'] < 10:
         return {'overall': 0, 'verdict': 'fail', 'reason': 'safety_violation'}
-
-    # 2. Actionability 一票否决（非 sentiment skill）
-    if scores['actionability'] == 0:
+    if scores['actionability'] == 0:  # N/A 不算 0
         return {'overall': 0, 'verdict': 'fail', 'reason': 'no_actionable_output'}
-
-    # 3. Risk Disclosure = 0 也直接 fail
     if scores['risk'] == 0:
         return {'overall': 0, 'verdict': 'fail', 'reason': 'no_risk_disclosure'}
 
-    # 4. 加权平均（本 Rubric 5 维 × 10 + 09 Eval 5 维 × 10 = 100）
-    weights = {
-        'relevance': 20, 'reasoning': 25, 'actionability': 25,
-        'risk': 15, 'calibration': 15,  # 100 for Rubric
-        'schema': 2, 'factual': 2, 'instruction': 2, 'persona': 2, 'safety': 2  # 10 for 09
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 2. 归一化每维到 0-100
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    rubric_norm = {
+        'relevance': (scores['relevance'] / 5) * 100,
+        'reasoning': (scores['reasoning'] / 5) * 100,
+        'actionability': (scores['actionability'] / 5) * 100 if scores['actionability'] != 'N/A' else None,
+        'risk': (scores['risk'] / 5) * 100 if scores['risk'] != 'N/A' else None,
+        'calibration': (scores['calibration'] / 5) * 100 if scores['calibration'] != 'N/A' else None,
     }
-    # 归一化到 0-100
-    quality_sum = sum(scores[k] * weights[k] for k in ['relevance','reasoning','actionability','risk','calibration'])
-    tech_sum = sum(scores[k] * weights[k] for k in ['schema','factual','instruction','persona','safety'])
-    overall = quality_sum * 0.8 + tech_sum * 0.2  # 产品 80% + 技术合规 20%
+    tech_norm = {
+        k: (scores[k] / 10) * 100 for k in ['schema', 'factual', 'instruction', 'persona', 'safety']
+    }
 
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 3. Per-Skill 加权（N/A 维度的权重均摊到其他维）
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    rubric_weights = get_skill_weights(skill_id)  # 见 § 8，sum = 100
+    rubric_score = compute_weighted_avg(rubric_norm, rubric_weights, skip_na=True)
+    # rubric_score in [0, 100]
+
+    # 09 Eval 5 维平均权重（每维 20%）
+    tech_score = sum(tech_norm.values()) / 5
+    # tech_score in [0, 100]
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    # 4. 最终 overall = 80% Rubric (产品质量) + 20% Tech (技术合规)
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    overall = rubric_score * 0.8 + tech_score * 0.2  # 严格 [0, 100]
+
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     # 5. Verdict
+    # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
     if overall >= 80: return {'overall': overall, 'verdict': 'pass'}
     elif overall >= 60: return {'overall': overall, 'verdict': 'warn'}
     else: return {'overall': overall, 'verdict': 'fail'}
+
+
+def compute_weighted_avg(scores, weights, skip_na=True):
+    """N/A 维度权重均摊给其他维度"""
+    valid = {k: (scores[k], weights[k]) for k in scores if scores[k] is not None}
+    total_weight = sum(w for _, w in valid.values())
+    if total_weight == 0:
+        return 0
+    weighted_sum = sum(s * w for s, w in valid.values())
+    return weighted_sum / total_weight  # 自动 normalize
 ```
+
+**关键修正点（vs v0.1）**：
+1. ✅ 每维**先归一化到 0-100**（避免 1-5 vs 0-10 量纲混乱）
+2. ✅ Rubric 5 维加权后 ∈ [0, 100]，Tech 5 维平均后 ∈ [0, 100]
+3. ✅ overall = 0.8 × Rubric + 0.2 × Tech 严格 ∈ [0, 100] —— 阈值 80/60 正确对应
+4. ✅ **N/A 维度自动跳过**（权重均摊给其他维度，不再僵硬强算）
+5. ✅ 一票否决在归一化前先检查（早返回）
 
 ### 7.2 阈值
 
-| Verdict | 总分 | 行动 |
+| Verdict | overall（0-100）| 行动 |
 |---------|-----|------|
 | **pass** | ≥ 80 | 通过，可用 |
 | **warn** | 60-80 | 用但标警告 + 记录到改进列表 |
 | **fail** | < 60 或一票否决 | 拒绝 + 重新生成或改 prompt |
 
+### 7.3 Boundary：本 Rubric 不评什么（v0.2 明示）
+
+以下维度**不在本 Rubric 范围**，由其他文档 / 系统评估：
+
+| 不评 | 由谁评 |
+|------|-------|
+| **延迟（Latency）** | [09 Eval § 1.1](./09-eval-plan.md#11-各层对比) + [03 PRD § 8.1](./03-prd.md#81-性能延迟--吞吐--并发) |
+| **成本（Cost per call）** | [13 Cost Budget](./13-cost-budget.md) + 03 § 8.8 |
+| **字段完整性 / Schema 严格性** | 09 Eval § 5 Tech 5 维的 `Schema Validity`（0-10）|
+| **吞吐 / 并发** | [15 Observability](./15-observability-tracing.md) |
+| **用户实际盈亏（trade outcome）** | [03 PRD 每能力 Success Metrics](./03-prd.md#18-success-metrics) + Brier Score（§ 6.3）|
+
+**本 Rubric 只评 LLM 输出的"内容质量"**，性能 / 成本 / outcome 由其他系统监控。
+
 ---
 
-## 8. Per-Skill 差异化
+## 8. Per-Skill 差异化（v0.2 修订 —— 显式 N/A）
 
-不同 Skill 对 5 维的重视度不同：
+不同 Skill 对 5 维的重视度不同。**N/A 维度不参评，权重均摊给其他维度**（见 § 7.1 算法）。
 
-| Skill | Relevance | Reasoning | Actionability | Risk | Calibration |
-|-------|-----------|----------|--------------|-----|-----------|
-| S01 technical-analysis | 20% | **30%** | 20% | 15% | 15% |
-| S02 sentiment-analysis | 25% | 30% | 10%（N/A 可忽略）| 20% | 15% |
-| S03 onchain-analysis | 20% | 30% | 15% | **25%** | 10% |
-| S04 signal-strategy-builder | **30%** | 25% | **30%**（必须有 draft）| 10% | 5% |
-| S05 trade-strategy-builder | 25% | 20% | **35%** | **15%** | 5% |
-| **S07 review-engine insight** | 20% | 25% | **30%**（必须给可执行 insight）| 15% | 10% |
-| **S08 thesis-writer** | **20%** | **25%** | **25%** | **15%** | **15%** | （标准配比）|
+| Skill | Relevance | Reasoning | Actionability | Risk | Calibration | 备注 |
+|-------|-----------|----------|--------------|-----|-----------|------|
+| **S01** technical-analysis | 20% | **30%** | 20% | 15% | 15% | - |
+| **S02** sentiment-analysis | 25% | **35%** | **N/A** | 25% | 15% | 情绪面无"行动指令"概念，Actionability N/A |
+| **S03** onchain-analysis | 20% | **30%** | 15% | **25%** | 10% | - |
+| **S04** signal-strategy-builder | **30%** | 25% | **35%** | 10% | **N/A** | 建策略输出 draft 不是判断，无 confidence 值，Calibration N/A |
+| **S05** trade-strategy-builder | 25% | 20% | **40%** | **15%** | **N/A** | 同上 |
+| **S07** review-engine insight | 20% | 25% | **35%** | 15% | 5% | - |
+| **S08** thesis-writer | 20% | 25% | 25% | 15% | 15% | 标准配比（参考） |
+
+**实操**：
+- 行总和 100%（不含 N/A 维度）
+- N/A 维度 Judge 直接返回 `null`，聚合时跳过
+- 例：S04 评分 → 4 维 weighted avg（30% Rel + 25% Reason + 35% Action + 10% Risk = 100%）
 
 ---
 
@@ -396,10 +519,23 @@ Return JSON:
 **v1**：内部 Web UI（简单表单 + 10 维打分 + 备注）
 **v2**：集成到 Eval Dashboard
 
-### 10.3 分歧处理
+### 10.3 分歧处理 + Ground Truth 决策（v0.2 明确）
 
 - 同一 case 2 人打分差 > 1 分（任意维度）→ 组织讨论 / 重新对齐标注标准
 - Kappa 系数 < 0.7 → 重新培训标注员
+
+**Ground Truth 决策规则**（多人分歧时）：
+
+| 场景 | Ground Truth |
+|------|-------------|
+| 2 人打分差 ≤ 1 | **平均**（取整或保留 0.5）|
+| 2 人差 > 1 | 组织 **3 人讨论** → 多数投票 |
+| 3 人 unanimous | 直接采纳 |
+| 3 人分散（1/1/1）| **PM 拍板** + 标 `pm_arbitrated=true` |
+| 涉及 Safety 维度 | **最严**（任一人判 fail → fail）|
+| 涉及 Actionability/Risk 一票否决 | 同上 最严 |
+
+不依赖"高资历优先"——这会扭曲数据分布。
 
 ---
 
@@ -415,6 +551,22 @@ Return JSON:
 - Rubric 任何分标改动 → 必跑**已有 golden 重打分**，看是否连锁影响历史评估
 - 加新维度 → 先平行跑 30 天再切换（vs 现有 Judge）
 - 改权重 → canary 5% 灰度 7 天
+
+### 11.1 Backward Compatibility（v0.2 新增）
+
+Rubric 改版后，已有 golden 的 `expected_score` 处理：
+
+| 改动类型 | 旧 golden 处理 |
+|---------|--------------|
+| **改阈值文字描述**（不影响打分逻辑）| 保留（不重打分）|
+| **改权重**（影响 overall 计算）| 自动 recompute（不重新人工标注）+ 标 `recomputed_at=v0.2` |
+| **改单维分标**（如 Risk 5 分定义改）| 该维度**重新人工标注** + 标 `re-annotated_at=v0.2` |
+| **加新维度** | 旧 golden 该维 = N/A（不计入聚合）→ 新 golden 才标注新维 |
+| **删维度** | 旧 golden 该维 archive（不删）+ 重计 overall |
+
+**版本标注**：每条 golden 必带 `rubric_version` 字段，Eval 跑时按声明版本评估。
+
+跨版本对比时使用**统一版本重打分**（自动化脚本）后再 diff。
 
 ---
 
@@ -442,6 +594,25 @@ Return JSON:
 
 ## Change Log
 
+- **v0.2 (2026-04-24)**：Review 修订（5 P0 + 4 P1）
+  - **§ 7.1 聚合算法数学修正**（v0.1 完全跑不通 → v0.2 严格 [0,100] 范围）
+    * 每维先归一化 0-100
+    * Rubric 5 维加权后 ∈ [0,100]
+    * Tech 5 维平均后 ∈ [0,100]
+    * overall = 0.8 × Rubric + 0.2 × Tech ∈ [0,100] 与阈值 80/60 对应
+    * N/A 维度自动跳过 + 权重均摊
+  - **§ 7.3 新增 Boundary**：明示本 Rubric 不评 Latency/Cost/字段完整性/吞吐/Outcome
+  - **§ 6.3 Calibration 分两层**：
+    * 6.3.1 单条评分（Judge 实操规则）
+    * 6.3.2 长期 Brier Score（**outcome 定义明确**：30 天内达 target=1 / 爆 stop=0 / inconclusive 不计入）
+    * Brier 门槛 0.20 / 0.30 + 计算节奏（月度，样本 ≥ 30）
+  - **§ 8 Per-Skill 显式 N/A**：
+    * S02 sentiment-analysis Actionability = N/A
+    * S04 / S05 strategy-builder Calibration = N/A
+    * 权重均摊算法实操示例
+  - **§ 5.4 Risk "中间地带"判定**：完全具体 = 1 / 半具体 = 0.5 / 套话 = 0
+  - **§ 10.3 Ground Truth 决策规则**：多人分歧时（平均/3 人讨论/PM 拍板/Safety 最严）
+  - **§ 11.1 Backward Compat**：Rubric 改版后旧 golden 5 类处理 + `rubric_version` 字段
 - **v0.1 (2026-04-24)**：首版完整填充
   - § 0 与 09 Eval § 5 **正交 10 维分工**（Rubric 5 产品 + Eval 5 技术合规）
   - § 1 5 维总览 + 权重

@@ -5,8 +5,8 @@
 
 | 字段 | 值 |
 |------|---|
-| Status | 🟢 v0.1 Draft |
-| Version | v0.1 |
+| Status | 🟢 v0.2 Draft |
+| Version | v0.2 |
 | Owner | 产品负责人 |
 | Target Release | v1 MVP - 2026 Q3 |
 
@@ -78,6 +78,69 @@
 | P05 | Signal Strategy NL 转换 | 成功率 ≥ **90%** | PM |
 | P06 | **E2E 闭环验收** | [03 PRD § 11.2](./03-prd.md#112-每节点验收e2e-测试用例) 15 节点通过 | PM + QA |
 | P07 | **种子用户试用**（首批 20 用户 1 周）| 无 SEV-1/2 / ≥ 10 人完成到 paper 跟踪 / ≥ 3 人复盘阅读 / NPS ≥ 30 | 产品 |
+
+### 2.2 种子用户招募流程（v0.2 详细化）⭐
+
+**问题**：v0.1 只说"20 种子用户"但没说从哪招、怎么招。
+
+#### 2.2.1 招募来源（按优先级）
+
+| 来源 | 数量 | 渠道 | 优势 |
+|------|-----|------|------|
+| 内部团队 + 朋友圈 Web3 玩家 | 5-8 | Telegram / 微信直邀 | 高质量反馈，包容 bug |
+| 早期社群（产品 Twitter / Discord）| 5-8 | 官方公告 + 报名表 | 真实用户场景 |
+| KOL 朋友（有真金交易经验）| 3-5 | 1v1 邀约 | 专业反馈 |
+| Allowlist 候选（事先收集邮箱）| 3-5 | 官网注册 | 留存意愿强 |
+
+**招募节奏**：T-30 启动收集 → T-14 完成筛选 → T-3 全部就位。
+
+#### 2.2.2 用户筛选标准
+
+**必备条件**：
+- ✅ 有 ≥ 6 月加密交易经验（避免完全小白）
+- ✅ 有 SOL 或 EVM 链 wallet 操作经验
+- ✅ 自声明非中国大陆居民（合规）
+- ✅ 18 岁以上
+
+**优先选**：
+- 中级用户 Persona 匹配（资金 $5K-50K）
+- 至少 1 项已有交易策略（用过 Photon / DexScreener / Phantom）
+- 愿意配合 1 周内 ≥ 3 次反馈
+
+**排除**：
+- 高频做市 / 套利 bot 用户（场景不符）
+- 完全合约 / 杠杆用户（场景不符）
+
+#### 2.2.3 知情同意 + NDA
+
+种子用户必签 3 份：
+
+| 协议 | 内容 | 签署时点 |
+|------|------|---------|
+| **风险知情书** | 加密投资风险 / 托管模式声明 / 真金可能亏损 | 入选时 |
+| **数据使用协议** | 同意匿名行为数据用于改进产品 / 不卖第三方 | 入选时 |
+| **NDA**（可选）| v1 上线前不公开内测内容 / 不截图传播 bug | 入选时 |
+
+**电子签**：DocuSign / 微信扫码签 / Telegram bot 引导（v1 阶段成本最低）。
+
+#### 2.2.4 试用支持
+
+- 专属 Telegram / Discord 反馈群
+- 每日 1 次 PM 主动收反馈
+- Critical bug 4h 响应
+- 试用结束送小额激励（如 $50 USDC 模拟盘体验金 / 周边）
+
+#### 2.2.5 试用通过门槛
+
+| 指标 | 门槛 |
+|------|------|
+| **完成至 paper 跟踪**（E2E ⑦）| ≥ 10 / 20 |
+| **完成至复盘阅读**（E2E ⑬）| ≥ 3 / 20 |
+| 试用期 SEV-1 / SEV-2 事件 | **0** |
+| NPS 评分 | ≥ 30 |
+| 1 周后留存 | ≥ 60% |
+
+**任一不达标 → 推迟 v1 上线 1-2 周修复**。
 
 ### 2.1 能力具体 Metrics 门槛（引用）
 
@@ -170,57 +233,27 @@
 
 ---
 
-## 6. HITL Policy（人机协作规则）
+## 6. HITL Launch Gates（v0.2 精简）
 
-> **详细流程定义在 [03 PRD § 4.4](./03-prd.md#44-真金授权与-hitl-完整流程)**，本节是 Launch 视角的**汇总 + 硬规定**。
+> **完整 HITL 流程定义在 [03 PRD § 4.4](./03-prd.md#44-真金授权与-hitl-完整流程)**。本节**只列 Launch 必达硬要求**，不重复细节。
 
-### 6.1 强制 HITL 场景（对齐 03 PRD § 4.4.2）
+### 6.1 五项 Launch 硬要求
 
-10 个触发条件任一命中即 HITL：
+| # | 要求 | 验证方式 |
+|---|------|---------|
+| **H01** | HITL 10 条触发条件**全部实现 + 测试**（03 PRD § 4.4.2）| 09 Eval AE09 + 单元测试 |
+| **H02** | 超时三级（5/15/60 min）**全部生效**，超 60min 必 expire | cron 实测 + audit log 抽查 |
+| **H03** | `pending_approvals` 表 + 16 字段 audit 全部就绪 | DB schema review |
+| **H04** | 生物认证集成（iOS Face ID / Android BiometricPrompt）+ 失败 3 次锁定 30 min | UI 实测 |
+| **H05** | HITL Golden Set ≥ 50 条（含 AE09 超时场景）| Eval CI |
 
-| # | 条件 | 原因 |
-|---|------|------|
-| 1 | 单笔 > $500 真金 | 硬顶保护（HR01）|
-| 2 | paper → auto 首笔 | 首笔必审 |
-| 3 | 策略最近 30 天胜率 < 40% | 质量告警 |
-| 4 | 连续亏损 ≥ 3 笔 | 风控告警 |
-| 5 | 同链持仓 > 50% 账户 | 集中度 |
-| 6 | 代币最近 24h 跌 > 40%（抄底）| 逆势告警 |
-| 7 | 代币 first_trade_at < 1h | 新币告警 |
-| 8 | regime == CRISIS 且尝试买 | 大盘告警 |
-| 9 | 授权额度即将用完（> 90%）| 额度告警 |
-| 10 | Conviction < 0.5 | 低置信度 |
+### 6.2 反馈回流（Launch 后启用）
 
-### 6.2 HITL 超时策略（对齐 03 PRD § 4.4.4）
-
-| 超时 | 默认行为 |
-|------|---------|
-| 5 min 未响应 | 继续 pending + 再推送一次 |
-| 15 min | **自动降级 notify_only**（本次不执行）|
-| 60 min | **自动 reject + expired**（审计保留）|
-
-**Launch 硬规定**：超时策略**不可覆盖**；超过 60 min 无限 pending 属于 SEV-1 bug。
-
-### 6.3 HITL UI 要求
-
-- 推送送达 < 1.5s P95
-- 详情页展示：策略名 / 触发条件 / token / thesis 摘要 / 本次金额 / 剩余授权额度 / approve / reject / view more
-- 生物认证（Face ID / Touch ID）失败 3 次锁定 30 min
-- 所有 HITL 决策写 `pending_approvals` 审计字段 16 项（对齐 PRD § 4.4.6）
-
-### 6.4 反馈回流
-
-- 用户 HITL reject → 写 Episodic Memory（user_preference 类）
+- 用户 HITL reject → 写 Episodic Memory（[06 § 3.3](./06-memory-spec.md#33-episodic-memory情景记忆)）
 - 连续 reject 同类 ≥ 3 次 → S07 主动提议用户废弃对应策略
-- reject > 5 次 / day → CB10 熔断该 device
+- reject > 5 次 / day → CB10 熔断该 device（08 § 10）
 
-### 6.5 HITL Launch 硬门槛
-
-- HITL 流程 10 条触发条件**全部实现并测试**
-- 超时三级（5/15/60 min）**全部生效**
-- `pending_approvals` 表 + audit 字段 **全部就绪**
-- 生物认证集成（iOS Face ID / Android BiometricPrompt）通过
-- HITL Golden Set ≥ 50 条（09 Eval § 8 AE09 覆盖）
+**v1 Launch 不阻塞**：Launch 时反馈回流可以是 manual review 模式，自动化在 v1.1 上线。
 
 ---
 
@@ -265,14 +298,20 @@
 
 ## 8. Rollback（回退机制）
 
-### 8.1 自动 Rollback 触发
+### 8.1 自动 Rollback 触发（v0.2 统计判定明确）
 
-| 条件 | 行动 | 生效时间 |
-|------|------|---------|
-| Safety violation（任何 AE fail）| 立即回退 + SEV-1 | < 5s |
-| Pass rate 跌 ≥ 5pp（统计显著）| 自动回退 | < 5s |
-| Cost 超预算 1.5× | 告警 + 24h 内强制回退 | 24h |
-| NPS 周环比跌 ≥ 10 | 产品 review + 可能回退 | 人工决策 |
+| 条件 | 判定方法 | 行动 | 生效时间 |
+|------|---------|------|---------|
+| Safety violation（任何 AE fail）| 直接判 fail（无统计）| 立即回退 + SEV-1 | < 5s |
+| Pass rate 跌（**McNemar's test**）| `p < 0.05 且 下降 ≥ 5pp`（对齐 [09 § 9.5](./09-eval-plan.md#95-flakiness-handlingv02-新增)）| 自动回退 | < 5s |
+| Pass rate borderline 下降 | 重跑 3 次取中位数判定 | 人工 review 决定 | < 1h |
+| Cost 超预算 1.5× | 持续 ≥ 1h 平均 | 告警 + 24h 内强制回退 | 24h |
+| NPS 周环比跌 ≥ 10 | bootstrap CI 95% 下界 | 产品 review + 可能回退 | 人工决策 |
+
+**v0.2 强制规定**：
+- 不允许"一次性测得 pass rate 跌 5pp 就 rollback"（可能是 flaky）
+- McNemar 配对检验是 **唯一** 自动判定方法
+- 实施脚本 `scripts/rollback_decision.py` 调 09 § 9.5 的同一逻辑
 
 ### 8.2 回退机制
 
@@ -307,11 +346,27 @@
 | **L2 Device 级** | Admin API | 单 device | < 10s |
 | **L3 全局级** | Admin 紧急 | 所有用户真金 | < 5s |
 
+### 9.0 实现选型（v0.2 明确）
+
+| 级别 | 实现 | 验证 SLA |
+|------|------|---------|
+| **L1 用户级**（< 10s）| Flutter 一键 → API `/api/agent/kill_switch/user` → DB `user_kill_switch_active=true` → T08 调用前检查（< 30s 内全集群感知）| 压测：模拟 100 device 并发 |
+| **L2 Device 级**（< 10s）| Admin API → 同上字段（device 级）| 压测同上 |
+| **L3 全局级**（< 5s）| Admin → **Redis pub/sub broadcast** → 各 Python 进程订阅 → 进程内 `agent_global_state.status='blocked'` 标志位置 1 → T08 全部立即拒绝 | 实测从命令到全集群（≥ 5 进程）感知 |
+
+**v0.2 实现要点**：
+- 选 **Redis pub/sub**（不用 Kafka，避免引入新基础设施 + Redis 已用作缓存）
+- 进程内 polling fallback：每 1s 查 Redis state（防 pub/sub 漏 message）
+- DB 持久化兜底：Redis 重启后从 DB 恢复 state
+- 演练脚本：`scripts/kill_switch_drill.py` 测全程时延
+
 ### 9.1 Launch 要求
 
 - L1/L2/L3 三级**实际演练 pass**（不是"应该能 work"）
-- L3 演练：从决定到全集群真金停止全程 < 10s
+- L3 演练：从决定到全集群真金停止全程 **< 5s**（验证）
+- L1 / L2 演练：< 10s（压测 100 并发）
 - 演练流程写入 Runbook
+- 每月 1 次 fire drill（对齐 02 SOP）
 
 ### 9.2 Kill Switch 后的用户体验
 
@@ -344,6 +399,32 @@
 | SEV-3 | Dashboard | 24h 内处理 |
 | 关键指标 drift > 10% | Slack | PM 24h review |
 
+### 10.3 SLI / SLO 量化（v0.2 新增）
+
+> v0.1 用"P95 延迟" 模糊；v0.2 给具体 SLI 定义 + SLO 阈值 + Error Budget。
+
+| SLI（指标） | SLO（目标） | Error Budget | 告警阈值 |
+|-----------|----------|--------------|---------|
+| **可用性 - Chat API** | 99.9% / 月（成功响应率）| 月 43 min 容许 | 1h 错误率 > 1% |
+| **可用性 - 真金 swap (T08)** | 99.95% / 月 | 月 22 min 容许 | 5min 错误率 > 5% |
+| **延迟 - query_market** | P95 < 500ms / 95%时段 | 5% 时段超标 | 1h 时段 P95 > 1000ms |
+| **延迟 - thesis L2** | P95 < 6s / 95%时段 | 5% | 1h P95 > 10s |
+| **延迟 - thesis L3** | P95 < 18s / 95%时段 | 5% | 1h P95 > 30s |
+| **延迟 - HITL push 送达** | P95 < 1.5s / 95%时段 | 5% | - |
+| **Eval pass rate L1 Tool** | 100% | 0% | 任一 fail |
+| **Eval pass rate L1 Prompt** | ≥ 90% | 10% | < 85% |
+| **Safety - Injection 拦截** | 100% (AE01-AE10 SEV-0) | 0% | 任一漏 |
+| **Cost - LLM 月度** | ≤ $1600 @ 100 DAU | 50% buffer | 月度 $2000 |
+| **Cost - 单 device 日预算** | ≤ $1.50 / day | 0% (硬限)| 单 device > $2 |
+| **NPS** | ≥ 30 | - | < 20 触发 review |
+| **Error rate - Tool** | < 1% | - | > 3% |
+| **Error rate - LLM API** | < 0.5% | - | > 2% |
+
+**Error Budget 政策**：
+- Budget 烧尽（如月度真金 swap 22 min 用完）→ **暂停所有非紧急发布**直到下月
+- 鼓励工程在 Budget 内迭代（不达标但有 Budget 可用）
+- 月度 review SLI 实际 vs SLO（写入 [12 Incident](./12-incident-response-sop.md)）
+
 ### 10.3 复盘节奏
 
 | 节奏 | 议程 |
@@ -355,9 +436,109 @@
 
 ---
 
-## 11. Launch Day Checklist（上线当天 SOP）
+## 11. Launch 时间轴 + Day Checklist（v0.2 反推 T-90）
 
-### T-7 天
+### 11.0 Gate 依赖关系图（v0.2 新增）⭐
+
+62 项 Gate 不是 flat 列表。**依赖关系决定执行顺序**——做错顺序整个上线计划崩。
+
+```
+Phase 0: Foundation（T-90 ~ T-60，灾难漏洞 + 基础设施）
+   ┌─────────────────────────────────────────────┐
+   │  S01 灾难级 L1/L2/L3 修复（4-6 周）           │
+   │  S05 safety_policy.yaml + policy_loader      │
+   │  S06 security_audit_log + Query API          │
+   │  O02 Observability Tracing                   │
+   │  C01 Cost Budget 硬约束 + 熔断器             │
+   └─────────────────────────────────────────────┘
+                    │
+                    ▼
+Phase 1: Eval 建设（T-60 ~ T-30，Golden 1660 条）
+   ┌─────────────────────────────────────────────┐
+   │  T01 Tool Unit Eval（Week 1-2）              │
+   │  T02 Prompt Unit Eval（Week 2-3）            │
+   │  T03 Skill Integration Eval（Week 3-4）      │
+   │  T07 Judge 校准 100 条双打（伴随）           │
+   │  T06 Memory Eval                             │
+   └─────────────────────────────────────────────┘
+                    │
+                    ▼
+Phase 2: 上层 Eval + Safety（T-30 ~ T-14）
+   ┌─────────────────────────────────────────────┐
+   │  T04 Agentic Eval（4 chains）                │
+   │  T05 Trajectory Eval（核心场景）             │
+   │  S02-S04 AE01-AE10 对抗（依赖 S05/T01-T03）  │
+   │  S07-S09 Filter 上线（依赖 S05）             │
+   │  S14 Red Team 首轮                           │
+   │  S11 Kill Switch 演练                        │
+   │  S12 凭证擦除 < 60s 压测                     │
+   └─────────────────────────────────────────────┘
+                    │
+                    ▼
+Phase 3: Compliance + Final（T-14 ~ T-3）
+   ┌─────────────────────────────────────────────┐
+   │  L01-L11 多地区合规（前期同步推进，此时收尾）│
+   │  P01-P07 产品 Gate 验收                      │
+   │  T08-T11 性能 / 状态机                       │
+   │  O01 Incident Response SOP                   │
+   │  O03-O08 Dashboard / Backup / Runbook        │
+   └─────────────────────────────────────────────┘
+                    │
+                    ▼
+Phase 4: Launch Day（T-3 ~ T-0）
+   ┌─────────────────────────────────────────────┐
+   │  L12 法务 Final Sign-off ⭐ 最终闸门         │
+   │  P07 种子用户招募完成                        │
+   │  O07 Kill Switch 实际演练                    │
+   │  Launch Day Checklist（§ 11.4）              │
+   └─────────────────────────────────────────────┘
+```
+
+### 11.1 关键依赖（必须先做后做）
+
+| 后置 Gate | 依赖 |
+|---------|------|
+| T05 Trajectory | T03 Skill 全 pass |
+| T04 Agentic | T01 + T02 + T03 全 pass |
+| S02-S04 AE 对抗 | S05 safety_policy + T01-T03 |
+| S07/S08 Filter | S05 policy_loader |
+| L12 法务 sign-off | 所有其他 Gate（最末闸）|
+| O01 Incident SOP | S06 audit_log + O02 trace |
+| Canary 启动 | 62 Gate 全绿 |
+| Beta | Canary 48h 无 SEV-0/1 |
+| GA | Beta 5d 无 SEV-0/1/2 + NPS ≥ 30 |
+
+### 11.2 时间轴反推（v0.2 详细，从 T-90 起）
+
+| 节点 | 周数 | 关键里程碑 | Gate 进度目标 |
+|------|-----|-----------|-------------|
+| **T-90** | -13w | Phase 0 启动：灾难漏洞 / 基础设施 | 0% |
+| T-75 | -11w | L1/L2/L3 灾难漏洞 50% 进度 | 10% |
+| **T-60** | -8.5w | Phase 0 完成 + Phase 1 启动 | 25% |
+| T-45 | -6.5w | Tool + Prompt Unit Eval 完成 | 45% |
+| **T-30** | -4w | Phase 1 完成 + Phase 2 启动 | 60% |
+| T-21 | -3w | Skill Integration + Memory Eval 完成 | 70% |
+| **T-14** | -2w | Phase 2 完成 + Red Team 首轮通过 | 80% |
+| T-10 | -10d | 多地区合规 + 性能压测 | 88% |
+| **T-7** | -1w | Phase 3 完成 + 法务 review 启动 | 95% |
+| **T-3** | -3d | Kill Switch 演练 + 种子用户就位 | 98% |
+| T-1 | -1d | Final Lockdown + L12 Sign-off | 100% |
+| **T-0** | 0 | Launch Day | Canary 5% |
+| T+2 | +2d | Beta 决策 | - |
+| T+9 | +9d | GA 决策 | - |
+
+### 11.3 关键路径瓶颈（CPM）
+
+| 关键路径 | 瓶颈节点 | 缓解 |
+|---------|---------|------|
+| 灾难漏洞修复（4-6 周）| L1 KMS 集成 | 提早启动，T-90 前两周开始 |
+| Golden 1660 条（6 周）| 4 人并行的工程协调 | 配置 A 必须 4 人到位（[09 § 10.5.3](./09-eval-plan.md#1053-新路线图配置-a--4-人并行-6-周)）|
+| 多地区合规 sign-off | 法务调度 | T-30 前启动法务 review，留足 4 周 |
+| Red Team 首轮 | 安全 expert 资源 | T-30 锁定红队 2 周窗口 |
+
+### 11.4 Launch Day Checklist（T-7 起）
+
+#### T-7 天
 
 - [ ] Tech Gates T01-T12 全绿
 - [ ] Product Gates P01-P07 全绿
@@ -459,6 +640,29 @@
 
 > 本表在 CI / Dashboard 实时刷新，离 launch 还差什么一目了然。
 
+### 13.0 Gate Status 更新机制（v0.2 明确）
+
+| Gate 类别 | 自动判定 | 人工 sign-off |
+|---------|---------|-------------|
+| Tech Gates | CI green = 自动绿 | - |
+| Product Gates | 部分自动（Eval 数据）| **PM sign-off** P01-P07 |
+| Safety Gates | 自动（Eval pass + 灾难漏洞 PR merged）| **安全 lead sign-off** S14 Red Team |
+| Legal Gates | 部分自动（合规 check）| **法务 sign-off** L01-L12（**L12 必须**）|
+| Cost & Ops | 自动（dashboard 数据）| **Ops lead sign-off** O01 / O07 / O08 |
+| HITL | 自动（pass 测试）| - |
+
+**Gate 状态枚举**：
+- 🔴 `not_started` / `failing`
+- 🟡 `in_progress` / `partial_pass`
+- 🟢 `passing`（自动）/ `signed_off`（含人工签）
+- ⚫ `waived`（特例放行，需 § 14.4 流程）
+
+**审批流**：
+- PR 提交时声明 Gate 影响（`Gate-Affected: T03, S07`）
+- CI 自动跑相关 Gate
+- 人工 sign-off 通过 `/api/admin/launch/gate/:id/signoff` API（带 audit log）
+- Dashboard 实时显示进度
+
 | 分类 | Gate 总数 | 绿 | 黄 | 红 | % |
 |------|---------|----|----|----|---|
 | § 1 Tech (T01-T12) | 12 | 0 | 0 | 12 | 0% |
@@ -516,6 +720,29 @@
 
 **降级 Launch Gate 总数**：62 → 45 项硬门槛（去掉 L4 / auto 相关 / 高阶合规）
 
+#### 14.4.1 降级审批流（v0.2 责任链）
+
+降级**不是 PM 单独决定**。流程：
+
+| 步骤 | 责任 |
+|------|------|
+| 1. PM 提议降级方案（写明哪些 Gate waived / 风险）| PM |
+| 2. 安全 lead review（确认 S 系列降级不引入未知风险）| Sec Lead |
+| 3. 法务 review（合规风险评估）| Legal |
+| 4. 产品 lead 决策签字 | Product Lead |
+| 5. 创始人 / CEO 最终批准（v1 阶段必走）| CEO |
+| 6. 写入 `launch_audit_log` + 公告 | PM |
+
+**降级后果归属**：
+- 降级期间发生 SEV-0/1 事件 → 责任链上每个 sign-off 共担
+- 不允许"降级 + 出事 + 找别人背锅"
+
+#### 14.4.2 降级的反向恢复
+
+降级方案上线后，**v1.1 必须在 8 周内**回补 waived Gate：
+- 月度 review 进度
+- 8 周未回补 → 自动触发 SEV-2 + 强制规划
+
 ---
 
 ## 15. 术语对照
@@ -536,6 +763,19 @@
 
 ## Change Log
 
+- **v0.2 (2026-04-24)**：Review 修订（5 P0 + 4 P1）
+  - **§ 11.0 新增 Gate 依赖关系图**（4 Phase 时序，解决 v0.1 flat 列表问题）
+  - **§ 11.1 新增 关键依赖表**（11 条 Gate 间硬依赖）
+  - **§ 11.2 新增 时间轴反推**（T-90 到 T-0 详细 12 节点）
+  - **§ 11.3 新增 关键路径瓶颈**（CPM 4 项 + 缓解）
+  - **§ 8.1 Rollback 统计判定**：明确 McNemar's test（对齐 09 § 9.5）+ borderline 重跑 3 次中位数
+  - **§ 9.0 新增 Kill Switch 实现选型**：L3 用 Redis pub/sub + 进程内 polling fallback + DB 兜底
+  - **§ 2.2 新增 种子用户招募流程**（4 招募来源 / 3 协议签署 / 5 通过门槛）
+  - **§ 13.0 新增 Gate Status 更新机制**（自动 vs 人工 sign-off + 4 种状态枚举 + API）
+  - **§ 14.4.1 新增 降级审批流责任链**（PM → Sec → Legal → Product → CEO）
+  - **§ 14.4.2 降级反向恢复**（v1.1 8 周内必回补）
+  - **§ 10.3 新增 SLI/SLO 量化**（13 项 SLI + Error Budget 政策）
+  - **§ 6 HITL 精简**到 5 项 Launch-specific 硬要求（H01-H05）+ 反馈回流 v1.1 启用
 - **v0.1 (2026-04-24)**：首版完整填充
   - § 0 整合 03-10 所有 Gate 的**唯一事实源**定位
   - § 1 Tech Gates T01-T12（Eval / Latency / Cost / Observability / State / Golden）

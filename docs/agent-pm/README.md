@@ -16,7 +16,7 @@
 
 ---
 
-## 文档矩阵（16 份）
+## 文档矩阵（17 份）
 
 ### L1 战略层（定义做什么、给谁、为什么）
 
@@ -58,6 +58,12 @@
 | 14 | [Red Team Playbook](./14-red-team-playbook.md) | 🟠 P1 | 🟡 TODO | - |
 | 15 | [Observability & Tracing Spec](./15-observability-tracing.md) | 🟠 P1 | 🟡 TODO | - |
 | 16 | [Trajectory Evaluation](./16-trajectory-eval.md) | 🟡 P2 | 🟡 TODO | - |
+
+### L6 工程落地（PM 设计文档 → 代码的技术方案）
+
+| # | 文档 | 状态 | Owner |
+|---|------|------|-------|
+| 17 | [Tech Plan v1](./17-tech-plan.md) | 🟢 v0.1 Draft | 工程负责人 |
 
 ---
 

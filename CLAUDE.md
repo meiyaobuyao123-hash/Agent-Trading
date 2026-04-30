@@ -60,6 +60,7 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | XGBoost ML | ⏸ 待训练 | 管线就绪，3/27 提醒 |
 | App Store 上架 | 🔄 进行中 | Build 2 已上传，待 Build 3（含新icon）+ 截图 + 提交审核 |
 | Firebase 推送 | ⏸ 待配置 | 需创建 Firebase 项目 |
+| docs/agent-pm/00-16 | 📄 仅产出 | Agent v1 优化 PM 设计文档（17 篇），**从未实施**，讨论时不要当 baseline。详见 `docs/memory/project_agent_pm_docs_status.md` |
 
 ## 待执行（手动）
 - [ ] Supabase Dashboard 执行 `migrations/017_user_api_quota.sql`（如未执行）

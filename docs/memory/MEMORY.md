@@ -87,6 +87,18 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | [testing-2026-03-13.md](./testing-2026-03-13.md) | 03-13 全量测试+修复记录 |
 | [project_smart_money_status.md](./project_smart_money_status.md) | 聪明钱暂不可用，地址太少，后续单独优化 |
 | [feedback_hot_coin_coverage.md](./feedback_hot_coin_coverage.md) | 热币全量扫描 vs 排行榜评估：排行榜够用，优先优化打分 |
+| [project_agent_pm_docs_status.md](./project_agent_pm_docs_status.md) | docs/agent-pm/00-16 是 Agent v1 优化设计产出物，**从未实施**，讨论时不要当 baseline |
+
+---
+
+## 2026-04-30 本次会话
+- ✅ 记忆恢复 + 服务器健康检查（43.156.207.26 新加坡运行正常，实例 lhins-ph7ak7k9 / Ubuntu-GFLK）
+- ✅ 跨机器代码 SHA1 对比：服务器 vs 本地 387 个 tracked 文件**完全一致**（除 Podfile.lock 1 个本地未提交差异）
+- ✅ 全量代码深读（5 Explore agent 并行）：后端 107 .py + Flutter 84 .dart + Portal/Admin → 9 大节代码地图
+- ✅ **澄清**：`docs/agent-pm/00-16` 17 篇是 Agent v1 PM 设计产出物，**从未实施**，不要当 baseline
+- ✅ **17-tech-plan.md 产出 + 落地**：v1 技术方案，4 Phase 16-20 周，完整 v1 范围（paper+notify+auto+真金+托管），配置 A Eval（1660 golden）。落到 `docs/agent-pm/17-tech-plan.md`，README 矩阵新增 L6 工程落地区。**只设计不写代码**
+- 🐛 线上 3 个非致命错误（未修）：`token_trades_pkey` duplicate / `btc_eth_indicators` 整数列写小数 / `daily_picks ↔ pump_tokens` FK 缺失
+- 📚 记忆更新：新建 `project_agent_pm_docs_status.md`、追加 `pitfalls.md` 3 条、追加 `sessions-log.md` 1 条、更新 `CLAUDE.md` 功能状态表
 
 ---
 

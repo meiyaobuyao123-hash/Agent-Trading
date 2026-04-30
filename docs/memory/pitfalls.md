@@ -100,3 +100,12 @@
 - **systemd restart 时 optimizer stuck run**: SIGTERM 超时后 SIGKILL 产生 status=running 的孤儿记录，需手动标记 failed
 - **nginx 需随 pump-scanner 重启**: pump-scanner 重启后 nginx 有时无法转发请求，需一起 `systemctl restart nginx`
 - **Claude API 429 rate limit**: Opus 4.6 有 30K input tokens/min 限制，tool result 截断到 15K chars + 重试退避
+
+## 2026-04-30 线上错误（堆积中，非致命）
+- **`token_trades` 主键重复 ON CONFLICT**: 同批次有相同 id 没去重，error code 23505 → 用 `seen_keys: Set[tuple]` 先去重（前面已记但代码未彻底修，每隔几分钟仍在刷错误）
+- **`btc_eth_indicators` 整数列写入小数**: error `invalid input syntax for type integer: "472688.0"`，列名白名单未覆盖 `volume_24h_usd` 等浮点列。**BTC/ETH 指标完全没在持久化**，需要扩白名单或显式 int() 转换
+- **`daily_picks ↔ pump_tokens` PostgREST FK schema 找不到**: error `Could not find a relationship between 'daily_picks' and 'pump_tokens' in the schema cache`，performance_tracker 初始化失败，daily_picks 这条表现追踪链路没在跑（实时信号池 _signal_pool 仍正常）
+
+## macOS / Linux 工具差异
+- **macOS `sort` 是 locale-aware**: 跨机器 SHA1 哈希列表对比时，macOS sort 默认按 locale 排序，Linux sort 按字节序，会导致**对齐错位被误判为内容差异**。必须 `LC_ALL=C sort` 强制字节序才能真实 diff（实际遇到：首次 diff 报 47 个差异，加 `LC_ALL=C` 后只剩 1 个真差异）
+- **macOS `shasum -a 1` vs Linux `sha1sum`**: 输出格式都是 `<sha>  <filename>`，直接 diff 可以，但前提是排序一致（见上条）

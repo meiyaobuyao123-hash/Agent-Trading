@@ -712,3 +712,38 @@
 - 6 角色：策略解析 + 3分析师(Haiku并行) + 辩论(Sonnet 3轮) + 风控(规则+AI)
 - 分级触发：L1免费(200/天) → L2 $0.003(50/天) → L3 $0.015(15/天)
 - 月成本 ~$10.4，性能预期提升 2-3 倍（TradingAgents 数据支撑）
+
+---
+
+## 2026-04-30 会话（记忆恢复 + 全量代码扫描 + Agent 技术方案产出）
+
+### 做了什么
+- 记忆系统恢复：重读所有 topic 文件，确认 docs/memory/ 双份同步机制运转正常
+- 服务器健康检查：43.156.207.26（新加坡，用户曾误以为已迁移）运行正常，uptime 45 天，pump-scanner/portal/tat_agent/nginx 全 active，根盘 18G/59G 31%，流量 143G/1536G 9%。实例 `lhins-ph7ak7k9 / Ubuntu-GFLK`，内网 10.3.0.10
+- 跨机器代码一致性验证：服务器 `/opt/agent-trading/` vs 本地 SHA1 哈希全部 387 个 tracked 文件比对，**真实差异只有 `apps/app/ios/Podfile.lock` 1 个**（本地未提交的 6 行删除）。本地领先 origin 6 个 `docs(agent-pm)` commit 全是设计文档
+- 全量代码深读（5 个 Explore agent 并行）：后端 107 .py + Flutter 84 .dart + Portal/Admin 函数级深读，产出 9 大节代码地图（采集/打分/聪明钱/Optimizer + agent/ + api/ + btc_eth/ + Portal/Admin + 数据流图）
+- 关键发现：`docs/agent-pm/00-16` 17 篇 PM 设计文档**从未实施**，只是产出物；不要把它的 §8 Gap 当成"待办对照表"
+- **17-tech-plan.md 产出 + 落地**：针对 PM 设计的 v1 技术方案（**只设计不写代码**），覆盖 4 Phase（灾难漏洞修复 + Tool 化/Memory 升级 + Skill+Loop+Prompt Library + Flutter 重构 + Eval/Launch），16-20 周，完整 v1 范围（paper+notify+auto+真金+托管钱包），配置 A 质量门槛（1660 golden + 62 项 Launch Criteria 100%）。文件落到 `docs/agent-pm/17-tech-plan.md` 并入 README 矩阵 L6 工程落地区
+- 线上 3 个非致命错误识别（未修）：`token_trades_pkey` duplicate / `btc_eth_indicators` 整数列写入 `472688.0` / `daily_picks ↔ pump_tokens` FK 缺失
+
+### 讨论结论
+- **服务器一直在新加坡 43.156.207.26，没换过**：用户记忆有误，腾讯云控制台只显示这一台实例
+- **跨机器代码对比必须用 `LC_ALL=C sort`**：macOS sort 是 locale-aware，默认按 locale 排序导致 SHA 列表对齐错位被误判为内容差异；强制字节序后才能真实 diff（首次跑得到 47 个假差异，纠正后只有 1 个）
+- **`docs/agent-pm/00-16` 是设计产出物，从未实施**：讨论 Agent 现状时绝不能用它作 baseline。实际线上能力 = `services/pump-scanner/agent/` 真实代码
+- **Agent v1 技术方案只设计不实施**：本次会话不写任何业务代码，仅产出方案 + 更新记忆 + commit 文档
+- **完整 v1 而非分期**：用户决定一次性做完整 paper+notify+auto+真金+托管，不走"先 paper 后真金"的分期路径
+- **17-tech-plan 命名顺延**：原意 `00-tech-plan.md` 但 00 已被 `00-data-sources.md` 占用，改 `17-tech-plan.md` 接 README 矩阵
+
+### 被否定的方案
+- ~~把 docs/agent-pm 17 篇设计文档当作待开发 backlog 做 Gap 对照~~：这是产出物，不是 backlog
+- ~~Phase 1 范围只做 paper + notify（简化版）~~：用户选完整 v1
+- ~~分期迭代（先 paper 验证后再加 auto）~~：用户选一次性做完
+- ~~Eval 配置 C（700 golden）/ 配置 B（轻量）~~：用户选配置 A（1660 + L1-L4 + LLM-as-judge）
+- ~~17-tech-plan 命名 `00-tech-plan.md`~~：00 编号冲突，改 17 顺延
+
+### 记忆更新
+- 新建 `project_agent_pm_docs_status.md`（本地 + 仓库 docs/memory/）
+- 更新 `MEMORY.md` / `docs/memory/MEMORY.md` 索引 + 本次会话段
+- 更新 `CLAUDE.md` 当前功能状态表加 docs/agent-pm 行
+- 更新 `pitfalls.md` 加 3 条（2 条线上 bug + macOS sort locale 坑）
+- `17-tech-plan.md` 落到 `docs/agent-pm/`，README 矩阵新增 L6 工程落地区

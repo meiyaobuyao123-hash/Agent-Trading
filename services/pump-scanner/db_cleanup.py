@@ -1,9 +1,9 @@
 """
-数据库清理任务 — 控制 Supabase 免费版存储
+数据库清理任务 — 控制 Supabase 免费版存储 + 本地 PG TTL
 
 运行时机：每 6 小时（APScheduler 调度）
 
-清理策略：
+清理策略（Supabase）：
   token_trades:       保留 3 天（最大表，分批删除避免超时）
   token_snapshots:    保留 14 天
   btc_eth_indicators: 保留 7 天
@@ -12,6 +12,19 @@
   hot_funnel_stats:   保留 30 天
   token_performance:  保留 90 天（已完成追踪）
   pump_tokens + token_outcomes: 保留 30 天（先删 outcomes 再删 tokens）
+
+清理策略（本地 PostgreSQL，agent_trading_local）— W3 加：
+  security_audit_log:        90 天
+  pending_approvals:         decided_at + 30 天（已决策的）
+  memory_write_wal:          flushed=true + 7 天
+  memory_write_retry_queue:  resolved=true + 7 天
+  conversation_states:       expires_at + 24h（完结/过期）
+  prompt_versions:           status=retired + 30 天
+  prompt_invocations:        30 天滚动
+  agent_thesis:              30 天（L3+conviction>0.8 例外保 90 天）
+  eval_results:              90 天
+
+引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01)
 """
 
 import logging
@@ -149,6 +162,118 @@ def run_db_cleanup():
     return total_deleted
 
 
+# ============================================================
+# 本地 PG TTL 清理(W3 加,8 张新表)
+# 引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01)
+# ============================================================
+
+# (table, sql, retain_days, label) — sql 用 %s 占位 cutoff
+LOCAL_PG_RULES = [
+    (
+        "security_audit_log",
+        "DELETE FROM security_audit_log WHERE ts < %s",
+        90,
+        "security_audit_log >90d",
+    ),
+    (
+        "pending_approvals",
+        "DELETE FROM pending_approvals WHERE decided_at < %s AND status != 'pending'",
+        30,
+        "pending_approvals decided>30d",
+    ),
+    (
+        "memory_write_wal",
+        "DELETE FROM memory_write_wal WHERE flushed = true AND flushed_at < %s",
+        7,
+        "memory_write_wal flushed>7d",
+    ),
+    (
+        "memory_write_retry_queue",
+        "DELETE FROM memory_write_retry_queue WHERE resolved = true AND created_at < %s",
+        7,
+        "memory_write_retry_queue resolved>7d",
+    ),
+    (
+        "conversation_states",
+        "DELETE FROM conversation_states WHERE expires_at < %s",
+        1,  # 1 天 = 完结后 24h
+        "conversation_states expired>24h",
+    ),
+    (
+        "prompt_versions",
+        "DELETE FROM prompt_versions WHERE status = 'retired' AND retired_at < %s",
+        30,
+        "prompt_versions retired>30d",
+    ),
+    (
+        "prompt_invocations",
+        "DELETE FROM prompt_invocations WHERE ts < %s",
+        30,
+        "prompt_invocations >30d",
+    ),
+    (
+        # agent_thesis: 30 天默认,L3 高 conviction>0.8 保留 90 天例外
+        "agent_thesis",
+        """DELETE FROM agent_thesis
+           WHERE ts < %s
+             AND NOT (level = 'L3' AND conviction > 0.8 AND ts >= NOW() - INTERVAL '90 days')""",
+        30,
+        "agent_thesis >30d (L3 高 conviction 例外 90d)",
+    ),
+    (
+        "eval_results",
+        "DELETE FROM eval_results WHERE ts < %s",
+        90,
+        "eval_results >90d",
+    ),
+]
+
+
+def run_local_pg_cleanup() -> int:
+    """清理本地 PostgreSQL 8 张表。
+    每张表独立事务;某张表失败不影响其他;返回总删除数。
+    """
+    log.info("=== 本地 PG 清理开始 ===")
+    try:
+        from local_db import _get_conn
+    except ImportError as e:
+        log.warning("local_db 不可用,跳过本地 PG 清理: %s", e)
+        return 0
+
+    try:
+        conn = _get_conn()
+    except Exception as e:
+        log.warning("本地 PG 连接失败,跳过清理: %s", e)
+        return 0
+
+    total = 0
+    now = datetime.now(timezone.utc)
+    for table, sql, retain_days, label in LOCAL_PG_RULES:
+        cutoff = now - timedelta(days=retain_days)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql, (cutoff,))
+                deleted = cur.rowcount or 0
+            if deleted > 0:
+                total += deleted
+                log.info("  [local-pg] %s: 删除 %d 行", label, deleted)
+        except Exception as e:
+            # 表不存在(migration 未跑)忽略
+            msg = str(e).lower()
+            if "does not exist" in msg or "undefined" in msg:
+                log.debug("  [local-pg] %s 表不存在,跳过", table)
+            else:
+                log.warning("  [local-pg] %s 清理失败: %s", table, e)
+
+    log.info("=== 本地 PG 清理完成: 共 %d 行 ===", total)
+    return total
+
+
+def run_full_cleanup() -> int:
+    """全量清理(Supabase + 本地 PG),供 main.py APScheduler 调度。"""
+    return run_db_cleanup() + run_local_pg_cleanup()
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    run_db_cleanup()
+    run_full_cleanup()

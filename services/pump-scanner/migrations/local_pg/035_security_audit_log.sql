@@ -1,3 +1,12 @@
+-- ============================================================
+-- Local PostgreSQL (agent_trading_local on server PG 14)
+-- Migration: 035_security_audit_log
+-- 执行: psql -h 127.0.0.1 -U agent_local -d agent_trading_local -f 035_security_audit_log.sql
+-- 引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01):8 张新表迁本地 PG
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Migration 035: 安全审计日志(Phase 0 必装)
 -- 引用 17-tech-plan.md Phase 0 + docs/agent-pm/08-safety-policy.md §11.5
 -- 180 天保留(由 db_cleanup.py 处理)

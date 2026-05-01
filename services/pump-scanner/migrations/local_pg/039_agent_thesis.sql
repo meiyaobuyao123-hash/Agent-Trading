@@ -1,3 +1,12 @@
+-- ============================================================
+-- Local PostgreSQL (agent_trading_local on server PG 14)
+-- Migration: 039_agent_thesis
+-- 执行: psql -h 127.0.0.1 -U agent_local -d agent_trading_local -f 039_agent_thesis.sql
+-- 引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01):8 张新表迁本地 PG
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Migration 039: agent_thesis 表(S08 thesis-writer 输出独立持久化)
 -- 引用 17-tech-plan.md Phase 2
 -- 引用 docs/agent-pm/03-prd.md §2.7 Thesis 完整 Schema

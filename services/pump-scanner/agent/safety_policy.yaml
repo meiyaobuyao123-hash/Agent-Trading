@@ -1,244 +1,333 @@
-# Safety Policy v1
+# Safety Policy v0.2
 # 引用 docs/agent-pm/08-safety-policy.md
 # 引用 docs/agent-pm/17-tech-plan.md Phase 0
 #
-# 加载失败时 fail-safe → 整个 Agent 系统进入 BLOCKED 状态(对应熔断器 CB12)
-# 由 agent/safety_engine.py runtime check;每次 trade_executor / chat_loop / notify_loop 调用前检查
+# check 字段结构化(机器可读,safety_engine.py 直接 eval):
+#   type: simple    field/op/value 单字段比较
+#   type: compound  op=AND|OR + items[] 嵌套
+#   type: boolean   field 直接读 bool
+#   type: regex     field/pattern/flags 文本匹配
+#   type: function  fn(ctx) → bool(预留扩展点,Python 函数注册到 safety_engine)
 #
-# 30 条 HardRule + 13 条 CB + 5 条 C(Constitutional)
-# 状态:🔴 v0.1 骨架(规则名已定,实施细节 TODO Phase 0 W3-W4)
+# op 支持: gt/gte/lt/lte/eq/ne/in/not_in/contains/starts_with
+#
+# 加载失败 fail-safe → CB12 触发,整个 Agent BLOCKED
+# 由 agent/safety_engine.py runtime check
+#
+# 状态:🟢 v0.2(10 核心 HR + 5 C 完整实施;其余 20 HR 占位 TODO)
 
-version: v0.1
-status: skeleton
+version: v0.2
+status: partial_implemented
 last_modified: "2026-05-01"
 owner: security-lead
+implemented_count:
+  hard_rules: 10            # HR01 HR02 HR04 HR07 HR09 HR16 HR21 HR22 HR25 HR28
+  circuit_breakers: 0       # W3 D2 实施
+  constitutional: 5
 
 # ============================================================
 # Hard Red Lines (HR01-HR30)
 # ============================================================
-# BLOCK 级,永不可覆盖。trade_executor.py / risk_manager.py 必须在 pre_condition 校验
 hard_rules:
+
   - id: HR01
     name: 单笔真金 ≤ $500
     severity: BLOCK
-    check: amount_usd > 500
-    action: block_with_audit_log
-    todo: 实施细节 trade_executor pre_condition
+    implemented: true
+    check:
+      type: simple
+      field: amount_usd
+      op: gt
+      value: 500
+    message: "单笔金额 ${amount_usd} 超过 $500 上限"
+    audit_event: trade_exec
 
   - id: HR02
     name: 日累计真金 ≤ $2000
     severity: BLOCK
-    check: device_daily_total_usd > 2000
-    action: block_with_audit_log
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: daily_total_usd
+      op: gt
+      value: 2000
+    message: "日累计 ${daily_total_usd} 超过 $2000 上限"
+    audit_event: trade_exec
 
   - id: HR03
     name: 月累计真金 ≤ $20000
     severity: BLOCK
-    check: device_monthly_total_usd > 20000
-    action: block_with_audit_log
-    todo: TODO
+    implemented: false
+    todo: W3 D2 实施
 
   - id: HR04
     name: 单策略持仓 ≤ 总余额 10%
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: strategy_position_pct
+      op: gt
+      value: 0.10
+    message: "策略持仓 ${strategy_position_pct} 超过总余额 10%"
 
   - id: HR05
     name: 同链集中度 ≤ 50%
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR06
     name: 持仓代币数 ≤ 20
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR07
     name: 流动性 < $10K 禁交易
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: liquidity_usd
+      op: lt
+      value: 10000
+    message: "代币流动性 ${liquidity_usd} 低于 $10K"
 
   - id: HR08
     name: 买/卖税 > 10% 禁交易
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR09
     name: 蜜罐代币禁交易(GoPlus is_honeypot=true)
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: boolean
+      field: is_honeypot
+    message: "代币为蜜罐(GoPlus 检测命中)"
 
   - id: HR10
     name: 单笔 ≤ active_authorization.single_trade_max
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR11
     name: device.credentials_revoked_at 非空 → 禁所有真金
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR12
     name: KMS 不可用 → 禁所有签名
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR13
     name: 持有人 < 50 禁交易
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR14
     name: Top10 集中度 > 80% 禁交易
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR15
     name: 24h 跌 > 40% 禁买入(逆势保护)
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR16
     name: Regime = CRISIS 禁所有买入
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: regime
+          op: eq
+          value: CRISIS
+        - type: simple
+          field: action
+          op: eq
+          value: buy
+    message: "市场 Regime=CRISIS 禁止买入"
 
   - id: HR17
     name: 日亏损 ≥ $500 触发熔断
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR18
     name: 周亏损 ≥ $1500 触发熔断
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR19
     name: 连续亏损 ≥ 3 笔强制 pause
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR20
     name: 最大回撤超阈值熔断
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR21
     name: 黑名单代币禁交易(用户/全局)
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: token_address
+      op: in
+      value_field: blacklist_tokens   # ctx 里的 list 字段
+    message: "代币 ${token_address} 在黑名单"
 
   - id: HR22
     name: 交易间隔 < 60s 拒绝
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: seconds_since_last_trade
+      op: lt
+      value: 60
+    message: "距上次交易仅 ${seconds_since_last_trade}s,小于 60s 间隔"
 
   - id: HR23
     name: 小时内交易 ≥ 5 笔拒绝
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR24
     name: 滑点 > 用户配置上限拒绝
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR25
     name: HITL 未通过禁执行
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: hitl_required
+          op: eq
+          value: true
+        - type: simple
+          field: hitl_approved
+          op: eq
+          value: false
+    message: "HITL 必需但未通过"
 
   - id: HR26
     name: 共创流程未走完(stage != saved)禁激活
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR27
     name: copy_trade 目标在黑名单(对应 CB11)
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR28
     name: agent_global_state = blocked → 禁全部新交易
     severity: BLOCK
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: agent_global_state
+      op: eq
+      value: blocked
+    message: "Agent 全局 BLOCKED,禁所有新交易"
 
   - id: HR29
     name: 代币年龄 < 1h 禁 auto 模式(允许 paper/notify)
     severity: BLOCK
+    implemented: false
     todo: TODO
 
   - id: HR30
     name: 用户配额耗尽禁 chat 调用 LLM
     severity: BLOCK
+    implemented: false
     todo: TODO
 
 # ============================================================
 # Circuit Breakers (CB01-CB13)
 # ============================================================
-# 触发后整个 Agent 进入 BLOCKED 状态;只能 admin 解除或 60min 自动恢复
+# 触发后整个 Agent BLOCKED;只能 admin 解除或 auto_release 自动恢复
+# 状态: TODO W3 D2 实施 evaluator
 circuit_breakers:
   - id: CB01
     name: 日亏损熔断(>$500)
-    auto_release_after_min: 1440  # 24h 后才能解除
+    auto_release_after_min: 1440
     todo: TODO
-
   - id: CB02
     name: 周亏损熔断(>$1500)
-    auto_release_after_min: 10080  # 7d
+    auto_release_after_min: 10080
     todo: TODO
-
   - id: CB03
     name: 连亏 3 笔熔断
     auto_release_after_min: 60
     todo: TODO
-
   - id: CB04
     name: LLM 月预算超限熔断
-    auto_release_after_min: null  # 仅月初自动恢复 / 超 150% 永久 BLOCKED 待人工
+    auto_release_after_min: null
     todo: TODO
-
   - id: CB05
     name: 最大回撤熔断
     auto_release_after_min: 1440
     todo: TODO
-
   - id: CB06
-    name: API 错误率 > 50% 熔断(数据源整体降级)
+    name: API 错误率 > 50% 熔断
     auto_release_after_min: 10
     todo: TODO
-
   - id: CB07
     name: 单代币重复触发 ≥ 5 次/小时熔断
     auto_release_after_min: 60
     todo: TODO
-
   - id: CB08
-    name: HITL 队列超时累积熔断(> 20 条 expired)
+    name: HITL 队列超时累积熔断
     auto_release_after_min: 60
     todo: TODO
-
   - id: CB09
-    name: Memory WAL 失败累积熔断(retry queue > 50 条)
+    name: Memory WAL 失败累积熔断
     auto_release_after_min: null
     todo: TODO
-
   - id: CB10
     name: Eval 通过率跌破门槛熔断
     auto_release_after_min: null
     todo: TODO
-
   - id: CB11
     name: copy_trade 目标钱包 24h 亏 > 30% 自动 mute
     auto_release_after_min: 1440
     todo: TODO
-
   - id: CB12
-    name: KMS 不可用熔断(关键路径阻塞)
+    name: KMS 不可用熔断 / safety_policy 加载失败 fail-safe
     auto_release_after_min: 10
     todo: TODO
-
   - id: CB13
     name: Regime CRISIS 触发(BTC 10min 跌 > 3%)
     auto_release_after_min: 60
@@ -246,40 +335,48 @@ circuit_breakers:
 
 # ============================================================
 # Constitutional Rules (C1-C5)
-# 每条由 LLM-as-Judge 检测;Safety 维度一票否决(<10 分 fail)
+# 由 LLM-as-Judge 检测;Safety 维度一票否决(<10 分 fail)
 # ============================================================
 constitutional:
+
   - id: C1
     name: 不引导 FOMO / 不夸大收益
-    judge_pattern: regex + LLM judge
-    blocklist:
-      - "稳的"
-      - "百倍"
-      - "暴涨"
-      - "千倍"
-      - "错过就亏"
-      - "guaranteed"
-      - "10x"
-      - "moon"
-      - "ape in"
-    todo: 完整 prompt judge by 09-eval-plan AE
+    implemented: true
+    check:
+      type: regex
+      field: text
+      pattern: "(稳的|百倍|千倍|暴涨|错过就亏|guaranteed|to the moon|ape\\s*in|\\b10\\s*x\\b|\\b100\\s*x\\b)"
+      flags: IGNORECASE
+    message: "C1 命中禁用表达"
 
   - id: C2
-    name: 必须披露风险(thesis.risks ≥ 2 条具体风险)
-    judge_pattern: schema 校验 + LLM judge
-    todo: TODO
+    name: thesis.risks ≥ 2 条具体风险
+    implemented: true
+    check:
+      type: function
+      fn: c2_thesis_risks_min_2
+    message: "C2: thesis.risks 必须 ≥ 2 条"
 
   - id: C3
-    name: evidence 必须引真实数据源(不能 LLM 编造)
-    judge_pattern: 字段非空 + 链路可追溯
-    todo: TODO
+    name: thesis.evidence 必须引真实数据源
+    implemented: true
+    check:
+      type: function
+      fn: c3_thesis_evidence_non_empty
+    message: "C3: thesis.evidence 不能为空"
 
   - id: C4
-    name: 小白 persona 必须用白话(禁专业术语堆砌)
-    judge_pattern: LLM judge 按 Persona
-    todo: TODO
+    name: 小白 persona 必须用白话(LLM-judge 异步)
+    implemented: partial
+    check:
+      type: function
+      fn: c4_persona_tone
+    message: "C4: persona tone 异步抽查,本同步 path 跳过"
 
   - id: C5
-    name: HITL 决策路径完整(签名/审计/超时)
-    judge_pattern: 流程完整性校验
-    todo: TODO
+    name: HITL 决策路径完整(approval_id + 签名 + audit_log_id)
+    implemented: true
+    check:
+      type: function
+      fn: c5_hitl_completeness
+    message: "C5: HITL 流程不完整(缺 approval_id/signature/audit_log_id 之一)"

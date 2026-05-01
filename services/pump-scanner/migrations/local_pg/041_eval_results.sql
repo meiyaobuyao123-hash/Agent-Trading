@@ -1,3 +1,12 @@
+-- ============================================================
+-- Local PostgreSQL (agent_trading_local on server PG 14)
+-- Migration: 041_eval_results
+-- 执行: psql -h 127.0.0.1 -U agent_local -d agent_trading_local -f 041_eval_results.sql
+-- 引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01):8 张新表迁本地 PG
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Migration 041: Eval 跑批结果归档
 -- 引用 17-tech-plan.md Phase 4
 -- 引用 docs/agent-pm/09-eval-plan.md L1-L4 + Safety AE

@@ -1,3 +1,12 @@
+-- ============================================================
+-- Local PostgreSQL (agent_trading_local on server PG 14)
+-- Migration: 037_conversation_states
+-- 执行: psql -h 127.0.0.1 -U agent_local -d agent_trading_local -f 037_conversation_states.sql
+-- 引用 docs/agent-pm/17-tech-plan.md 增量决策(2026-05-01):8 张新表迁本地 PG
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Migration 037: 共创流程持久化(Working Memory 之一)
 -- 引用 17-tech-plan.md Phase 1
 -- 引用 docs/agent-pm/06-memory-spec.md §3.1 working memory

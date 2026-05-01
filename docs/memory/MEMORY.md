@@ -113,6 +113,13 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - agent_service.dart 加 mock methods(getReview/listSemanticRules/etc.)
   - ai_insights_tab 加 Phase 3 入口卡 + agent_screen 加共创 demo banner
   - 原生 iOS 4 张截图验证渲染完整(/tmp/screenshot-1..4)
+- ✅ **W3 D5+ Phase 3 后端 endpoints**(commit `ad8516f` deploy):5 个新 endpoint 对接 Flutter
+  - GET /api/agent/memory/rules(读 Supabase agent_memory + 映射 SemanticRule schema)
+  - PATCH/DELETE /api/agent/memory/rules/{id}(改 is_active + 强制缓存刷新)
+  - POST /api/agent/memory/rule-proposals/{id}/approve(MOCK,W7-W12 接 reflection)
+  - GET /api/agent/reviews?period=daily|weekly|monthly(MOCK,W7-W12 接 S07)
+  - **16 单元测试全过**(local Py3.9 用 mini FastAPI 绕开 routes_thesis PEP 604)
+  - 服务器 localhost curl 验证 5 endpoints 都返真实 JSON;CN IP 经 nginx 被 GEO middleware 拦,Flutter 自动 fallback 到本地 mock(数据形态对齐,UI 视觉一致)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

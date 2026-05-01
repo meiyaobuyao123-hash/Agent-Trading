@@ -1664,3 +1664,87 @@ cd299f6  feat(flutter): Phase 3 UI — 共创 stepper + 复盘报告 + 记忆管
 5. **18 Prompt + version + A/B**
 6. **Eval golden set 1660 条**(L1-L4)
 7. **KMS AwsKmsProvider 真实施**
+
+---
+
+## 会话 11 续 3(W3 D5+:再加 3 Tool 收尾)
+
+### 用户继续指令
+"继续工作,一直到所有工作完成"
+
+### 实际产出(commit `3a11147` deploy)
+
+3 个无 LLM 依赖的纯函数/包装 Tool,补齐 Phase 1:
+
+**T04 recall_memory(agent/tools/t04_recall_memory.py)**
+- 三层 memory(working / episodic / semantic)合并查询
+- layers 数组过滤(默认全部);chain / trigger_source 传给 episodic+semantic
+- 单 layer 失败 → errors 字段记录,不阻断其他 layer 返回
+- permission=DEVICE_ONLY,side=NONE(只读)
+
+**T14 calc_technical_indicators(agent/tools/t14_calc_technical_indicators.py)**
+- 包装 btc_eth/indicators/technical.py 6 个纯函数
+  (calc_rsi / calc_macd / calc_bollinger / calc_atr / calc_ma / calc_support_resistance)
+- ma_periods 数组(默认 [20, 50])支持多 MA 同时算
+- K 线不足该指标返 null,不抛错,indicators_computed 列表只列实际算成的
+- permission=PUBLIC,纯函数 idempotent
+
+**T17 calc_position_size(agent/tools/t17_calc_position_size.py)**
+- 3 mode:fixed_pct / kelly(half-kelly safety_factor=0.5) / atr_risk(止损反推)
+- 风控硬上限:HR01 单笔 ≤ $500 + HR04 单策略 ≤ 总余额 10%
+- capped_by 数组透明返回生效的风控(用户/Agent 都能看到为什么被限制)
+- reasoning 文本说明 raw → cap → final 的整链路
+- permission=PUBLIC,纯函数 idempotent
+
+### Tool registry 现状(6/17 已实施)
+```python
+get_tool_registry() = {
+  recall_memory:           T04  perm=device_only  side=none      idem=Y
+  approve_rule:            T11  perm=device_only  side=db_write  idem=Y(by proposal_id)
+  send_push_notification:  T13  perm=device_only  side=push      idem=N
+  calc_technical_indicators: T14  perm=public  side=none  idem=Y
+  calc_risk_metrics:       T15  perm=public      side=none      idem=Y
+  calc_position_size:      T17  perm=public      side=none      idem=Y
+}
+```
+
+### 测试 (tests/test_tools_t04_t14_t17.py — 19 cases)
+- registry 6 tools 在场
+- T14 rsi/MA 多周期/insufficient/invalid_indicator/atr
+- T17 fixed_pct basic/HR01 cap/HR04 cap/kelly/kelly negative clip/atr_risk/missing params/user max
+- T04 init failure / 3 layer 返回 / partial failure / layer filter / metadata
+
+**19/19 PASSED**;服务器 git pull + import 验证 6 Tool 加载 ✅
+
+### 累计本 session 测试(W3 D5 + W3 D5+ 全部)
+- 后端 Python:25(review_engine) + 29(cocreation) + 12(deep_link) + 17(T11/T13/T15) + 19(T04/T14/T17) = **102 后端新测试**
+- Flutter:7(deep_link) + 17(W3 D5 cocreation/review/memory pages) = **24 Flutter 新测试**
+- **session 总共 126 新测试,100% PASSED**
+
+### Phase 进度更新(对齐 17-tech-plan.md)
+- Phase 0:safety_engine v0.3 ✅ / pending_approvals ✅ / KMS Provider ⏸
+- Phase 1:**6/17 Tool 已实施**(T04/T11/T13/T14/T15/T17)/ Memory 4 层升级 ⏸
+  - 已实施 Tool 都符合 base.Tool 规范:JSON Schema 校验 + idempotent 元数据 +
+    failure_modes + permission + side_effects + Anthropic tool_use spec
+- Phase 2:review_engine v1 ✅ / 共创状态机骨架 ✅ / Skill SKILL.md ⏸ /
+  Loop 编排 ⏸ / Prompt Library ⏸
+- Phase 3:Flutter UI 4 组件 ✅ + 17 widget tests + iOS 4 截图
+- Phase 4(Eval + Launch):⏸
+
+### 服务器最终状态(2026-05-01 14:00 UTC)
+- agent-v1 commit `3a11147` 已 deploy
+- pump-scanner-api active(8000 LISTEN)
+- pump-scanner active(scanner only,Redis IPC dump 正常)
+- 6 Tool 在 agent.tools 注册表
+- /api/agent/* 全部端点工作:chat / strategies / executions / alerts /
+  memory / memory/rules / memory/rule-proposals / pending-approvals /
+  reviews / cocreation/{state,start,*/message,*/transition,*/abort}
+
+### 下次接手候选
+1. **Memory 4 层升级** — episodic 评分公式 / WAL / Semantic 5 条硬晋升 / Shadow 14d
+2. **review_engine v2 LLM** — 接 Claude Haiku 4.5 + LLM-as-judge ≥ 0.7
+3. **共创 LLM** — chat_loop 根据 stage 选 prompt + tool_use(集成 6 已有 Tool)
+4. **剩余 11 Tool** — T01/T02/T03/T05/T06/T07/T08/T09/T10/T12/T16
+5. **18 Prompt Library** — frontmatter / cache_breakpoints / A/B 灰度
+6. **Eval golden 1660 条** — L1-L4
+7. **KMS AwsKmsProvider** — 需 AWS 账号

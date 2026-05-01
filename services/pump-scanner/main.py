@@ -592,12 +592,16 @@ async def main():
         log.warning(f"PRD-006 Regime Detector 启动失败: {e}")
 
     # ── pump signal pool dump loop ────────────────────────────
-    # 把 scanner._signal_pool 每 60s 写 /tmp/pump_signal_pool.json
-    # 让独立 api 进程(api_server.py)能读到实时信号(IPC 文件方式)
+    # 把 scanner._signal_pool 每 5s 写 Redis(主)+ 每 60s 写文件(兜底)
+    # 让独立 api 进程(api_server.py)能读到实时信号
+    # Redis: pump:signal_pool key, TTL 120s
+    # 文件: /tmp/pump_signal_pool.json (Redis 不可用时降级)
     # 引用 docs/runbook/pump-scanner-api.service
     async def _dump_signal_pool_loop():
         import json
         from datetime import datetime, timezone
+        from agent.redis_client import safe_set, KEY_PUMP_SIGNAL_POOL
+        tick = 0
         while True:
             try:
                 from scanner_ref import get_scanner
@@ -605,17 +609,23 @@ async def main():
                 if _sc is not None:
                     sigs = _sc.get_signals()
                     is_hist = bool(sigs and sigs[0].get("is_history"))
-                    with open("/tmp/pump_signal_pool.json", "w") as f:
-                        json.dump({
-                            "signals": sigs,
-                            "is_history": is_hist,
-                            "ts": datetime.now(timezone.utc).isoformat(),
-                        }, f, default=str)
+                    payload = json.dumps({
+                        "signals": sigs,
+                        "is_history": is_hist,
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    }, default=str)
+                    # Redis 主路径(5s)
+                    redis_ok = safe_set(KEY_PUMP_SIGNAL_POOL, payload, ex=120)
+                    # 文件兜底(60s 写一次,Redis 不可用时也保证有数据)
+                    if (not redis_ok) or tick % 12 == 0:
+                        with open("/tmp/pump_signal_pool.json", "w") as f:
+                            f.write(payload)
             except Exception as _e:
                 log.warning(f"signal_pool dump 失败: {_e}")
-            await asyncio.sleep(60)
+            tick += 1
+            await asyncio.sleep(5)
     asyncio.create_task(_dump_signal_pool_loop())
-    log.info("signal pool dump loop 已启动 (每 60s 写 /tmp/pump_signal_pool.json)")
+    log.info("signal pool dump loop 已启动 (Redis 5s + 文件 60s 兜底)")
 
     # 启动 FastAPI（如果启用）
     if ENABLE_API:

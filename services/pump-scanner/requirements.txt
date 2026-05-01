@@ -27,3 +27,6 @@ eth-account==0.13.7
 
 # 推送通知（FCM）
 firebase-admin>=6.2.0
+
+# IPC 缓存(独立 uvicorn 进程跨进程读 pump signal_pool)
+redis>=5.0.0

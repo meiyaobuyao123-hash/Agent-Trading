@@ -39,21 +39,47 @@ async def get_pump_signals():
         }
 
     # 独立 api 进程(脱钩自 main.py):scanner 不在本进程
-    # main.py 每 60s 把 _signal_pool 写到文件,api 进程读
+    # 读取顺序: Redis (主, 5s 新鲜) → 文件 (兜底, 最差 60s) → 空
     # 引用 docs/runbook/pump-scanner-api.service + main.py signal_pool_dump_loop
     import json
     import os
+    from datetime import datetime, timezone
+
+    # ── 1. Redis 主路径 ───────────────────────────────────────
+    try:
+        from agent.redis_client import safe_get_async, KEY_PUMP_SIGNAL_POOL
+        raw = await safe_get_async(KEY_PUMP_SIGNAL_POOL)
+        if raw:
+            data = json.loads(raw)
+            signals = data.get("signals", [])
+            ts_str = data.get("ts")
+            dump_age_ms = None
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+                    dump_age_ms = int((datetime.now(timezone.utc) - ts).total_seconds() * 1000)
+                except Exception:
+                    pass
+            return {
+                "signals": signals,
+                "count": len(signals),
+                "is_history": data.get("is_history", False),
+                "source": "redis",
+                "dump_age_ms": dump_age_ms,
+            }
+    except Exception as e:
+        log.warning("Redis 读 signal_pool 失败,降级到文件: %s", e)
+
+    # ── 2. 文件兜底 ───────────────────────────────────────────
     DUMP_PATH = "/tmp/pump_signal_pool.json"
     try:
         if not os.path.exists(DUMP_PATH):
-            return {"signals": [], "count": 0, "is_history": False,
-                    "message": "信号池文件还未生成(scanner 启动后 60s 内首次)"}
-        # 文件 mtime 检查(超过 5min 视为陈旧)
-        from datetime import datetime, timezone
+            return {"signals": [], "count": 0, "is_history": False, "source": "none",
+                    "message": "信号池还未生成(Redis 不可用 + 文件未写)"}
         mtime = datetime.fromtimestamp(os.path.getmtime(DUMP_PATH), tz=timezone.utc)
-        age_s = (datetime.now(timezone.utc) - mtime).total_seconds()
-        if age_s > 300:
-            log.warning("pump signal_pool dump 文件陈旧 %ds", int(age_s))
+        age_ms = int((datetime.now(timezone.utc) - mtime).total_seconds() * 1000)
+        if age_ms > 300_000:
+            log.warning("pump signal_pool 文件陈旧 %ds", age_ms // 1000)
         with open(DUMP_PATH, "r") as f:
             data = json.load(f)
         signals = data.get("signals", [])
@@ -61,12 +87,12 @@ async def get_pump_signals():
             "signals": signals,
             "count": len(signals),
             "is_history": data.get("is_history", False),
-            "source": "file_ipc",
-            "dump_age_s": int(age_s),
+            "source": "file",
+            "dump_age_ms": age_ms,
         }
     except Exception as e:
         log.warning("读 signal pool 文件失败: %s", e)
-        return {"signals": [], "count": 0, "message": "scanner not ready",
+        return {"signals": [], "count": 0, "source": "none", "message": "scanner not ready",
                 "error": str(e)[:100]}
 
 

@@ -1505,3 +1505,55 @@ cd299f6  feat(flutter): Phase 3 UI — 共创 stepper + 复盘报告 + 记忆管
 3. **记忆管理 update/delete 后端真实施**(agent/memory/semantic.py 暴露 API)
 4. **模式晋升 UI**(paper→notify→auto)
 5. **17 Tool / 18 Prompt 真实施**(W7-W12)
+
+---
+
+## 会话 11 续(Phase 3 后端 endpoints,2026-05-01)
+
+### 用户指令
+"继续工作"(W3 D5 收尾后接续)
+
+### 实际产出(commit `ad8516f`)
+5 个新 endpoint 加到 routes_agent.py 末尾:
+- GET    /api/agent/memory/rules                    list(读 Supabase agent_memory)
+- PATCH  /api/agent/memory/rules/{rule_id}          启用/禁用(改 is_active)
+- DELETE /api/agent/memory/rules/{rule_id}          软删(is_active=false)
+- POST   /api/agent/memory/rule-proposals/{id}/approve  MOCK 采纳
+- GET    /api/agent/reviews?period=daily|weekly|monthly  MOCK 复盘
+
+### 关键设计
+- `_to_semantic_rule` 把 Supabase row 映射成 Flutter SemanticRule schema(状态由
+  shadow_mode_until / dormant_since / is_active 派生)
+- list 在 DB 不可达时返空数组而非 500(让 Flutter fallback 到本地 mock)
+- update/delete 后强制 SemanticMemory.force_refresh 让 5min 缓存立刻 invalidate
+- approve_rule_proposal MOCK_MODE 直接返 promoted_rule_id(W7-W12 接 reflection)
+- reviews 全 MOCK 数据(S07 review-engine 真实施在 W7-W12)
+
+### 测试 (tests/test_routes_memory_reviews.py — 16 cases)
+- list mock_mode / db 映射各种 status / DB error fallback / shadow / dormant / disabled
+- update invalid_status_400 / active / disabled
+- delete + approve mock
+- reviews daily/weekly/monthly window 检查 / invalid period 422 / required fields
+
+**16/16 PASSED**
+
+### 部署 + 验证
+- agent-v1 push 后 server git pull + restart pump-scanner-api
+- 服务器 localhost curl 5 个 endpoint 都返真实 JSON
+- 外网经 nginx CN IP 被 GEO middleware 拦(/api/agent/* 都拦,只有 /health 等 EXEMPT)
+- Flutter 在 CN 网络下自动 fallback 到本地 mock(数据形态对齐,UI 视觉一致)
+
+### 已知限制 / 下次接手
+1. Flutter 端到端真实联调需要非 CN IP(VPN 或海外测试)
+2. `/api/agent/memory/rules` 当前 Supabase 表 `agent_memory` 0 行 type=semantic,
+   等 Agent 真跑起来 reflection→try_promote 才会有数据
+3. `/api/agent/reviews` 目前固定 mock,接 S07 真实施时需要从 agent_executions /
+   token_performance 汇总 + Claude Haiku 4.5 写 headline/body
+4. 本地 Py3.9 vs routes_thesis PEP 604 syntax 兼容:测试用 `from api.routes_agent
+   import router as agent_router` + 自建 mini FastAPI app 绕开
+
+### 候选下一步
+- S07 review-engine LLM 真实施(把 mock reviews 接到真实 trade 数据 + Claude)
+- conversation_states 表写入 + 共创 stepper 状态机后端
+- 17 Tool 真实施 (T04 recall_memory / T11 approve_rule / T13 push 等)
+- Flutter 推送通知接入 strategy_triggered / hitl_approval / review_ready 三类深链

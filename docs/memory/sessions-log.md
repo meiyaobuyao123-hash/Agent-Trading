@@ -747,3 +747,41 @@
 - 更新 `CLAUDE.md` 当前功能状态表加 docs/agent-pm 行
 - 更新 `pitfalls.md` 加 3 条（2 条线上 bug + macOS sort locale 坑）
 - `17-tech-plan.md` 落到 `docs/agent-pm/`，README 矩阵新增 L6 工程落地区
+
+---
+
+## 2026-05-01 会话（Agent v1 W1 启动包开发）
+
+### 做了什么
+- 用户决策"全部你来干" → 进入实施阶段，开 `agent-v1` 长期分支
+- 技术选型（我直接定）：OpenAPI 用 FastAPI 自带 / Flutter 不用 codegen 手写 model / Mock server 用后端 `MOCK_MODE=true` 环境变量
+- **W1 启动包提交**（commit `e08eae1`，28 文件 2266 行，分支 agent-v1 已推 GitHub）：
+  - **8 个 migration SQL**（034-041）：KMS / security_audit_log / pending_approvals+WAL / conversation_states / prompt_versions / agent_thesis / semantic_shadow_mode / eval_results
+  - **后端骨架 9 个 .py**：safety_engine / kms_client / cost_guard / output_filter / prompt_loader / memory/wal / skills/loader / tools/base + 4 个 __init__
+  - **safety_policy.yaml**：30 HR + 13 CB + 5 C 规则名（内容 TODO）
+  - **3 个 routes stub**：routes_thesis / routes_audit / routes_admin（MOCK_MODE 返 fixture）
+  - **4 个 Flutter model**：thesis / pending_approval / review / semantic_rule
+  - **2 个 README**：prompts/v1 + skills
+
+### 讨论结论
+- **一个 session 做不完 16-20 周**：必须分多 session 推进，每次 session 用户说"继续"我从 sessions-log 接手
+- **所有代码骨架带 TODO 注释**：实际业务逻辑实施在 Phase 0 W3-W12，本次只是搭建可联调的骨架
+- **migration 暂不执行**：W3 KMS 接入或 W7 Memory WAL 实施时再 Supabase Dashboard 执行对应 SQL，不必现在跑
+- **不混 main 分支**：agent-v1 长期分支独立推进，不影响线上 main
+- **MOCK_MODE 设计**：后端新 endpoint 默认 501（未实施），设 `MOCK_MODE=true` 返 fixture，Flutter 即刻可联调不阻塞
+
+### 被否定的方案
+- ~~一次性塞几万行代码完成所有 Phase~~：单 session 不可能，分多次推进
+- ~~OpenAPI 手写 OAS YAML~~：FastAPI 自带 /openapi.json 零成本
+- ~~Flutter 用 openapi-generator codegen~~：跟现状不一致，手写 model 维持
+- ~~单独跑 Prism mock server~~：多一个进程，不如后端 MOCK_MODE 开关
+
+### 下次 session 接手
+- 读取本条目 + `docs/agent-pm/17-tech-plan.md` Phase 0 W3 任务清单
+- 已就绪骨架：safety_engine / kms_client / cost_guard / output_filter / prompt_loader / memory/wal / skills/loader / tools/base
+- 下一步 W3 候选任务（按 17-tech-plan.md Phase 0）：
+  1. KMS 实施（kms_client.py AwsKmsProvider 实现 + ANTHROPIC/OKX/Helius key 切 KMS）
+  2. safety_engine HR01-HR30 检查实施（trade_executor pre_condition 接入）
+  3. cost_guard 5 级降级实施（接 prompt_invocations 表）
+  4. routes_admin Kill Switch 实施（< 10s 全局 BLOCKED）
+- 仓库状态：分支 agent-v1 在 e08eae1，main 在 429f5a8（未变）

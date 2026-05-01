@@ -33,6 +33,9 @@ from api.routes_btc_eth import router as btc_eth_router
 from api.routes_data import router as data_router
 from api.routes_backtest import router as backtest_router
 from api.routes_hot import router as hot_router
+from api.routes_thesis import router as thesis_router      # W3 D3
+from api.routes_audit import router as audit_router        # W3 D3
+from api.routes_admin import router as admin_router        # W3 D3
 
 log = logging.getLogger(__name__)
 
@@ -78,6 +81,10 @@ app.include_router(btc_eth_router)
 app.include_router(data_router)
 app.include_router(backtest_router)
 app.include_router(hot_router)
+# W3 D3 — Agent v1 新增 endpoints(默认 MOCK_MODE,真实施 W4-W12)
+app.include_router(thesis_router)
+app.include_router(audit_router)
+app.include_router(admin_router)
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

@@ -6,6 +6,8 @@ import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
+import '../../widgets/agent/thesis_card.dart';
+import '../../models/thesis.dart';
 import 'strategy_detail_page.dart';
 import 'ai_insights_tab.dart';
 
@@ -233,6 +235,11 @@ class _ChatTabState extends State<_ChatTab>
   String? _pendingPrompt;
   String? _strategyError;
 
+  /// W3 D3: ThesisCard demo
+  Thesis? _demoThesis;
+  bool _loadingThesis = false;
+  String? _thesisErr;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -257,6 +264,152 @@ class _ChatTabState extends State<_ChatTab>
     _streamText.dispose();
     super.dispose();
   }
+
+  /// W3 D3 ThesisCard Demo — 优先调真实后端 /api/thesis(MOCK_MODE 返 fixture),
+  /// 失败时 fallback 本地 hardcoded mock,确保 UI 一定能展示
+  Future<void> _loadDemoThesis() async {
+    if (_loadingThesis) return;
+    setState(() {
+      _loadingThesis = true;
+      _thesisErr = null;
+    });
+    try {
+      final raw = await AgentService().requestThesis(
+        chain: 'solana',
+        address: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
+        level: 'auto',
+      );
+      Thesis t;
+      if (raw != null) {
+        t = Thesis.fromJson(raw);
+      } else {
+        t = _localMockThesis();
+        _thesisErr = '后端不可用,使用本地 demo 数据';
+      }
+      setState(() {
+        _demoThesis = t;
+        _loadingThesis = false;
+      });
+    } catch (e) {
+      setState(() {
+        _demoThesis = _localMockThesis();
+        _thesisErr = '后端调用失败,使用本地 demo: $e';
+        _loadingThesis = false;
+      });
+    }
+  }
+
+  Widget _buildThesisDemoSection() {
+    final scheme = Theme.of(context).colorScheme;
+    if (_demoThesis != null) {
+      // 已加载 → 显示 ThesisCard + 关闭按钮
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (_thesisErr != null)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              color: Colors.amber.withValues(alpha: 0.15),
+              child: Row(children: [
+                const Icon(Icons.info_outline, size: 14, color: Colors.amber),
+                const SizedBox(width: 6),
+                Expanded(child: Text(_thesisErr!,
+                  style: const TextStyle(fontSize: 11, color: Colors.amber))),
+                IconButton(
+                  iconSize: 16,
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () => setState(() {
+                    _demoThesis = null;
+                    _thesisErr = null;
+                  }),
+                ),
+              ]),
+            ),
+          ThesisCard(thesis: _demoThesis!),
+          if (_thesisErr == null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextButton.icon(
+                icon: const Icon(Icons.close, size: 14),
+                label: const Text('关闭 Demo', style: TextStyle(fontSize: 12)),
+                onPressed: () => setState(() => _demoThesis = null),
+              ),
+            ),
+        ],
+      );
+    }
+    // 未加载 → 显示触发按钮
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Material(
+        color: scheme.primaryContainer.withValues(alpha: 0.3),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _loadingThesis ? null : _loadDemoThesis,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(children: [
+              if (_loadingThesis)
+                const SizedBox(
+                  width: 16, height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              else
+                Icon(Icons.auto_awesome, size: 18, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  _loadingThesis ? '生成中…' : '试一试 AI 分析报告(Demo)',
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: scheme.onPrimaryContainer,
+                  ),
+                ),
+              ),
+              if (!_loadingThesis)
+                Icon(Icons.arrow_forward, size: 14, color: scheme.primary),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 后端不可用时的本地 fallback(纯演示)
+  Thesis _localMockThesis() => Thesis(
+        thesisId: 'demo-local-001',
+        chain: 'solana',
+        tokenAddress: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
+        tokenSymbol: 'TRUMP',
+        level: 'L2',
+        direction: 'bullish',
+        conviction: 0.72,
+        entryZone: const EntryZone(low: 1.10, high: 1.20),
+        stopLoss: 0.95,
+        targetPrice: const [1.45, 1.80, 2.40],
+        risks: const [
+          '代币年龄仅 48h,流动性可能突然枯竭',
+          'Top10 持仓 58%,有大户砸盘风险',
+        ],
+        summary30w: '短期看涨,但建议小仓位试水,设硬止损 0.95',
+        evidence: [
+          EvidenceItem(source: 'smart_money_signals', value: '+45000 USD net 24h', ts: DateTime.now().toUtc()),
+          EvidenceItem(source: 'hot_coins.score', value: '78', ts: DateTime.now().toUtc()),
+        ],
+        similarPastCases: [
+          SimilarCase(
+            tokenSymbol: 'PEPE',
+            occurredAt: DateTime(2026, 3, 15),
+            outcome: 'win',
+            similarity: 0.78,
+          ),
+        ],
+        costUsd: 0.025,
+        latencyMs: 4200,
+        ts: DateTime.now().toUtc(),
+      );
 
   Future<void> _send() async {
     final text = _controller.text.trim();
@@ -380,6 +533,8 @@ class _ChatTabState extends State<_ChatTab>
     super.build(context); // AutomaticKeepAliveClientMixin 要求
     return Column(
       children: [
+        // W3 D3 ThesisCard Demo Banner
+        _buildThesisDemoSection(),
         Expanded(
           child: ListView.builder(
             controller: _scrollController,

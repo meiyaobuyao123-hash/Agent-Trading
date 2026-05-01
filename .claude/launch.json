@@ -14,6 +14,17 @@
       "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
       "cwd": "apps/admin",
       "port": 3002
+    },
+    {
+      "name": "flutter-web",
+      "runtimeExecutable": "flutter",
+      "runtimeArgs": [
+        "run", "-d", "web-server",
+        "--web-port", "3010",
+        "--dart-define=API_BASE_URL=http://43.156.207.26"
+      ],
+      "cwd": "apps/app",
+      "port": 3010
     }
   ]
 }

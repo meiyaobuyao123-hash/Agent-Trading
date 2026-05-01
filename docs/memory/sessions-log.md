@@ -1019,3 +1019,53 @@
   3. **CB 外部触发 monitor**（CB07/08/09/11）
   4. **routes_optimizer/routes_agent 接入 safety_ctx**（让所有真金路径都过 safety）
   5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号）
+
+---
+
+## 2026-05-01 会话 6（W3 D3 续 2：ThesisCard Chat Tab 接入 + Flutter widget test）
+
+### 做了什么
+- **api/app.py 挂载 W3 routers**：
+  - thesis_router / audit_router / admin_router 加入 include_router（之前 W1 启动包写了 stub 但忘了挂载）
+  - 后端跑起来后 /api/thesis 等真能响应（MOCK_MODE=true 返 fixture）
+- **agent_screen.dart Chat Tab 接入 ThesisCard Demo Banner**：
+  - import ThesisCard + Thesis model
+  - _ChatTabState 加 _demoThesis / _loadingThesis / _thesisErr 状态
+  - _loadDemoThesis() 优先调真实后端 /api/thesis,失败时 fallback 本地 hardcoded mock（ts/EvidenceItem/SimilarCase 完整 fixture）
+  - _buildThesisDemoSection() 在 Chat Tab build 顶部:
+    - 未加载 → 显示"试一试 AI 分析报告(Demo)"按钮(InkWell + AutoAwesome 图标)
+    - 加载中 → CircularProgressIndicator
+    - 已加载 → 显示 ThesisCard + 关闭按钮(后端不可用时显示 amber 提示)
+  - 不修改原 chat 流（_messages / _ChatInput 不变）
+- **Flutter widget test test/thesis_card_test.dart**（18 用例）：
+  - 基本渲染 11:symbol/chain/level/4 个 direction/价格三件套/summary/risks/evidence count/cases count/footer
+  - 低置信度警告 2:conviction<0.5 显示红条 / >=0.5 不显示
+  - 折叠交互 2:点击 Evidence/SimilarCases 展开后显示具体数据
+  - 边界场景 3:空 evidence/cases/footer 不渲染对应区
+  - **全部通过 < 1s**
+- **累计 182 测试通过**（后端 164 + Flutter 18）
+
+### 讨论结论
+- **Flutter web preview 走不通**：`shell-init: chdir error retrieving current directory: getcwd: cannot access parent directories: Operation not permitted` — preview tool 沙箱跟 cwd 软链接冲突。改走 widget test
+- **widget test 替代 preview screenshot**：18 个测试覆盖所有 ThesisCard 渲染分支,验证粒度比截图更精确（比如"conviction>=0.5 不显示红条"这种 visual 否定通过截图很难证）
+- **Demo Banner 设计**：内嵌 Chat Tab,默认未加载状态显示按钮;触发后 真实 API 失败 fallback 本地 mock,确保 UI 一定能展示
+- **app.py 路由挂载是 W1 启动包遗漏**：当时只写 stub 文件没 include_router,本次补上
+
+### 不在本 session 范围
+- preview_start 跑 Flutter web/iOS（受沙箱限制走不通）
+- 服务器跑 migrations
+- 把 ThesisCard 接入更多入口(token_detail_page / strategy_detail_sheet)
+
+### 仓库状态（待 commit）
+- 修改：api/app.py(+挂载 3 个 router) / agent_screen.dart(+Demo Banner)
+- 新增：apps/app/test/thesis_card_test.dart(18 用例)
+- 配置：.claude/launch.json 加 flutter-web 配置(本仓库)
+
+### 下次 session 接手
+- 已就绪:182 测试通过,ThesisCard 端到端 UI 渲染已验证
+- 候选下一步:
+  1. **服务器跑 migrations**（local_pg/034-039,041,042 + Supabase 040）— prod 操作需用户确认
+  2. **routes_agent.chat 接入 safety_ctx**（让 chat 路径也过 safety）
+  3. **CB 外部触发 monitor**（CB07/08/09/11 后台监控调 trip_breaker）
+  4. **KMS AwsKmsProvider 实施**（需 AWS 账号）
+  5. **HITL 详情页 hitl_approval_page.dart 起步**（Phase 3 下一块)

@@ -125,3 +125,19 @@
   - **5 次 restart pump-scanner 后 8000 始终稳定;3 次同时 restart 两个服务都秒恢复**
   - **遗留**:`_signal_pool` 在 scanner 主进程内存,api 独立进程读不到 → 走文件 IPC(commit `660f4dc`):main.py `_dump_signal_pool_loop` 每 60s 写 `/tmp/pump_signal_pool.json`,routes_pump 读这个文件。最多 60s 延迟,Flutter 30s 轮询场景可接受
   - **下次再优化方向**:Redis pub/sub 做毫秒级 IPC / scanner 落 _signal_pool 到独立 DB 表
+
+## asyncio.create_task 在 event loop starve 时不可靠（2026-05-01 W3 D5 修 Redis IPC 时发现）
+- **现象**:`asyncio.create_task(_dump_signal_pool_loop())` 跑一次后 await sleep(5),**第二次永远不被调度回来**。Redis 只 set 了一次,TTL 过后再无数据
+- **诊断**(py-spy dump):MainThread 卡在 `start_api_server` 的 uvicorn import lock(websockets/protocols);asyncio_0 thread 跑 sklearn HMM `train` (CPU bound)
+- **根因**:主 event loop 被 SmartMoneyTracker WebSocket 重连 + EventBus 高频 + 13 collector + sklearn 子线程占着 GIL 多重夹击,sleep 后再不会 yield 回 dump task
+- **解决**:轻量 IO 任务用 `threading.Thread + time.sleep` 绕开 event loop,scanner.get_signals() 是同步内存读,线程安全
+- **教训**:不要假设 asyncio.sleep 一定会被准时唤醒;主 loop 拥挤时 task 会无声 starve,且没异常
+- **诊断工具**:`py-spy dump --pid <PID>` 立刻能看到所有线程当前栈
+
+## .env 文件 ENABLE_API=true 覆盖 systemd Environment=ENABLE_API=false（2026-05-01 W3 D5 部署遇到)
+- **现象**:`/etc/systemd/system/pump-scanner.service` 设了 `Environment=ENABLE_API=false`,但 `systemctl show` 也显示 false,**main.py 实际跑出来 ENABLE_API 仍是 true**(日志看到 `FastAPI server starting on port 8000`)
+- **根因**:`/opt/agent-trading/services/pump-scanner/.env` 文件里有 `ENABLE_API=true`,python-dotenv 加载顺序高于 systemd Environment(`load_dotenv()` 在 `os.getenv("ENABLE_API")` 之前跑)
+- **解决**:删 .env 里这一行,或者改成 `ENABLE_API=false`(我用了后者,加了 .bak 备份)
+- **后果**:pump-scanner 主进程仍想启 FastAPI,跟 pump-scanner-api 进程抢 8000 端口,uvicorn import 卡死,整个 main event loop 阻塞 → dump loop 不动
+- **教训**:systemd Environment 不一定生效,要看代码加载顺序;改 .env 永远比改 systemd 更优先
+

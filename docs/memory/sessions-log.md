@@ -1424,3 +1424,84 @@ b864107  fix: pump signals DB fallback 改用 daily_picks (失败)
   2. **Phase 3 Flutter UI**(共创 stepper / 复盘 / 记忆管理 — 用户的 4 路径中第 4 项,本次未做)
   3. **Redis IPC 优化**(把文件 IPC 升级到毫秒级)
   4. **诊断 pump-scanner 自身 restart 卡死**(虽然 8000 不再受影响,但 scanner 自身可能仍卡 — 看是不是 SmartMoneyTracker / 别的)
+
+
+---
+
+## 会话 11 (2026-04-30 续 / W3 D5):agent-v1 上线 + Redis IPC + Phase 3 Flutter UI
+
+### 用户指令
+"继续做 1 2 3"(指上 session 末尾候选 1-3:agent-v1 切上线 + Redis IPC + Phase 3 UI)
+
+### 实际产出
+1. **agent-v1 切上线**(commit `2171af7` 已 deploy)
+   - 本地切 agent-v1 + merge main + 解决 3 个 memory file 冲突 (git checkout --theirs)
+   - 服务器 git pull origin agent-v1 + systemctl restart 双服务
+   - 验证:SafetyEngine v0.3 加载 `HR=30 CB=13 C=5 hr→cb=6 state=normal`
+   - 12 张 agent_v1 本地 PG 表确认存在(agent_trading_local DB)
+   - 8000 LISTEN(PID=pump-scanner-api),scanner active
+
+2. **Redis IPC**(commit `5b39e14` + `769f849` + `77687b5`)
+   - 新建 `agent/redis_client.py`:singleton sync + async + fail-safe(连不上不阻塞)
+   - main.py `_dump_signal_pool_loop` 改 threading.Thread + time.sleep(5)
+     **核心发现**:asyncio.create_task 跑的 loop 第一次 await sleep 后再不会被调度
+     (event loop 被 SmartMoneyTracker WS / EventBus / 13 collector starve)
+     线程绕开 event loop,scanner.get_signals() 是同步内存读,线程安全
+   - routes_pump.py /signals 三层降级:Redis(主)→ 文件(兜底)→ 空
+   - 返回结构加 `source: "redis"|"file"|"none"` + `dump_age_ms`
+   - requirements.txt 加 `redis>=5.0`
+   - 服务器 pip install redis-7.4.0 + restart
+   - **关键修复**:服务器 `.env` 文件里 `ENABLE_API=true` 覆盖了 systemd 的
+     `Environment=ENABLE_API=false` (python-dotenv 优先级高于 systemd env),
+     导致 pump-scanner 主进程仍然启 FastAPI 卡 import lock。改 .env 后正常
+   - 验证:dump_age_ms < 1s,3×systemctl restart 全稳定,Redis ts 实时更新
+
+3. **Phase 3 Flutter UI**(commit `cd299f6`)
+   - `lib/widgets/agent/cocreation_stepper.dart`:7 阶段横向 stepper +
+     当前 stage 提示 + 完成步骤打勾 + collapsed 模式
+   - `lib/screens/agent/review_page.dart`:日/周/月切换 + Summary headline +
+     6 metrics 网格 + Insights 卡 + RuleProposals(Dry-run/采纳按钮)
+   - `lib/screens/agent/memory_management_page.dart`:统计条
+     (Active/Shadow/Dormant 数) + 规则卡(状态徽章 + 证据 chip + 启用/禁用/删除)
+     + Shadow Mode 14d 倒计时 + Dormant 30d 提示 + 帮助 bottom sheet
+   - `lib/services/agent_service.dart` 加 5 个 mock method
+     (getReview / listSemanticRules / updateRule / deleteRule / approveRuleProposal)
+   - `lib/screens/agent/ai_insights_tab.dart` 顶部加 Phase 3 入口双卡
+     (复盘报告 + 我的规则)
+   - `lib/screens/agent/agent_screen.dart` Chat Tab 加共创 stepper demo banner
+   - 17 widget tests 全部 PASSED(7 + 5 + 5)
+   - **原生 iOS 渲染验证 4 张截图**(iPhone 17 Pro Max):
+     `/tmp/screenshot-1-cocreation-banner.png` Chat Tab 三 demo banner
+     `/tmp/screenshot-2-stepper.png` 共创 stepper 5/7 微调阶段
+     `/tmp/screenshot-3-review.png` 日报 + insights + rule proposal
+     `/tmp/screenshot-4-memory.png` 4 规则卡 (Active×2 + Shadow×1 + Dormant×1)
+
+### Commits 索引(本 session)
+```
+2171af7  merge main into agent-v1: 8000 bug 治本 + 记忆同步(已 deploy)
+5b39e14  feat(ipc): pump signal_pool Redis IPC + 文件兜底
+769f849  fix(ipc): dump loop 改用独立线程绕开 event loop starvation
+77687b5  debug(ipc): dump thread 加诊断日志(60s 一次)
+cd299f6  feat(flutter): Phase 3 UI — 共创 stepper + 复盘报告 + 记忆管理 ⭐
+```
+
+### 服务器最终状态(2026-05-01 12:30 UTC)
+- 分支:agent-v1 commit `cd299f6`(实际跑 769f849 后端;cd299f6 是 Flutter)
+- pump-scanner active:scanner-only,signal_pool dump 线程 5s 写 Redis
+- pump-scanner-api active:uvicorn only,8000 LISTEN
+- Redis:pump:signal_pool 实时 ts(< 1s 老化),TTL 120s
+- Python deps:redis-7.4.0 + py-spy(诊断用)新装
+
+### 关键发现 / 教训
+- **asyncio.create_task 在主 event loop 被 starve 时不可靠** — 长 IO bound 任务 +
+  CPU bound thread (sklearn HMM)+ WebSocket 重连风暴会让 sleep 几秒后无法 yield 回
+  解决:轻量、独立、跨 process 的任务用 threading.Thread + time.sleep
+- **.env 覆盖 systemd env**:python-dotenv 加载顺序高于 systemd Environment,
+  systemd 设了不一定生效。要么删 .env 对应行,要么 systemd 用 EnvironmentFile=
+
+### 下次 session 候选
+1. **共创 stepper 状态机后端**(conversation_states 表 + S04 真实施)
+2. **review_engine LLM 调用真实施**(S07 skill + 日/周/月 cron)
+3. **记忆管理 update/delete 后端真实施**(agent/memory/semantic.py 暴露 API)
+4. **模式晋升 UI**(paper→notify→auto)
+5. **17 Tool / 18 Prompt 真实施**(W7-W12)

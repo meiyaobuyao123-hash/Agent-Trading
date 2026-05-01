@@ -17,3 +17,26 @@ Tools — 17 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
   - Tool 必须幂等(除非显式标 non_idempotent)
   - 所有 Tool 严格 JSON Schema 校验
 """
+
+from .base import Tool, ToolMetadata, ToolResult, Permission, SideEffect
+
+# W3 D5+: 已实施 3 个核心 Tool
+from .t11_approve_rule import ApproveRuleTool
+from .t13_send_push_notification import SendPushNotificationTool
+from .t15_calc_risk_metrics import CalcRiskMetricsTool
+
+
+def get_tool_registry() -> dict:
+    """返回 {tool_name: Tool 实例} 注册表(已实施的 Tool)。"""
+    return {
+        "approve_rule": ApproveRuleTool(),
+        "send_push_notification": SendPushNotificationTool(),
+        "calc_risk_metrics": CalcRiskMetricsTool(),
+    }
+
+
+__all__ = [
+    "Tool", "ToolMetadata", "ToolResult", "Permission", "SideEffect",
+    "ApproveRuleTool", "SendPushNotificationTool", "CalcRiskMetricsTool",
+    "get_tool_registry",
+]

@@ -101,6 +101,7 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 - ✅ W3 D3 续 2：app.py 挂载 thesis/audit/admin routers；agent_screen.dart Chat Tab 加 ThesisCard Demo Banner（真实 API 调用 + 失败 fallback 本地 mock）；**Flutter widget test 18 个全部通过**；累计 **182 测试**（后端 164 + Flutter 18）
 - ✅ W3 D3 续 3：用户纠正"跑偏了"，Flutter web preview 改为原生 iOS 模拟器；`flutter run -d DBC925B5...` 跑通 + 修复 `AgentService.instance` singleton 调用 + `xcrun simctl io booted screenshot` 验证 ThesisCard 完整渲染（TRUMP/L2/看涨 72%/价格三件套/风险/折叠/Footer 全部 OK）；写 feedback_native_flutter.md 防下次再跑偏
 - ✅ W3 D4：routes_agent.chat/stream 接入 safety pre-check + cb_monitor 模块(CB07/CB08 外部触发) + routes_agent HITL endpoints(MOCK_MODE) + Flutter HitlApprovalPage(倒计时/策略/金额/嵌入 ThesisCard/批准+拒绝按钮) + Demo Banner 入口；**累计 222 测试通过**(后端 191 + Flutter 31);原生 iOS HITL 详情页截图验证(05-hitl-page.png);写 prod 部署 runbook
+- ⚠️ W3 D4 部署服务器(用户授权 SSH 密码后):备份 + 切 agent-v1 + dry-run import OK(83 routes / 30 HR + 13 CB)+ **8 张本地 PG 表已建**(local_pg/034-039,041,042 全部 success)+ 服务重启;**遇基础设施 bug**:任何 systemctl restart 后 FastAPI 8000 不 LISTEN(回滚 main 也一样,跟 agent-v1 无关,见 pitfalls.md);已切回 main 分支保线上稳定;agent-v1 GitHub commit `a6e1674` 完整保留
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

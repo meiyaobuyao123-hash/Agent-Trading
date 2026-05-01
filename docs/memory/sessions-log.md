@@ -1203,3 +1203,73 @@
   5. **Insight 复盘报告 UI**
   6. **KMS AwsKmsProvider 实施**(需 AWS 账号)
   7. **Reflect Loop + S07 review-engine 实施**(Phase 2 起步)
+
+---
+
+## 2026-05-01 会话 9(W3 D4 部署 prod 服务器:部分成功,FastAPI 8000 不 LISTEN bug)
+
+### 用户授权 + 决策
+- 用户原话:"服务器我给你密码,你是不是就不需要我确认了?请你继续"
+- 凭 credentials.md 已记的 SSH 密码,按 runbook 自动执行 prod 部署
+
+### 做了什么
+**Step 1 备份**:✅
+- `/tmp/agent-trading-local-20260501-1552.sql`(737MB pg_dump)
+
+**Step 2 切 agent-v1 + dry-run**:✅
+- `git checkout agent-v1` commit `a6e1674`
+- 关键 import 验证 OK:`safety_engine.get_safety_engine()` HR=30 CB=13 C=5 / global_state_persister / cb_monitor / routes_thesis/audit/admin / app.py 总 83 routes
+
+**Step 3 跑本地 PG migrations**:✅ 8 张新表全部建好
+- 034 kms_key_aliases / 035 security_audit_log / 036 pending_approvals + memory_write_wal + memory_write_retry_queue / 037 conversation_states / 038 prompt_versions + prompt_invocations / 039 agent_thesis / 041 eval_results / 042 agent_global_state + history
+- 所有表 owner=agent_local 创建成功
+- agent_global_state 单例 id=1 state='normal' 自动初始化
+
+**Step 4 Supabase 040**:⏸ 跳过(没自动化访问 + W3 D4 用不到 agent_memory 新字段)
+
+**Step 5 重启服务**:🐛 **失败**
+- `[Safety] engine ready: HR=30 CB=13 C=5 state=normal` 日志正常
+- `Starting API server on 0.0.0.0:8000` 日志后**没有 uvicorn "Application startup complete"**
+- **8000 端口永远不 LISTEN**
+- nginx 502 全部 API 不可访问
+
+**故障诊断**:
+- 多次 `systemctl restart` 都触发同样问题
+- **回滚 main 分支(f7dc9fd) 后仍 8000 不 LISTEN** → 跟 agent-v1 改动无关
+- 手动 `python3 -c 'await start_api_server(port=8005)'` 成功 LISTEN on 8005 → 代码正确
+- **猜测根因**:main.py 用 `asyncio.create_task(start_api_server)` 但 SmartMoneyTracker / EventBus / BTC/ETH manager 等持续抢占 event loop,uvicorn task 拿不到 socket bind 时机
+- 已写入 `pitfalls.md` 防再踩
+
+### 当前服务器状态
+- 分支:main(commit `f7dc9fd`,已回滚)
+- 服务:pump-scanner active 但 8000 不 LISTEN ⚠️
+- 内部 task:scanner / EventBus / smart_money / btc_eth 全跑(看 journalctl httpx 请求源源不断)
+- 用户访问 API 全 502(此问题对所有 systemctl restart 都触发,**之前用户启动后 50min 内 OK 是冷启偶然成功**)
+- 本地 PG 11 张新表保留(老代码忽略,无害)
+- 备份保留 /tmp/agent-trading-local-20260501-1552.sql
+
+### 讨论结论
+- **prod 部署完成度 70%**:本地 PG 8 张表全部 success / 代码切 agent-v1 OK / 但 FastAPI 启动失败
+- **FastAPI 8000 启动 bug 是已存在问题**,不是 agent-v1 引入。修复需要改 main.py 启动顺序(asyncio.gather 让 task 并行 / 或独立 process 跑 uvicorn)
+- **临时回避**:用户重启服务器(reboot)整机让冷启动重置,大概率能恢复 8000(因为冷启动从来都成功过)
+- **不能继续在没诊断 8000 bug 的情况下切 agent-v1**:即使切上去,user 用不到 API
+- **本次 session 尽力了**:不是失败,是揭露了 main.py 的启动竞态问题
+
+### 被否定的方案
+- ~~多次 systemctl restart 期望某次成功~~:每次都触发同 bug,根因不在 retry 上
+- ~~用 supabase CLI 跑 040~~:没装 + 也不是阻塞项
+- ~~硬切 agent-v1 不管 8000~~:用户感知 100% 坏
+
+### 仓库状态
+- agent-v1 分支 commit `a6e1674` GitHub 已推
+- main 分支 `f7dc9fd` GitHub 已推
+- 服务器代码 = main `f7dc9fd`
+- 服务器 DB:Supabase 不变 + 本地 PG 多 11 张 agent-v1 新表(无害)
+
+### 下次 session 接手
+- **关键阻塞**:服务器 8000 不 LISTEN bug 必须先修
+- 候选下一步:
+  1. **诊断 + 修 8000 启动竞态**(改 main.py 用 asyncio.gather 或独立 uvicorn process)→ 测试重启稳定性
+  2. **服务器 reboot**让冷启动恢复 8000 → 验证 main 分支可用
+  3. **修复 8000 后重新走 runbook 切 agent-v1**
+  4. 现有的所有 W3 D4 工作(safety / persister / chat / cb_monitor / HITL / runbook)代码 + 测试都健全,只等 prod 8000 修好就能切

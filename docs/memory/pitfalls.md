@@ -109,3 +109,12 @@
 ## macOS / Linux 工具差异
 - **macOS `sort` 是 locale-aware**: 跨机器 SHA1 哈希列表对比时，macOS sort 默认按 locale 排序，Linux sort 按字节序，会导致**对齐错位被误判为内容差异**。必须 `LC_ALL=C sort` 强制字节序才能真实 diff（实际遇到：首次 diff 报 47 个差异，加 `LC_ALL=C` 后只剩 1 个真差异）
 - **macOS `shasum -a 1` vs Linux `sha1sum`**: 输出格式都是 `<sha>  <filename>`，直接 diff 可以，但前提是排序一致（见上条）
+
+## pump-scanner systemd 重启 8000 不 LISTEN（2026-05-01 W3 D4 部署遇到）
+- **现象**：任何 `sudo systemctl restart pump-scanner` 后，服务 active running，scanner/EventBus/smart_money/btc_eth/regime_detector 等 task 都跑（看 journalctl 一直有 httpx 请求），**但 FastAPI on 8000 永远不 LISTEN**。日志显示 `[INFO] api.app: Starting API server on 0.0.0.0:8000` 后**不再有 uvicorn "Application startup complete" / "Uvicorn running on" 等行**。
+- **不是 agent-v1 的 bug**：回滚到 main 分支（`f7dc9fd`）同样症状
+- **手动 dry-run uvicorn OK**：`python3 -c 'from api.app import start_api_server; await start_api_server(port=8005)'` 能成功 LISTEN on 8005，说明代码本身正确
+- **首次启动（系统冷启）8000 LISTEN 成功**：之前 15:01:55 启动后 50 min uptime 内 8000 OK；问题在 systemctl restart 后才出现
+- **猜测根因**：main.py 用 `asyncio.create_task(start_api_server(port=8000))` 创建 FastAPI task，但 `await scanner.run()` 之前的某些 task（SmartMoneyTracker WebSocket / EventListener / BTC/ETH manager 等）在 event loop 中持续抢占，uvicorn task 拿不到 cooperative yield 去 socket bind 8000
+- **回避**：暂只能依赖系统冷启时正确启动，不要轻易 restart pump-scanner；真要重启考虑全机 reboot 或者独立 process 跑 uvicorn
+- **真正修复方向（留给后续）**：把 `start_api_server` 用 `asyncio.gather(api_task, scanner.run())` 让两 task 并行，或独立 process 跑 uvicorn（走 systemd 多服务模型）

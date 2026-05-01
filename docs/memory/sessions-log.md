@@ -1963,3 +1963,77 @@ P14/P15 review_engine_weekly/monthly / P16 reflection / P17 regime_explainer
 4. **5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
 5. **WAL 真接入** — agent.memory.wal 写入路径
 6. **Eval golden 1660 条**
+
+---
+
+## 会话 11 续 7(autonomous-loop:review_engine v2 LLM,2026-05-01)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第四轮
+
+### 实际产出(commit `4beb912` deploy)
+
+**review_engine v2:接 Claude Haiku + P13 prompt + 失败降级 v1**
+
+agent/review_engine.py:
+- generate_review 新增 use_llm 参数(None=按 env REVIEW_ENGINE_USE_LLM,默认 true)
+- _make_summary_with_llm:
+  - cold_start != "normal" → 不调 LLM(no_trades / few_trades 都用规则化)
+  - 无 ANTHROPIC_API_KEY → fallback rule_engine
+  - prompt_loader.to_messages_request("P13") 拼 system + few-shot + user msg
+  - anthropic.Anthropic.messages.create(asyncio.to_thread)
+  - 解析 JSON(_parse_llm_json 支持 ```json fence + 抽 {...} 子串)
+  - 必含 headline + body,缺一 fallback
+  - body 超长强制裁剪 600 字
+- source 字段透明:'llm' / 'rule_engine'(Flutter 可在 UI 上区分)
+- review_id 前缀:'v2-' / 'v1-'
+
+新增 helpers:
+- _parse_llm_json(text) → Optional[dict]
+- _log_prompt_invocation(prompt_id, version, device_id, tokens, latency, ok)
+  异步写本地 PG prompt_invocations 表(schema 对齐 migration 038):
+  device_id + prompt_id + version_used + output_tokens + latency_ms +
+  outcome + skill_name + loop_name
+  非 UUID device_id(如 "system")跳过(避免 NOT NULL 违规)
+
+### 测试 (tests/test_review_engine_v2.py — 12 cases)
+- _parse_llm_json:clean / markdown fence / leading text / invalid (4)
+- generate_review v2 LLM 路径:
+  - success → source=llm + LLM 文案 + tone 字段
+  - LLM 抛错 fallback rule_engine
+  - 无 API key fallback
+  - use_llm=False 跳过 LLM(不调 Anthropic)
+  - 0 trades 直接走规则化(不浪费 token)
+  - 非 JSON fallback
+  - 缺 headline/body fallback
+  - 超长 body 裁剪 600 字 (8)
+
+**12/12 PASSED**;**累计本会话 180+12=192 测试全过**
+
+### 服务器 deploy 验证
+- pump-scanner-api restart OK
+- curl /api/agent/reviews?period=daily → source=rule_engine(0 trades)
+  cold_start=no_trades → 直接走规则化,headline="今日暂无交易"
+  这是正确行为(节省 token,等真有 trades 时自动切 LLM)
+
+### 累计本会话总计(W3 D5 + 续 1 + 续 2 + 续 3 + 续 4 + 续 5 + 续 6 + 续 7)
+- 后端 Python 测试:25+29+12+17+19+26+24+28+12 = **192 后端新测试**
+- Flutter widget 测试:7+17 = **24 Flutter 新测试**
+- **session 共 216 新测试,100% PASSED**
+- 16 个 commits 全部 deploy
+
+### Phase 进度
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**12/17 Tool** / **Memory 4 层 ✅** / WAL 真接入 ⏸
+- Phase 2:**review_engine v2 LLM ✅** / 共创状态机 ✅ / **Prompt Library 骨架 ✅ + 6 P** /
+  Skill SKILL.md ⏸ / chat_loop LLM ⏸ / Loop 5 个 ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 下次接手候选
+1. **共创 chat_loop LLM** — 接 P01/P11 + 12 Tool tool_use(最大单块)
+2. **剩余 12 P + Skill SKILL.md 化**(S01-S08 Anthropic Skill)
+3. **5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
+4. **WAL 真接入** — 关键写入路径
+5. **Eval golden 1660 条** L1-L4
+6. **KMS AwsKmsProvider**

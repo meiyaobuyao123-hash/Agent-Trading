@@ -165,6 +165,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 6 个完整 P:P01 chat_clarify(澄清 2-4 回合)/ P02 thesis_writer(direction/conviction/risks≥2)/ P10 risk_reviewer(soft flags + verdict)/ P11 signal_strategy_builder(StrategySpec mode=paper)/ P13 review_engine_daily(headline+三段式 body)/ P18 persona_translator(newbie/intermediate/pro)
   - 每个 P:frontmatter.yaml + prompt.md + examples.md(≥3 条 few-shot)
   - **28 单元测试全过**;服务器 PyYAML 6.0.3 安装 + 6 P 加载 OK
+- ✅ **W3 D5+ review_engine v2 LLM 接通**(commit `4beb912` deploy):S07 mock → Claude Haiku
+  - generate_review 加 use_llm 参数 + _make_summary_with_llm:用 prompt_loader 调 P13 + anthropic.Anthropic
+  - 失败降级:LLM 抛错 / 无 key / JSON 解析失败 / 部分 schema → fallback v1 rule_engine(透明 source 字段区分)
+  - cold_start ≠ normal 直接走规则化(节省 token);body 超长强制裁剪 600 字
+  - _log_prompt_invocation 异步写本地 PG prompt_invocations(schema 对齐 migration 038)
+  - **12 v2 测试全过**(mock anthropic 覆盖 LLM 成功/失败/解析/裁剪);累计 review_engine 37 测试
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

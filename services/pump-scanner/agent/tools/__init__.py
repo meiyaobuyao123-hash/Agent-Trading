@@ -20,11 +20,15 @@ Tools — 17 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
 
 from .base import Tool, ToolMetadata, ToolResult, Permission, SideEffect
 
-# W3 D5+: 已实施 8 个 Tool
+# W3 D5+: 已实施 12 个 Tool
 from .t04_recall_memory import RecallMemoryTool
 from .t05_list_strategies import ListStrategiesTool
 from .t06_update_strategy_status import UpdateStrategyStatusTool
+from .t07_run_paper_trade import RunPaperTradeTool
+from .t09_create_approval_request import CreateApprovalRequestTool
+from .t10_get_paper_performance import GetPaperPerformanceTool
 from .t11_approve_rule import ApproveRuleTool
+from .t12_save_strategy import SaveStrategyTool
 from .t13_send_push_notification import SendPushNotificationTool
 from .t14_calc_technical_indicators import CalcTechnicalIndicatorsTool
 from .t15_calc_risk_metrics import CalcRiskMetricsTool
@@ -37,7 +41,11 @@ def get_tool_registry() -> dict:
         "recall_memory": RecallMemoryTool(),
         "list_strategies": ListStrategiesTool(),
         "update_strategy_status": UpdateStrategyStatusTool(),
+        "run_paper_trade": RunPaperTradeTool(),
+        "create_approval_request": CreateApprovalRequestTool(),
+        "get_paper_performance": GetPaperPerformanceTool(),
         "approve_rule": ApproveRuleTool(),
+        "save_strategy": SaveStrategyTool(),
         "send_push_notification": SendPushNotificationTool(),
         "calc_technical_indicators": CalcTechnicalIndicatorsTool(),
         "calc_risk_metrics": CalcRiskMetricsTool(),
@@ -50,7 +58,11 @@ __all__ = [
     "RecallMemoryTool",
     "ListStrategiesTool",
     "UpdateStrategyStatusTool",
+    "RunPaperTradeTool",
+    "CreateApprovalRequestTool",
+    "GetPaperPerformanceTool",
     "ApproveRuleTool",
+    "SaveStrategyTool",
     "SendPushNotificationTool",
     "CalcTechnicalIndicatorsTool",
     "CalcRiskMetricsTool",

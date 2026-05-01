@@ -109,3 +109,17 @@
 ## macOS / Linux 工具差异
 - **macOS `sort` 是 locale-aware**: 跨机器 SHA1 哈希列表对比时，macOS sort 默认按 locale 排序，Linux sort 按字节序，会导致**对齐错位被误判为内容差异**。必须 `LC_ALL=C sort` 强制字节序才能真实 diff（实际遇到：首次 diff 报 47 个差异，加 `LC_ALL=C` 后只剩 1 个真差异）
 - **macOS `shasum -a 1` vs Linux `sha1sum`**: 输出格式都是 `<sha>  <filename>`，直接 diff 可以，但前提是排序一致（见上条）
+
+## pump-scanner systemd 重启 8000 不 LISTEN（2026-05-01 W3 D4 部署遇到）
+- **现象**：任何 `sudo systemctl restart pump-scanner` 后，服务 active running，scanner/EventBus/smart_money/btc_eth/regime_detector 等 task 都跑（看 journalctl 一直有 httpx 请求），**但 FastAPI on 8000 永远不 LISTEN**。日志显示 `[INFO] api.app: Starting API server on 0.0.0.0:8000` 后**不再有 uvicorn "Application startup complete" / "Uvicorn running on" 等行**。
+- **不是 agent-v1 的 bug**：回滚到 main 分支（`f7dc9fd`）同样症状
+- **手动 dry-run uvicorn OK**：`python3 -c 'from api.app import start_api_server; await start_api_server(port=8005)'` 能成功 LISTEN on 8005，说明代码本身正确
+- **首次启动（系统冷启）8000 LISTEN 成功**：之前 15:01:55 启动后 50 min uptime 内 8000 OK；问题在 systemctl restart 后才出现
+- **猜测根因**：main.py 用 `asyncio.create_task(start_api_server(port=8000))` 创建 FastAPI task，但 `await scanner.run()` 之前的某些 task（SmartMoneyTracker WebSocket / EventListener / BTC/ETH manager 等）在 event loop 中持续抢占，uvicorn task 拿不到 cooperative yield 去 socket bind 8000
+- **回避**：暂只能依赖系统冷启时正确启动，不要轻易 restart pump-scanner；真要重启用 `sudo reboot` 整机（70s 恢复）
+- **失败的修复尝试（commit `c4ae116`）**：在 main.py 加 grace period 循环 `await asyncio.sleep(0.5)` × 20 + `asyncio.open_connection` 探测 socket。**冷启动时 work**(看到 `FastAPI on port 8000 ready` 日志,1s 即就绪);**但 systemctl restart 时无效**,event loop 在 `Starting API server on 0.0.0.0:8000` 后完全卡死(9 分钟无新日志,task 4 不动)。证明根因不是 cooperative yield 频次,是某个 task **完全独占** event loop,可能是 SmartMoneyTracker 启 8943 SOL + 15631 EVM WebSocket 时旧连接 fd 未释放 + 新连重连风暴
+- **真正修复方向（留给后续）**：
+  1. 看 SmartMoneyTracker 启动时是否有同步 WebSocket / 阻塞调用,改全异步
+  2. 看 systemctl 重启时是否清理了所有 file descriptor / 之前的 WebSocket socket
+  3. 把 uvicorn 拆成独立 systemd 服务(走多 service 模型),避免跟 Agent task 抢 event loop
+  4. 给 systemd 加 KillMode=mixed + TimeoutStopSec=30 + ExecStopPost 清 fd

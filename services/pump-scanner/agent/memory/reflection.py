@@ -181,3 +181,72 @@ class ReflectionEngine:
         条件：亏损 > 25% 且金额 > $30
         """
         return pnl_pct <= -EMERGENCY_LOSS_PCT and amount_usd >= EMERGENCY_LOSS_MIN_USD
+
+    # ── W3 D5+ JSON-diff 去重 ─────────────────────────────────
+
+    @staticmethod
+    def _normalize_rule_keys(rule: Dict[str, Any]) -> Dict[str, Any]:
+        """提取做 diff 用的核心字段(忽略 evidence/confidence 等噪声字段)。"""
+        return {
+            "condition": (rule.get("condition") or "").strip().upper(),
+            "action": (rule.get("action") or "").strip().lower(),
+        }
+
+    @staticmethod
+    def jaccard_distance(a: Dict[str, Any], b: Dict[str, Any]) -> float:
+        """简易 Jaccard 距离 — 1 - intersection/union of (k:v) pair set。
+        用于规则 dedupe(condition + action 完全一样则距离 0)。
+        """
+        sa = {(k, v) for k, v in a.items()}
+        sb = {(k, v) for k, v in b.items()}
+        if not sa and not sb:
+            return 0.0
+        inter = len(sa & sb)
+        uni = len(sa | sb)
+        return 1.0 - (inter / uni if uni > 0 else 0.0)
+
+    def deduplicate_proposed_rules(
+        self,
+        new_rules: List[Dict],
+        existing_rules: List[Dict],
+        threshold: float = 0.20,
+    ) -> List[Dict]:
+        """W3 D5+:JSON-diff dedupe(对齐 17-tech-plan.md "JSON diff < 20% 重复检测")
+
+        对每条 new_rule:
+          - 与 existing_rules 中 (type=semantic) 的 condition+action 算 Jaccard
+          - 距离 < threshold(默认 20%)→ 认为重复,跳过
+          - 否则保留(并标记 propose_count_so_far += 1)
+
+        Returns: 去重后的 new_rules(每条会加 _is_duplicate / _matched_existing_id 元数据用于审计)
+        """
+        existing_keys = []
+        for r in existing_rules or []:
+            sd = r.get("structured_data") or {}
+            if isinstance(sd, dict):
+                key = self._normalize_rule_keys({
+                    "condition": sd.get("condition", ""),
+                    "action": sd.get("action", ""),
+                })
+                existing_keys.append((str(r.get("id", "")), key))
+
+        kept: List[Dict] = []
+        for n in (new_rules or []):
+            n_key = self._normalize_rule_keys(n)
+            duplicate = False
+            matched_id = None
+            for ex_id, ex_key in existing_keys:
+                d = self.jaccard_distance(n_key, ex_key)
+                if d < threshold:
+                    duplicate = True
+                    matched_id = ex_id
+                    break
+            if duplicate:
+                log.info(
+                    "[Reflection] Dedupe: '%s' matches existing %s (distance < %.2f)",
+                    n_key.get("condition", "")[:50], matched_id, threshold,
+                )
+                # 不保留,但下游可能需要 propose_count++(留给调用方处理)
+                continue
+            kept.append(n)
+        return kept

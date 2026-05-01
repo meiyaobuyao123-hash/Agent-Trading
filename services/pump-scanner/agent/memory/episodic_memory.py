@@ -127,6 +127,121 @@ class EpisodicMemory:
             result.extend(items)
         return [m for _, m in result[:limit]]
 
+    def get_relevant(
+        self,
+        chain: Optional[str] = None,
+        trigger_source: Optional[str] = None,
+        token_type: Optional[str] = None,
+        mcap_bucket: Optional[str] = None,
+        regime: Optional[str] = None,
+        limit: int = 10,
+        min_score: float = 3.0,
+    ) -> List[Dict[str, Any]]:
+        """W3 D5+:对齐 17-tech-plan.md Memory 4 层升级评分公式。
+
+        score = trigger_source(+3) + chain(+2) + token_type(+2) + mcap(+1)
+              + regime_match(+2) + freshness(衰减)+ match_count(log)
+
+        - freshness:30 天半衰,最大 +1.5,最小 0(超过 90 天为负但 clip)
+        - match_count:命中越多越相关,log10 平滑,最大 +1
+        - regime_distance(对 7 状态有序距离):同 regime +2,相邻 +1,远离 0
+
+        过滤 score < min_score(默认 3.0),返回带 `_score` 字段的列表。
+        命中后给所有返回的记忆 match_count += 1(异步,不阻塞)。
+        """
+        import math
+        from datetime import datetime, timezone
+
+        candidates = self._get_cached()
+        now = datetime.now(timezone.utc)
+
+        # 7 状态 regime 距离表(对齐 docs/agent-pm regime 字典)
+        REGIME_ORDER = [
+            "TRENDING_UP", "BREAKOUT", "RANGING", "HIGH_VOLATILITY",
+            "TRENDING_DOWN", "CRISIS", "RECOVERY",
+        ]
+
+        def _regime_score(target: Optional[str], actual: Optional[str]) -> float:
+            if not target or not actual:
+                return 0.0
+            if target == actual:
+                return 2.0
+            try:
+                d = abs(REGIME_ORDER.index(target) - REGIME_ORDER.index(actual))
+                if d == 1:
+                    return 1.0
+                if d == 2:
+                    return 0.5
+            except ValueError:
+                return 0.0
+            return 0.0
+
+        def _freshness(created_at: Optional[str]) -> float:
+            if not created_at:
+                return 0.0
+            try:
+                ts = datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+            except Exception:
+                return 0.0
+            age_days = (now - ts).total_seconds() / 86400
+            if age_days < 0:
+                return 1.5
+            # 30d 半衰:1.5 × 0.5^(age/30) - clamp [0, 1.5]
+            return max(0.0, 1.5 * (0.5 ** (age_days / 30.0)))
+
+        scored: List = []
+        for m in candidates:
+            score = 0.0
+            if trigger_source and m.get("trigger_source") == trigger_source:
+                score += 3.0
+            if chain and m.get("chain") == chain:
+                score += 2.0
+            if token_type and m.get("token_type") == token_type:
+                score += 2.0
+            if mcap_bucket and m.get("mcap_bucket") == mcap_bucket:
+                score += 1.0
+            score += _regime_score(regime, m.get("market_regime"))
+            score += _freshness(m.get("created_at"))
+            mc = int(m.get("match_count", 0) or 0)
+            if mc > 0:
+                score += min(1.0, math.log10(1 + mc))
+            if score < min_score:
+                continue
+            scored.append({**m, "_score": round(score, 3)})
+
+        scored.sort(key=lambda x: (-x["_score"], x.get("created_at", "") or ""), reverse=False)
+        # 上面 created_at 升序;按 score 降序后,同分内 created_at 降序需要再排
+        scored.sort(key=lambda x: -x["_score"])
+        out = scored[:limit]
+
+        # 异步 bump match_count(失败不阻断返回)
+        if out:
+            try:
+                self._bump_match_count([m["id"] for m in out if m.get("id")])
+            except Exception:
+                pass
+        return out
+
+    def _bump_match_count(self, ids: List[str]) -> None:
+        """命中的 episodic 记忆 match_count += 1。
+        不在事务里跑(只是命中统计,丢失也无大碍)。
+        """
+        if not ids:
+            return
+        try:
+            from database import get_db as _db
+            for _id in ids:
+                try:
+                    # Supabase 不直接支持 SQL atomic,先读后写
+                    cur = _db().table("agent_memory").select("match_count").eq("id", _id).limit(1).execute()
+                    if cur.data:
+                        prev = int(cur.data[0].get("match_count", 0) or 0)
+                        _db().table("agent_memory").update({"match_count": prev + 1}).eq("id", _id).execute()
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
     def cleanup_expired(self) -> int:
         """清理过期的 episodic 记忆"""
         try:

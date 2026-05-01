@@ -23,9 +23,9 @@ from agent.tools import (  # noqa: E402
 
 # ── Registry now has 6 tools ────────────────────────────────
 
-def test_registry_has_six_tools_after_p5_p7():
+def test_registry_has_p5_p7_tools():
     reg = get_tool_registry()
-    assert len(reg) == 6
+    assert len(reg) >= 6  # 至少 6,后续可能加更多
     assert {"recall_memory", "calc_technical_indicators", "calc_position_size"}.issubset(set(reg.keys()))
 
 

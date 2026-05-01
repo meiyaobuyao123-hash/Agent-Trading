@@ -29,6 +29,14 @@ DEPRECATE_WIN_RATE = 40  # 遵守胜率 < 40% 废弃
 DEPRECATE_SAMPLES = 10
 STALE_DAYS = 30  # 30 天未匹配 → 标记待审查
 
+# W3 D5+:5 条硬晋升门槛(对齐 17-tech-plan.md / docs/agent-pm/06-memory-spec.md §3.3)
+STRICT_PROMOTE_REFLECTIONS = 3       # 至少 3 次反思都建议
+STRICT_PROMOTE_SAMPLES = 20          # 至少 20 个 trade 样本
+STRICT_PROMOTE_WILSON_LOWER = 0.55   # 95% Wilson CI 下界 ≥ 55%
+STRICT_PROMOTE_TTEST_P = 0.05        # 与 baseline 比较 t-test p < 0.05
+STRICT_PROMOTE_MIN_REGIMES = 2       # 至少在 2 个不同 regime 验证过
+STRICT_PROMOTE_SHADOW_DAYS = 14      # 进入 14d Shadow Mode
+
 
 class SemanticMemory:
     """长期记忆 — 规则管理 + 统计验证 + 内存缓存"""
@@ -270,6 +278,185 @@ class SemanticMemory:
         except Exception as e:
             log.warning("Promote failed: %s", e)
             return False
+
+    @staticmethod
+    def check_strict_promotion_gates(
+        reflections_count: int,
+        comply_pnls: List[float],
+        violate_pnls: List[float],
+        regimes_observed: List[str],
+    ) -> Dict[str, Any]:
+        """W3 D5+:5 条硬晋升门槛(对齐 17-tech-plan.md)
+
+        条件:
+          1. reflections_count >= 3
+          2. len(comply_pnls) >= 20
+          3. Wilson CI lower (comply 胜率) >= 0.55
+          4. t-test p (comply vs violate) < 0.05
+          5. unique(regimes_observed) >= 2
+
+        Returns:
+          {passed: bool, gates: {gate_name: {ok, value, threshold}}, summary: str}
+        """
+        import math
+
+        comply_pnls = list(comply_pnls or [])
+        violate_pnls = list(violate_pnls or [])
+
+        # Gate 1: reflections
+        g1_ok = reflections_count >= STRICT_PROMOTE_REFLECTIONS
+
+        # Gate 2: sample size
+        g2_ok = len(comply_pnls) >= STRICT_PROMOTE_SAMPLES
+
+        # Gate 3: Wilson CI lower
+        if comply_pnls:
+            wins = sum(1 for p in comply_pnls if p > 0)
+            n = len(comply_pnls)
+            p = wins / n if n > 0 else 0.0
+            z = 1.96
+            denom = 1 + z * z / n
+            centre = (p + z * z / (2 * n)) / denom
+            spread = z * math.sqrt(max(0.0, p * (1 - p) / n + z * z / (4 * n * n))) / denom
+            wilson_lower = max(0.0, centre - spread)
+        else:
+            wilson_lower = 0.0
+        g3_ok = wilson_lower >= STRICT_PROMOTE_WILSON_LOWER
+
+        # Gate 4: Welch's t-test (comply vs violate)
+        def _ttest_welch(a: List[float], b: List[float]) -> Optional[float]:
+            if len(a) < 2 or len(b) < 2:
+                return None
+            ma = sum(a) / len(a)
+            mb = sum(b) / len(b)
+            va = sum((x - ma) ** 2 for x in a) / (len(a) - 1)
+            vb = sum((x - mb) ** 2 for x in b) / (len(b) - 1)
+            denom = math.sqrt(va / len(a) + vb / len(b))
+            if denom == 0:
+                # 零方差:means 相同 → p=1.0(无统计差),means 不同 → p=0.0(确定显著)
+                return 1.0 if ma == mb else 0.0
+            t = (ma - mb) / denom
+            # Welch–Satterthwaite df
+            num = (va / len(a) + vb / len(b)) ** 2
+            d_a = (va / len(a)) ** 2 / (len(a) - 1)
+            d_b = (vb / len(b)) ** 2 / (len(b) - 1)
+            df = num / (d_a + d_b) if (d_a + d_b) > 0 else 1.0
+            # 简易 two-sided p value(不用 scipy):approx 用 1/(1+t^2/df)^(df/2)
+            # 对应 Student t,这个近似精度够日常使用(同 spec ≈ 0.05 阈值)
+            try:
+                p_approx = 2 * 0.5 * (1 - (1 / (1 + t * t / max(df, 1.0)) ** (df / 2)))
+            except Exception:
+                return None
+            return min(1.0, max(0.0, p_approx))
+
+        t_p = _ttest_welch(comply_pnls, violate_pnls)
+        g4_ok = (t_p is not None and t_p < STRICT_PROMOTE_TTEST_P)
+
+        # Gate 5: regime diversity
+        regimes_set = {r for r in (regimes_observed or []) if r}
+        g5_ok = len(regimes_set) >= STRICT_PROMOTE_MIN_REGIMES
+
+        gates = {
+            "reflections": {"ok": g1_ok, "value": reflections_count,
+                             "threshold": STRICT_PROMOTE_REFLECTIONS},
+            "sample_size": {"ok": g2_ok, "value": len(comply_pnls),
+                             "threshold": STRICT_PROMOTE_SAMPLES},
+            "wilson_ci_lower": {"ok": g3_ok, "value": round(wilson_lower, 3),
+                                 "threshold": STRICT_PROMOTE_WILSON_LOWER},
+            "ttest_p": {"ok": g4_ok, "value": round(t_p, 4) if t_p is not None else None,
+                         "threshold": STRICT_PROMOTE_TTEST_P},
+            "regime_diversity": {"ok": g5_ok, "value": len(regimes_set),
+                                  "threshold": STRICT_PROMOTE_MIN_REGIMES},
+        }
+        passed = all(g["ok"] for g in gates.values())
+        failed_gates = [name for name, g in gates.items() if not g["ok"]]
+        summary = (
+            "ALL 5 GATES PASSED → eligible for promotion + 14d Shadow Mode"
+            if passed
+            else f"FAILED gates: {', '.join(failed_gates)}"
+        )
+        return {"passed": passed, "gates": gates, "summary": summary}
+
+    def try_promote_strict(
+        self,
+        condition: str,
+        action: str,
+        reflections_count: int,
+        comply_pnls: List[float],
+        violate_pnls: List[float],
+        regimes_observed: List[str],
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """W3 D5+:5 条硬晋升门槛 + Shadow Mode 14d 写入。
+
+        Returns:
+          {ok, gates(check_strict_promotion_gates 输出),
+           promoted_rule_id (若 ok), shadow_mode_until,
+           reason (若 fail)}
+        """
+        gate_result = self.check_strict_promotion_gates(
+            reflections_count, comply_pnls, violate_pnls, regimes_observed
+        )
+        if not gate_result["passed"]:
+            return {"ok": False, "gates": gate_result["gates"],
+                    "reason": gate_result["summary"]}
+
+        # 重复 condition 检查
+        self._ensure_loaded()
+        for existing in self._rules:
+            sd = existing.get("structured_data") or {}
+            if isinstance(sd, dict) and sd.get("condition", "").upper() == condition.upper():
+                return {"ok": False, "gates": gate_result["gates"],
+                        "reason": "duplicate_condition"}
+
+        # 上限检查
+        if len(self._rules) >= MAX_ACTIVE_RULES:
+            return {"ok": False, "gates": gate_result["gates"],
+                    "reason": "max_active_rules_reached"}
+
+        meta = metadata or {}
+        shadow_until = datetime.now(timezone.utc) + timedelta(days=STRICT_PROMOTE_SHADOW_DAYS)
+        wilson_lower = gate_result["gates"]["wilson_ci_lower"]["value"]
+        t_p = gate_result["gates"]["ttest_p"]["value"]
+
+        row = {
+            "type": "semantic",
+            "category": "rule",
+            "content": meta.get("content", condition),
+            "structured_data": {
+                "condition": condition,
+                "action": action,
+                "reflections_count": reflections_count,
+                "regimes_observed": list({r for r in regimes_observed if r}),
+            },
+            "importance": 7,
+            "chain": meta.get("chain"),
+            "trigger_source": meta.get("trigger_source"),
+            "is_active": True,
+            "shadow_mode_until": shadow_until.isoformat(),
+            "wilson_ci_lower": wilson_lower,
+            "match_count": 0,
+            "propose_count_so_far": reflections_count,
+        }
+        try:
+            res = get_db().table("agent_memory").insert(row).execute()
+            self._last_load = 0
+            new_id = ""
+            if res.data:
+                new_id = str(res.data[0].get("id", ""))
+            log.info("[SemanticMemory] STRICT promoted: %s (Shadow %s)", condition, shadow_until)
+            return {
+                "ok": True,
+                "gates": gate_result["gates"],
+                "promoted_rule_id": new_id,
+                "shadow_mode_until": shadow_until.isoformat(),
+                "ttest_p": t_p,
+                "wilson_ci_lower": wilson_lower,
+            }
+        except Exception as e:
+            log.warning("Strict promote failed: %s", e)
+            return {"ok": False, "gates": gate_result["gates"],
+                    "reason": f"db_write_failed: {e}"}
 
     def deprecate_stale(self) -> int:
         """

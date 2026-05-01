@@ -20,8 +20,10 @@ Tools — 17 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
 
 from .base import Tool, ToolMetadata, ToolResult, Permission, SideEffect
 
-# W3 D5+: 已实施 6 个 Tool
+# W3 D5+: 已实施 8 个 Tool
 from .t04_recall_memory import RecallMemoryTool
+from .t05_list_strategies import ListStrategiesTool
+from .t06_update_strategy_status import UpdateStrategyStatusTool
 from .t11_approve_rule import ApproveRuleTool
 from .t13_send_push_notification import SendPushNotificationTool
 from .t14_calc_technical_indicators import CalcTechnicalIndicatorsTool
@@ -33,6 +35,8 @@ def get_tool_registry() -> dict:
     """返回 {tool_name: Tool 实例} 注册表(已实施的 Tool)。"""
     return {
         "recall_memory": RecallMemoryTool(),
+        "list_strategies": ListStrategiesTool(),
+        "update_strategy_status": UpdateStrategyStatusTool(),
         "approve_rule": ApproveRuleTool(),
         "send_push_notification": SendPushNotificationTool(),
         "calc_technical_indicators": CalcTechnicalIndicatorsTool(),
@@ -44,6 +48,8 @@ def get_tool_registry() -> dict:
 __all__ = [
     "Tool", "ToolMetadata", "ToolResult", "Permission", "SideEffect",
     "RecallMemoryTool",
+    "ListStrategiesTool",
+    "UpdateStrategyStatusTool",
     "ApproveRuleTool",
     "SendPushNotificationTool",
     "CalcTechnicalIndicatorsTool",

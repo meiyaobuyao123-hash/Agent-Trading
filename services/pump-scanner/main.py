@@ -591,14 +591,22 @@ async def main():
     except Exception as e:
         log.warning(f"PRD-006 Regime Detector 启动失败: {e}")
 
-    # ── pump signal pool dump loop ────────────────────────────
+    # ── pump signal pool dump loop(独立线程) ────────────────
     # 把 scanner._signal_pool 每 5s 写 Redis(主)+ 每 60s 写文件(兜底)
     # 让独立 api 进程(api_server.py)能读到实时信号
+    #
+    # 为什么用 threading.Thread 而不是 asyncio.create_task:
+    #   主 event loop 被 SmartMoneyTracker 等长任务 starve,
+    #   asyncio.sleep(5) 后 dump loop 不会被及时调度回来。
+    #   独立线程绕开 event loop,scanner.get_signals() 是同步内存读,
+    #   线程安全。引用 pitfalls.md "PT-007/PT-008 event loop starvation"。
+    #
     # Redis: pump:signal_pool key, TTL 120s
     # 文件: /tmp/pump_signal_pool.json (Redis 不可用时降级)
-    # 引用 docs/runbook/pump-scanner-api.service
-    async def _dump_signal_pool_loop():
+    import threading
+    def _dump_signal_pool_thread():
         import json
+        import time as _t
         from datetime import datetime, timezone
         from agent.redis_client import safe_set, KEY_PUMP_SIGNAL_POOL
         tick = 0
@@ -614,18 +622,17 @@ async def main():
                         "is_history": is_hist,
                         "ts": datetime.now(timezone.utc).isoformat(),
                     }, default=str)
-                    # Redis 主路径(5s)
                     redis_ok = safe_set(KEY_PUMP_SIGNAL_POOL, payload, ex=120)
-                    # 文件兜底(60s 写一次,Redis 不可用时也保证有数据)
                     if (not redis_ok) or tick % 12 == 0:
                         with open("/tmp/pump_signal_pool.json", "w") as f:
                             f.write(payload)
             except Exception as _e:
                 log.warning(f"signal_pool dump 失败: {_e}")
             tick += 1
-            await asyncio.sleep(5)
-    asyncio.create_task(_dump_signal_pool_loop())
-    log.info("signal pool dump loop 已启动 (Redis 5s + 文件 60s 兜底)")
+            _t.sleep(5)
+    _dump_thread = threading.Thread(target=_dump_signal_pool_thread, daemon=True, name="signal_pool_dump")
+    _dump_thread.start()
+    log.info("signal pool dump loop 已启动 (独立线程, Redis 5s + 文件 60s 兜底)")
 
     # 启动 FastAPI（如果启用）
     if ENABLE_API:

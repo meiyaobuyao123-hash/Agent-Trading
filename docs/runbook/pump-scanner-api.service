@@ -1,0 +1,45 @@
+# systemd unit 文件 — 独立 FastAPI 服务
+# 部署位置: /etc/systemd/system/pump-scanner-api.service
+# 用途: 把 FastAPI 从 pump-scanner 主进程脱钩,跟 scanner 不再抢 event loop
+# 引用 docs/memory/pitfalls.md "pump-scanner systemd 重启 8000 不 LISTEN"
+#
+# 部署:
+#   sudo cp pump-scanner-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable pump-scanner-api
+#   sudo systemctl start pump-scanner-api
+#
+# 同时:必须改 pump-scanner.service 加 Environment=ENABLE_API=false
+# 否则两个 process 抢 8000 端口
+
+[Unit]
+Description=Agent Trading FastAPI (脱钩自 pump-scanner)
+After=network.target
+# 不依赖 pump-scanner — 独立可启
+# 但建议 pump-scanner 起来再起 api(让 scheduler 等共享资源就绪)
+Wants=pump-scanner.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/opt/agent-trading/services/pump-scanner
+ExecStart=/opt/venv/bin/python api_server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pump-scanner-api
+
+# graceful shutdown:SIGTERM 给 uvicorn,uvicorn 会 graceful 关 socket
+KillMode=mixed
+TimeoutStopSec=15
+
+# 环境变量
+Environment=PYTHONUNBUFFERED=1
+Environment=API_PORT=8000
+
+# 内存限制(uvicorn 单进程 256MB 够用)
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

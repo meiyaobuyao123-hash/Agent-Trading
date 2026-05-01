@@ -591,11 +591,64 @@ async def main():
     except Exception as e:
         log.warning(f"PRD-006 Regime Detector 启动失败: {e}")
 
+    # ── pump signal pool dump loop ────────────────────────────
+    # 把 scanner._signal_pool 每 60s 写 /tmp/pump_signal_pool.json
+    # 让独立 api 进程(api_server.py)能读到实时信号(IPC 文件方式)
+    # 引用 docs/runbook/pump-scanner-api.service
+    async def _dump_signal_pool_loop():
+        import json
+        from datetime import datetime, timezone
+        while True:
+            try:
+                from scanner_ref import get_scanner
+                _sc = get_scanner()
+                if _sc is not None:
+                    sigs = _sc.get_signals()
+                    is_hist = bool(sigs and sigs[0].get("is_history"))
+                    with open("/tmp/pump_signal_pool.json", "w") as f:
+                        json.dump({
+                            "signals": sigs,
+                            "is_history": is_hist,
+                            "ts": datetime.now(timezone.utc).isoformat(),
+                        }, f, default=str)
+            except Exception as _e:
+                log.warning(f"signal_pool dump 失败: {_e}")
+            await asyncio.sleep(60)
+    asyncio.create_task(_dump_signal_pool_loop())
+    log.info("signal pool dump loop 已启动 (每 60s 写 /tmp/pump_signal_pool.json)")
+
     # 启动 FastAPI（如果启用）
     if ENABLE_API:
         from api.app import start_api_server
         api_task = asyncio.create_task(start_api_server(port=API_PORT))
         log.info(f"FastAPI server starting on port {API_PORT}")
+        # 修复(2026-05-01):给 uvicorn task 完整 grace period 让 socket bind 完成
+        # 否则 await scanner.run() 进入后 SmartMoneyTracker/EventBus/etc. 持续抢占
+        # event loop,uvicorn task 永远拿不到 socket bind 时机,导致 8000 不 LISTEN
+        # 详见 docs/memory/pitfalls.md "pump-scanner systemd 重启 8000 不 LISTEN"
+        # 注意:必须用 asyncio.open_connection(异步)探测;
+        #   不能用 socket.create_connection(同步会阻塞整个 event loop)
+        for _ in range(20):  # 最多等 10s,每 0.5s 让 event loop 调度一次
+            await asyncio.sleep(0.5)
+            if api_task.done():  # uvicorn 早期 fail-fast(端口冲突等)立即抛
+                api_task.result()
+                break
+            try:
+                _r, _w = await asyncio.wait_for(
+                    asyncio.open_connection("127.0.0.1", API_PORT),
+                    timeout=0.3,
+                )
+                _w.close()
+                try:
+                    await _w.wait_closed()
+                except Exception:
+                    pass
+                log.info(f"FastAPI on port {API_PORT} ready")
+                break
+            except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
+                continue
+        else:
+            log.warning(f"FastAPI on port {API_PORT} not ready after 10s grace period")
 
     # 启动实时采集（阻塞主协程）
     await scanner.run()

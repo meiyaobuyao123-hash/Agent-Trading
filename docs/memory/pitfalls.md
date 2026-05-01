@@ -116,5 +116,12 @@
 - **手动 dry-run uvicorn OK**：`python3 -c 'from api.app import start_api_server; await start_api_server(port=8005)'` 能成功 LISTEN on 8005，说明代码本身正确
 - **首次启动（系统冷启）8000 LISTEN 成功**：之前 15:01:55 启动后 50 min uptime 内 8000 OK；问题在 systemctl restart 后才出现
 - **猜测根因**：main.py 用 `asyncio.create_task(start_api_server(port=8000))` 创建 FastAPI task，但 `await scanner.run()` 之前的某些 task（SmartMoneyTracker WebSocket / EventListener / BTC/ETH manager 等）在 event loop 中持续抢占，uvicorn task 拿不到 cooperative yield 去 socket bind 8000
-- **回避**：暂只能依赖系统冷启时正确启动，不要轻易 restart pump-scanner；真要重启考虑全机 reboot 或者独立 process 跑 uvicorn
-- **真正修复方向（留给后续）**：把 `start_api_server` 用 `asyncio.gather(api_task, scanner.run())` 让两 task 并行，或独立 process 跑 uvicorn（走 systemd 多服务模型）
+- **回避**：暂只能依赖系统冷启时正确启动，不要轻易 restart pump-scanner；真要重启用 `sudo reboot` 整机（70s 恢复）
+- **失败的修复尝试（commit `c4ae116`）**：在 main.py 加 grace period 循环 `await asyncio.sleep(0.5)` × 20 + `asyncio.open_connection` 探测 socket。**冷启动时 work**(看到 `FastAPI on port 8000 ready` 日志,1s 即就绪);**但 systemctl restart 时无效**,event loop 在 `Starting API server on 0.0.0.0:8000` 后完全卡死。证明根因是 SmartMoneyTracker 启 8943 SOL + 15631 EVM WebSocket / EventBus 等持续抢占 event loop,uvicorn task 永远拿不到 socket bind 时机
+- **✅ 已修复(2026-05-01,commits `03d9cd1` + `660f4dc`)**:走候选 3 — 独立 uvicorn systemd service:
+  - 新 `services/pump-scanner/api_server.py`(独立入口,只跑 uvicorn)
+  - 新 systemd unit `pump-scanner-api.service`(独立 process,跟 scanner 不共享 event loop)
+  - 改原 `pump-scanner.service` 加 `Environment=ENABLE_API=false`(scanner 不再启 FastAPI)
+  - **5 次 restart pump-scanner 后 8000 始终稳定;3 次同时 restart 两个服务都秒恢复**
+  - **遗留**:`_signal_pool` 在 scanner 主进程内存,api 独立进程读不到 → 走文件 IPC(commit `660f4dc`):main.py `_dump_signal_pool_loop` 每 60s 写 `/tmp/pump_signal_pool.json`,routes_pump 读这个文件。最多 60s 延迟,Flutter 30s 轮询场景可接受
+  - **下次再优化方向**:Redis pub/sub 做毫秒级 IPC / scanner 落 _signal_pool 到独立 DB 表

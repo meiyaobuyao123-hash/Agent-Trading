@@ -1441,3 +1441,169 @@ async def get_review(
         log.warning("review_engine failed, falling back to mock: %s", e)
         return _mock_review(period, date)
 
+
+# ═══════════════════════════════════════════════════════════
+# W3 D5+: 共创状态机 endpoints (S04 signal-strategy-builder)
+# ═══════════════════════════════════════════════════════════
+#
+# 端点:
+#   GET  /cocreation/state                — 拿当前活跃 state(没有则 null)
+#   POST /cocreation/start                — 创建新 state(初始 message)
+#   POST /cocreation/{conv_id}/message    — 追加 message + 自动建议下一 stage
+#   POST /cocreation/{conv_id}/transition — 显式状态转移(LLM 决策时用)
+#   POST /cocreation/{conv_id}/abort      — 用户主动放弃
+#
+# 不调 LLM,只管 state 持久化与转移。Flutter 拿 stage 渲染 stepper。
+
+
+class CocreationStartRequest(BaseModel):
+    skill_name: str = Field("signal-strategy-builder")
+    initial_message: Optional[str] = None
+
+
+class CocreationMessageRequest(BaseModel):
+    role: str = Field(..., description="user | assistant")
+    content: str
+    has_draft: Optional[bool] = False
+    user_satisfied: Optional[bool] = None
+
+
+class CocreationTransitionRequest(BaseModel):
+    to_stage: str
+    draft_data: Optional[Dict[str, Any]] = None
+    dry_run_result: Optional[Dict[str, Any]] = None
+    saved_strategy_id: Optional[str] = None
+
+
+@router.get("/cocreation/state")
+async def get_cocreation_state(
+    skill_name: str = Query("signal-strategy-builder"),
+    user_id: str = Depends(get_current_user),
+):
+    """获取用户当前活跃的共创 state。"""
+    try:
+        from agent.orchestration.cocreation_state_machine import load_active_state
+        state = load_active_state(user_id, skill_name)
+        return {"state": state}
+    except Exception as e:
+        log.warning("cocreation get_state failed: %s", e)
+        return {"state": None, "error": str(e)[:120]}
+
+
+@router.post("/cocreation/start")
+async def start_cocreation(
+    req: CocreationStartRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """创建新的共创 state(stage=clarifying)。"""
+    try:
+        from agent.orchestration.cocreation_state_machine import (
+            create_state,
+            load_active_state,
+        )
+        # 已有活跃 state 直接返回(避免重复创建)
+        existing = load_active_state(user_id, req.skill_name)
+        if existing:
+            return {"state": existing, "reused": True}
+        state = create_state(user_id, req.skill_name, req.initial_message)
+        if not state:
+            raise HTTPException(status_code=500, detail="create_state failed")
+        return {"state": state, "reused": False}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("cocreation start failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.post("/cocreation/{conv_id}/message")
+async def append_cocreation_message(
+    conv_id: str,
+    req: CocreationMessageRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """追加 message;基于启发式建议下一 stage(不强制转移)。"""
+    try:
+        from agent.orchestration.cocreation_state_machine import (
+            append_message,
+            load_active_state,
+            suggest_next_stage,
+        )
+        ok = append_message(conv_id, req.role, req.content)
+        if not ok:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        # 基于当前 stage + 用户消息建议下一 stage
+        # 重新 load 拿到当前 stage
+        state = None
+        try:
+            from local_db import _get_conn
+            conn = _get_conn()
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT stage, draft_data FROM conversation_states WHERE conversation_id = %s",
+                    (conv_id,),
+                )
+                row = cur.fetchone()
+                if row:
+                    current_stage = row[0]
+                    has_draft = row[1] is not None
+                    suggested = suggest_next_stage(
+                        current_stage, req.content,
+                        has_draft=has_draft,
+                        user_satisfied=req.user_satisfied,
+                    )
+                    return {"ok": True, "current_stage": current_stage,
+                            "suggested_next_stage": suggested}
+        except Exception:
+            pass
+        return {"ok": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("cocreation message failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.post("/cocreation/{conv_id}/transition")
+async def transition_cocreation(
+    conv_id: str,
+    req: CocreationTransitionRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """显式状态转移。"""
+    try:
+        from agent.orchestration.cocreation_state_machine import transition
+        ok, err = transition(
+            conv_id, req.to_stage,
+            draft_data=req.draft_data,
+            dry_run_result=req.dry_run_result,
+            saved_strategy_id=req.saved_strategy_id,
+        )
+        if not ok:
+            raise HTTPException(status_code=400, detail=err or "transition failed")
+        return {"ok": True, "stage": req.to_stage}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("cocreation transition failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.post("/cocreation/{conv_id}/abort")
+async def abort_cocreation(
+    conv_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """用户主动放弃。"""
+    try:
+        from agent.orchestration.cocreation_state_machine import transition
+        ok, err = transition(conv_id, "aborted")
+        if not ok:
+            raise HTTPException(status_code=400, detail=err or "abort failed")
+        return {"ok": True, "stage": "aborted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("cocreation abort failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+

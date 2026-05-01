@@ -581,17 +581,26 @@ async def main():
         # 否则 await scanner.run() 进入后 SmartMoneyTracker/EventBus/etc. 持续抢占
         # event loop,uvicorn task 永远拿不到 socket bind 时机,导致 8000 不 LISTEN
         # 详见 docs/memory/pitfalls.md "pump-scanner systemd 重启 8000 不 LISTEN"
+        # 注意:必须用 asyncio.open_connection(异步)探测;
+        #   不能用 socket.create_connection(同步会阻塞整个 event loop)
         for _ in range(20):  # 最多等 10s,每 0.5s 让 event loop 调度一次
             await asyncio.sleep(0.5)
             if api_task.done():  # uvicorn 早期 fail-fast(端口冲突等)立即抛
                 api_task.result()
                 break
             try:
-                import socket
-                with socket.create_connection(("127.0.0.1", API_PORT), timeout=0.3):
-                    log.info(f"FastAPI on port {API_PORT} ready")
-                    break
-            except (OSError, ConnectionRefusedError):
+                _r, _w = await asyncio.wait_for(
+                    asyncio.open_connection("127.0.0.1", API_PORT),
+                    timeout=0.3,
+                )
+                _w.close()
+                try:
+                    await _w.wait_closed()
+                except Exception:
+                    pass
+                log.info(f"FastAPI on port {API_PORT} ready")
+                break
+            except (OSError, ConnectionRefusedError, asyncio.TimeoutError):
                 continue
         else:
             log.warning(f"FastAPI on port {API_PORT} not ready after 10s grace period")

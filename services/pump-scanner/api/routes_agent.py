@@ -1423,9 +1423,21 @@ async def get_review(
 ):
     """日/周/月复盘报告。
 
-    当前实施:固定 MOCK 数据(让 Flutter UI 联调)
-    后续 S07 review-engine 真实施:从 agent_executions / agent_memory / token_performance
-    汇总 → Claude Haiku 4.5 写 headline+body → 返回。
+    v1(本次):S07 review_engine 真实施 — 从 agent_executions + token_performance
+              汇总 metrics + 规则化产出 insights/rule_proposals。
+    v2(后续):接 Claude Haiku 4.5 写 headline + body + 提议规则。
+
+    Cold start:
+      - trade_count=0 → "暂无交易,Agent 还在观察"
+      - trade_count<5 → "样本不足"
     """
-    return _mock_review(period, date)
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return _mock_review(period, date)
+
+    try:
+        from agent.review_engine import generate_review
+        return await generate_review(period=period, target_date=date, user_id=user_id)
+    except Exception as e:
+        log.warning("review_engine failed, falling back to mock: %s", e)
+        return _mock_review(period, date)
 

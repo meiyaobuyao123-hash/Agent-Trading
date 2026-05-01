@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from agent.safety_engine import (  # noqa: E402
+    BreakerState,
     CheckOutcome,
     SafetyEngine,
     _eval_check,
@@ -33,6 +34,9 @@ from agent.safety_engine import (  # noqa: E402
     c3_thesis_evidence_non_empty,
     c5_hitl_completeness,
     get_safety_engine,
+    hr10_within_authorization,
+    hr11_credentials_revoked,
+    hr24_slippage_within_limit,
     reset_safety_engine_singleton,
 )
 
@@ -52,20 +56,53 @@ def engine() -> SafetyEngine:
 
 @pytest.fixture
 def base_ctx() -> dict:
-    """合规默认 ctx(应通过所有 HR)。"""
+    """合规默认 ctx(应通过所有 30 HR)。"""
     return {
+        # HR01-04
         "amount_usd": 100.0,
         "daily_total_usd": 500.0,
+        "monthly_total_usd": 5000.0,
         "strategy_position_pct": 0.05,
+        "chain_concentration_pct": 0.20,
+        "open_position_count": 5,
+        # HR07-09
         "liquidity_usd": 50000.0,
+        "buy_tax_pct": 0.02,
+        "sell_tax_pct": 0.02,
         "is_honeypot": False,
+        # HR10-12
+        "auth_single_trade_max": 500.0,
+        "credentials_revoked_at": None,
+        "kms_unavailable": False,
+        # HR13-15
+        "holders_count": 2000,
+        "top10_pct": 0.40,
+        "price_change_24h_pct": 0.05,
+        # HR16
         "regime": "TRENDING_UP",
         "action": "buy",
+        # HR17-20
+        "daily_loss_usd": 0,
+        "weekly_loss_usd": 0,
+        "consecutive_losses": 0,
+        "max_drawdown_pct": 0.05,
+        # HR21-25
         "token_address": "Mock1111",
         "blacklist_tokens": [],
         "seconds_since_last_trade": 600,
+        "trades_last_hour": 1,
+        "slippage_pct": 0.01,
+        "max_slippage_pct": 0.05,
         "hitl_required": False,
         "hitl_approved": True,
+        # HR26-30
+        "strategy_stage": "saved",
+        "copy_target_wallet": None,
+        "blacklist_wallets": [],
+        "token_age_seconds": 86400 * 7,    # 7 天
+        "mode": "paper",
+        "user_quota_exhausted": False,
+        # 全局
         "agent_global_state": "normal",
     }
 
@@ -78,11 +115,18 @@ class TestLoading:
 
     def test_load_succeeds(self, engine: SafetyEngine):
         assert engine.loaded
-        assert len(engine.hard_rules) >= 10
+        # v0.3 全部 30 HR + 13 CB + 5 C 都 implemented
+        assert len(engine.hard_rules) == 30
+        assert len(engine.circuit_breakers) == 13
         assert len(engine.constitutional) == 5
-        # 至少 10 条 HR 标 implemented=True
-        impl = [r for r in engine.hard_rules if r.get("implemented")]
-        assert len(impl) >= 10
+        impl_hr = [r for r in engine.hard_rules if r.get("implemented")]
+        impl_cb = [r for r in engine.circuit_breakers if r.get("implemented")]
+        assert len(impl_hr) == 30
+        assert len(impl_cb) == 13
+        # hr_to_cb_map 至少 5 条
+        assert len(engine.hr_to_cb_map) >= 5
+        # cb_index 应包含 13 条
+        assert len(engine._cb_index) == 13
 
     def test_failsafe_when_yaml_missing(self, tmp_path):
         e = SafetyEngine()
@@ -437,6 +481,381 @@ class TestCFunctions:
             }
             ctx[missing] = None
             assert c5_hitl_completeness(ctx), f"缺 {missing} 应触发 C5"
+
+
+# ============================================================
+# 6. 新增 20 条 HR 各 1-2 路(v0.3)
+# ============================================================
+
+class TestNewHardRules:
+    """HR03/05/06/08/10/11/12/13/14/15/17/18/19/20/23/24/26/27/29/30"""
+
+    def test_hr03_monthly_under_pass(self, engine, base_ctx):
+        base_ctx["monthly_total_usd"] = 15000
+        assert "HR03" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr03_monthly_over_block(self, engine, base_ctx):
+        base_ctx["monthly_total_usd"] = 25000
+        assert "HR03" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr05_chain_conc_low_pass(self, engine, base_ctx):
+        base_ctx["chain_concentration_pct"] = 0.30
+        assert "HR05" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr05_chain_conc_high_block(self, engine, base_ctx):
+        base_ctx["chain_concentration_pct"] = 0.70
+        assert "HR05" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr06_position_count_under_pass(self, engine, base_ctx):
+        base_ctx["open_position_count"] = 10
+        assert "HR06" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr06_position_count_over_block(self, engine, base_ctx):
+        base_ctx["open_position_count"] = 22
+        assert "HR06" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr08_low_tax_pass(self, engine, base_ctx):
+        base_ctx["buy_tax_pct"] = 0.05
+        base_ctx["sell_tax_pct"] = 0.05
+        assert "HR08" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr08_high_buy_tax_block(self, engine, base_ctx):
+        base_ctx["buy_tax_pct"] = 0.15
+        assert "HR08" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr08_high_sell_tax_block(self, engine, base_ctx):
+        base_ctx["sell_tax_pct"] = 0.20
+        assert "HR08" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr10_within_auth_pass(self, engine, base_ctx):
+        base_ctx["amount_usd"] = 100
+        base_ctx["auth_single_trade_max"] = 500
+        assert "HR10" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr10_over_auth_block(self, engine, base_ctx):
+        base_ctx["amount_usd"] = 400
+        base_ctx["auth_single_trade_max"] = 200
+        assert "HR10" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr10_missing_auth_block(self, engine, base_ctx):
+        base_ctx["amount_usd"] = 100
+        base_ctx["auth_single_trade_max"] = None
+        assert "HR10" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr11_revoked_paper_pass(self, engine, base_ctx):
+        # paper 模式即使 revoked 也通过 HR11(只禁真金)
+        base_ctx["mode"] = "paper"
+        base_ctx["credentials_revoked_at"] = "2026-04-01T00:00:00Z"
+        assert "HR11" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr11_revoked_live_block(self, engine, base_ctx):
+        base_ctx["mode"] = "auto"
+        base_ctx["credentials_revoked_at"] = "2026-04-01T00:00:00Z"
+        assert "HR11" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr12_kms_available_pass(self, engine, base_ctx):
+        base_ctx["kms_unavailable"] = False
+        assert "HR12" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr12_kms_unavailable_block(self, engine, base_ctx):
+        base_ctx["kms_unavailable"] = True
+        assert "HR12" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr13_holders_enough_pass(self, engine, base_ctx):
+        base_ctx["holders_count"] = 200
+        assert "HR13" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr13_holders_few_block(self, engine, base_ctx):
+        base_ctx["holders_count"] = 30
+        assert "HR13" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr14_top10_low_pass(self, engine, base_ctx):
+        base_ctx["top10_pct"] = 0.50
+        assert "HR14" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr14_top10_high_block(self, engine, base_ctx):
+        base_ctx["top10_pct"] = 0.85
+        assert "HR14" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr15_24h_drop_buy_block(self, engine, base_ctx):
+        base_ctx["price_change_24h_pct"] = -0.45
+        base_ctx["action"] = "buy"
+        assert "HR15" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr15_24h_drop_sell_pass(self, engine, base_ctx):
+        # 大跌允许卖
+        base_ctx["price_change_24h_pct"] = -0.45
+        base_ctx["action"] = "sell"
+        assert "HR15" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr15_normal_buy_pass(self, engine, base_ctx):
+        base_ctx["price_change_24h_pct"] = -0.10
+        assert "HR15" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr17_daily_loss_under_pass(self, engine, base_ctx):
+        base_ctx["daily_loss_usd"] = 200
+        assert "HR17" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr17_daily_loss_over_block(self, engine, base_ctx):
+        base_ctx["daily_loss_usd"] = 600
+        assert "HR17" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr18_weekly_loss_block(self, engine, base_ctx):
+        base_ctx["weekly_loss_usd"] = 2000
+        assert "HR18" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr19_consecutive_losses_block(self, engine, base_ctx):
+        base_ctx["consecutive_losses"] = 4
+        assert "HR19" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr20_max_drawdown_block(self, engine, base_ctx):
+        base_ctx["max_drawdown_pct"] = 0.25
+        assert "HR20" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr23_trades_last_hour_block(self, engine, base_ctx):
+        base_ctx["trades_last_hour"] = 6
+        assert "HR23" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr24_slippage_within_pass(self, engine, base_ctx):
+        base_ctx["slippage_pct"] = 0.02
+        base_ctx["max_slippage_pct"] = 0.05
+        assert "HR24" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr24_slippage_over_block(self, engine, base_ctx):
+        base_ctx["slippage_pct"] = 0.10
+        base_ctx["max_slippage_pct"] = 0.05
+        assert "HR24" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr26_unsaved_strategy_activation_block(self, engine, base_ctx):
+        base_ctx["action"] = "activate_strategy"
+        base_ctx["strategy_stage"] = "clarifying"
+        assert "HR26" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr26_saved_activation_pass(self, engine, base_ctx):
+        base_ctx["action"] = "activate_strategy"
+        base_ctx["strategy_stage"] = "saved"
+        assert "HR26" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr27_copy_blacklisted_block(self, engine, base_ctx):
+        base_ctx["action"] = "copy_trade"
+        base_ctx["copy_target_wallet"] = "BadWallet"
+        base_ctx["blacklist_wallets"] = ["BadWallet", "WorseWallet"]
+        assert "HR27" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr27_copy_clean_pass(self, engine, base_ctx):
+        base_ctx["action"] = "copy_trade"
+        base_ctx["copy_target_wallet"] = "GoodWallet"
+        base_ctx["blacklist_wallets"] = ["BadWallet"]
+        assert "HR27" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr29_new_token_auto_block(self, engine, base_ctx):
+        base_ctx["token_age_seconds"] = 1000     # < 1h
+        base_ctx["mode"] = "auto"
+        assert "HR29" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr29_new_token_paper_pass(self, engine, base_ctx):
+        # paper 模式允许新币
+        base_ctx["token_age_seconds"] = 1000
+        base_ctx["mode"] = "paper"
+        assert "HR29" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr29_old_token_auto_pass(self, engine, base_ctx):
+        # 老币 auto 通过
+        base_ctx["token_age_seconds"] = 86400 * 30
+        base_ctx["mode"] = "auto"
+        assert "HR29" not in _ids(engine.check_trade(base_ctx))
+
+    def test_hr30_quota_exhausted_block(self, engine, base_ctx):
+        base_ctx["user_quota_exhausted"] = True
+        assert "HR30" in _ids(engine.check_trade(base_ctx))
+
+    def test_hr30_quota_ok_pass(self, engine, base_ctx):
+        base_ctx["user_quota_exhausted"] = False
+        assert "HR30" not in _ids(engine.check_trade(base_ctx))
+
+
+# ============================================================
+# 7. CB 状态管理(trip / release / auto-expire / persister)
+# ============================================================
+
+class TestCircuitBreakers:
+
+    def test_trip_unknown_cb_ignored(self, engine):
+        result = engine.trip_breaker("CB99", reason="bogus")
+        assert result is None
+        assert not engine.is_breaker_active("CB99")
+
+    def test_trip_cb01_blocks_trade(self, engine, base_ctx):
+        engine.trip_breaker("CB01", reason="manual test")
+        assert engine.is_breaker_active("CB01")
+        results = engine.check_trade(base_ctx)
+        # base_ctx 是合规的,但 CB01 active 应该 BLOCK
+        assert "CB01" in _ids(results)
+
+    def test_release_breaker(self, engine):
+        engine.trip_breaker("CB03", reason="test")
+        assert engine.is_breaker_active("CB03")
+        ok = engine.release_breaker("CB03")
+        assert ok is True
+        assert not engine.is_breaker_active("CB03")
+
+    def test_release_unknown_returns_false(self, engine):
+        assert engine.release_breaker("CB99") is False
+
+    def test_idempotent_trip(self, engine):
+        s1 = engine.trip_breaker("CB05", reason="r1")
+        s2 = engine.trip_breaker("CB05", reason="r2")  # second trip 不更新
+        assert s1 is s2
+        assert s1.reason == "r1"
+
+    def test_auto_expire(self, engine):
+        """CB06 auto_release_after_min=10 → 模拟过期"""
+        from datetime import datetime, timezone, timedelta
+        engine.trip_breaker("CB06", reason="api err")
+        # 强制改 auto_release_at 到过去
+        state = engine._active_breakers["CB06"]
+        state.auto_release_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+        # 触发自动 release
+        engine._release_expired_breakers()
+        assert not engine.is_breaker_active("CB06")
+
+    def test_get_active_breakers(self, engine):
+        engine.trip_breaker("CB01", reason="x")
+        engine.trip_breaker("CB13", reason="y")
+        active = engine.get_active_breakers()
+        assert {"CB01", "CB13"}.issubset(active.keys())
+        assert isinstance(active["CB01"], BreakerState)
+
+    def test_global_state_normal(self, engine):
+        assert engine.get_global_state() == "normal"
+
+    def test_global_state_blocked(self, engine):
+        engine.trip_breaker("CB01", reason="x")  # severity=blocked
+        assert engine.get_global_state() == "blocked"
+
+    def test_global_state_degraded(self, engine):
+        engine.trip_breaker("CB03", reason="x")  # severity=degraded
+        assert engine.get_global_state() == "degraded"
+
+    def test_global_state_blocked_wins_over_degraded(self, engine):
+        engine.trip_breaker("CB03", reason="x")  # degraded
+        engine.trip_breaker("CB01", reason="y")  # blocked
+        assert engine.get_global_state() == "blocked"
+
+    def test_state_persister_called(self, engine):
+        """注入 persister 验证每次 trip/release 都调用。"""
+        snapshots: list[dict] = []
+        engine.set_state_persister(lambda payload: snapshots.append(payload))
+
+        engine.trip_breaker("CB01", reason="test")
+        assert len(snapshots) == 1
+        assert snapshots[-1]["state"] == "blocked"
+        assert any(b["cb_id"] == "CB01" for b in snapshots[-1]["active_breakers"])
+
+        engine.release_breaker("CB01")
+        assert len(snapshots) == 2
+        assert snapshots[-1]["state"] == "normal"
+
+    def test_persister_exception_swallowed(self, engine):
+        """持久化失败不应阻断 CB 状态变化。"""
+        def boom(payload):
+            raise RuntimeError("DB down")
+
+        engine.set_state_persister(boom)
+        # 应该不抛
+        state = engine.trip_breaker("CB02", reason="test")
+        assert state is not None
+        assert engine.is_breaker_active("CB02")
+
+
+# ============================================================
+# 8. HR ↔ CB 联动(HR 触发 → 自动 trip CB)
+# ============================================================
+
+class TestHrCbLinkage:
+
+    def test_hr17_trips_cb01(self, engine, base_ctx):
+        base_ctx["daily_loss_usd"] = 600
+        results = engine.check_trade(base_ctx)
+        assert "HR17" in _ids(results)
+        assert engine.is_breaker_active("CB01")
+
+    def test_hr18_trips_cb02(self, engine, base_ctx):
+        base_ctx["weekly_loss_usd"] = 2000
+        engine.check_trade(base_ctx)
+        assert engine.is_breaker_active("CB02")
+
+    def test_hr19_trips_cb03(self, engine, base_ctx):
+        base_ctx["consecutive_losses"] = 5
+        engine.check_trade(base_ctx)
+        assert engine.is_breaker_active("CB03")
+
+    def test_hr20_trips_cb05(self, engine, base_ctx):
+        base_ctx["max_drawdown_pct"] = 0.30
+        engine.check_trade(base_ctx)
+        assert engine.is_breaker_active("CB05")
+
+    def test_hr16_trips_cb13(self, engine, base_ctx):
+        base_ctx["regime"] = "CRISIS"
+        base_ctx["action"] = "buy"
+        engine.check_trade(base_ctx)
+        assert engine.is_breaker_active("CB13")
+
+    def test_hr12_trips_cb12(self, engine, base_ctx):
+        base_ctx["kms_unavailable"] = True
+        engine.check_trade(base_ctx)
+        assert engine.is_breaker_active("CB12")
+
+    def test_clean_ctx_no_cb_tripped(self, engine, base_ctx):
+        engine.check_trade(base_ctx)
+        assert engine.get_global_state() == "normal"
+        assert not engine.get_active_breakers()
+
+
+# ============================================================
+# 9. HR10/11/24 函数直测
+# ============================================================
+
+class TestNewHrFunctions:
+
+    def test_hr10_within(self):
+        assert not hr10_within_authorization({"amount_usd": 100, "auth_single_trade_max": 500})
+
+    def test_hr10_over(self):
+        assert hr10_within_authorization({"amount_usd": 600, "auth_single_trade_max": 500})
+
+    def test_hr10_missing_amount_pass(self):
+        assert not hr10_within_authorization({})
+
+    def test_hr10_missing_cap_blocks(self):
+        assert hr10_within_authorization({"amount_usd": 100, "auth_single_trade_max": None})
+
+    def test_hr11_paper_safe(self):
+        assert not hr11_credentials_revoked({
+            "mode": "paper",
+            "credentials_revoked_at": "2026-04-01",
+        })
+
+    def test_hr11_live_revoked_blocks(self):
+        assert hr11_credentials_revoked({
+            "mode": "auto",
+            "credentials_revoked_at": "2026-04-01",
+        })
+
+    def test_hr11_live_not_revoked_safe(self):
+        assert not hr11_credentials_revoked({
+            "mode": "live",
+            "credentials_revoked_at": None,
+        })
+
+    def test_hr24_within_limit(self):
+        assert not hr24_slippage_within_limit({"slippage_pct": 0.01, "max_slippage_pct": 0.05})
+
+    def test_hr24_over_limit(self):
+        assert hr24_slippage_within_limit({"slippage_pct": 0.10, "max_slippage_pct": 0.05})
+
+    def test_hr24_missing_fields_safe(self):
+        assert not hr24_slippage_within_limit({})
 
 
 # ============================================================

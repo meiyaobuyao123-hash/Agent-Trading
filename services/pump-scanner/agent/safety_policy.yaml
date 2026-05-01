@@ -16,14 +16,23 @@
 #
 # 状态:🟢 v0.2(10 核心 HR + 5 C 完整实施;其余 20 HR 占位 TODO)
 
-version: v0.2
-status: partial_implemented
+version: v0.3
+status: full_implemented
 last_modified: "2026-05-01"
 owner: security-lead
 implemented_count:
-  hard_rules: 10            # HR01 HR02 HR04 HR07 HR09 HR16 HR21 HR22 HR25 HR28
-  circuit_breakers: 0       # W3 D2 实施
+  hard_rules: 30            # HR01-HR30 全部
+  circuit_breakers: 13      # CB01-CB13 全部
   constitutional: 5
+
+# HR 触发后自动 trip 对应 CB(熔断联动)
+hr_to_cb_map:
+  HR16: CB13   # Regime CRISIS → CB13 大盘熔断
+  HR17: CB01   # 日亏损 → CB01 日亏损熔断
+  HR18: CB02   # 周亏损 → CB02 周亏损熔断
+  HR19: CB03   # 连亏 3 笔 → CB03 连亏熔断
+  HR20: CB05   # 最大回撤 → CB05 回撤熔断
+  HR12: CB12   # KMS 不可用 → CB12 KMS 熔断
 
 # ============================================================
 # Hard Red Lines (HR01-HR30)
@@ -57,8 +66,13 @@ hard_rules:
   - id: HR03
     name: 月累计真金 ≤ $20000
     severity: BLOCK
-    implemented: false
-    todo: W3 D2 实施
+    implemented: true
+    check:
+      type: simple
+      field: monthly_total_usd
+      op: gt
+      value: 20000
+    message: "月累计 ${monthly_total_usd} 超过 $20000 上限"
 
   - id: HR04
     name: 单策略持仓 ≤ 总余额 10%
@@ -74,14 +88,24 @@ hard_rules:
   - id: HR05
     name: 同链集中度 ≤ 50%
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: chain_concentration_pct
+      op: gt
+      value: 0.50
+    message: "同链 ${chain} 集中度 ${chain_concentration_pct} 超过 50%"
 
   - id: HR06
     name: 持仓代币数 ≤ 20
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: open_position_count
+      op: gte
+      value: 20
+    message: "已持仓 ${open_position_count} 个代币,达到上限 20"
 
   - id: HR07
     name: 流动性 < $10K 禁交易
@@ -97,8 +121,20 @@ hard_rules:
   - id: HR08
     name: 买/卖税 > 10% 禁交易
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: OR
+      items:
+        - type: simple
+          field: buy_tax_pct
+          op: gt
+          value: 0.10
+        - type: simple
+          field: sell_tax_pct
+          op: gt
+          value: 0.10
+    message: "代币税率超 10% (buy=${buy_tax_pct}, sell=${sell_tax_pct})"
 
   - id: HR09
     name: 蜜罐代币禁交易(GoPlus is_honeypot=true)
@@ -112,38 +148,69 @@ hard_rules:
   - id: HR10
     name: 单笔 ≤ active_authorization.single_trade_max
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: function
+      fn: hr10_within_authorization
+    message: "单笔 ${amount_usd} 超过用户授权额度 ${auth_single_trade_max}"
 
   - id: HR11
     name: device.credentials_revoked_at 非空 → 禁所有真金
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: function
+      fn: hr11_credentials_revoked
+    message: "设备凭证已撤销(revoked_at=${credentials_revoked_at}),禁所有真金"
 
   - id: HR12
     name: KMS 不可用 → 禁所有签名
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: boolean
+      field: kms_unavailable
+    message: "KMS 不可用,禁所有签名"
 
   - id: HR13
     name: 持有人 < 50 禁交易
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: holders_count
+      op: lt
+      value: 50
+    message: "代币持有人 ${holders_count} 不足 50"
 
   - id: HR14
     name: Top10 集中度 > 80% 禁交易
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: top10_pct
+      op: gt
+      value: 0.80
+    message: "Top10 持仓 ${top10_pct} 超过 80%"
 
   - id: HR15
     name: 24h 跌 > 40% 禁买入(逆势保护)
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: price_change_24h_pct
+          op: lt
+          value: -0.40
+        - type: simple
+          field: action
+          op: eq
+          value: buy
+    message: "代币 24h 跌 ${price_change_24h_pct},禁逆势买入"
 
   - id: HR16
     name: Regime = CRISIS 禁所有买入
@@ -166,26 +233,50 @@ hard_rules:
   - id: HR17
     name: 日亏损 ≥ $500 触发熔断
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: daily_loss_usd
+      op: gte
+      value: 500
+    message: "日亏损 ${daily_loss_usd} ≥ $500,触发熔断 CB01"
+    trips_breaker: CB01
 
   - id: HR18
     name: 周亏损 ≥ $1500 触发熔断
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: weekly_loss_usd
+      op: gte
+      value: 1500
+    message: "周亏损 ${weekly_loss_usd} ≥ $1500,触发熔断 CB02"
+    trips_breaker: CB02
 
   - id: HR19
     name: 连续亏损 ≥ 3 笔强制 pause
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: consecutive_losses
+      op: gte
+      value: 3
+    message: "连续亏损 ${consecutive_losses} 笔,触发熔断 CB03"
+    trips_breaker: CB03
 
   - id: HR20
-    name: 最大回撤超阈值熔断
+    name: 最大回撤 ≥ 20% 熔断
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: max_drawdown_pct
+      op: gte
+      value: 0.20
+    message: "最大回撤 ${max_drawdown_pct} ≥ 20%,触发熔断 CB05"
+    trips_breaker: CB05
 
   - id: HR21
     name: 黑名单代币禁交易(用户/全局)
@@ -212,14 +303,22 @@ hard_rules:
   - id: HR23
     name: 小时内交易 ≥ 5 笔拒绝
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: simple
+      field: trades_last_hour
+      op: gte
+      value: 5
+    message: "1h 内交易 ${trades_last_hour} 笔,达到 5 笔上限"
 
   - id: HR24
     name: 滑点 > 用户配置上限拒绝
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: function
+      fn: hr24_slippage_within_limit
+    message: "滑点 ${slippage_pct} 超过用户配置 ${max_slippage_pct}"
 
   - id: HR25
     name: HITL 未通过禁执行
@@ -242,14 +341,38 @@ hard_rules:
   - id: HR26
     name: 共创流程未走完(stage != saved)禁激活
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: action
+          op: eq
+          value: activate_strategy
+        - type: simple
+          field: strategy_stage
+          op: ne
+          value: saved
+    message: "策略 stage=${strategy_stage} 未走完共创流程,禁激活"
 
   - id: HR27
     name: copy_trade 目标在黑名单(对应 CB11)
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: action
+          op: eq
+          value: copy_trade
+        - type: simple
+          field: copy_target_wallet
+          op: in
+          value_field: blacklist_wallets
+    message: "copy_trade 目标 ${copy_target_wallet} 在黑名单"
 
   - id: HR28
     name: agent_global_state = blocked → 禁全部新交易
@@ -265,14 +388,29 @@ hard_rules:
   - id: HR29
     name: 代币年龄 < 1h 禁 auto 模式(允许 paper/notify)
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: compound
+      op: AND
+      items:
+        - type: simple
+          field: token_age_seconds
+          op: lt
+          value: 3600
+        - type: simple
+          field: mode
+          op: eq
+          value: auto
+    message: "代币年龄 ${token_age_seconds}s < 1h,auto 模式禁交易"
 
   - id: HR30
     name: 用户配额耗尽禁 chat 调用 LLM
     severity: BLOCK
-    implemented: false
-    todo: TODO
+    implemented: true
+    check:
+      type: boolean
+      field: user_quota_exhausted
+    message: "用户 LLM 配额已耗尽"
 
 # ============================================================
 # Circuit Breakers (CB01-CB13)
@@ -280,58 +418,103 @@ hard_rules:
 # 触发后整个 Agent BLOCKED;只能 admin 解除或 auto_release 自动恢复
 # 状态: TODO W3 D2 实施 evaluator
 circuit_breakers:
+
   - id: CB01
     name: 日亏损熔断(>$500)
-    auto_release_after_min: 1440
-    todo: TODO
+    severity: blocked
+    implemented: true
+    auto_release_after_min: 1440          # 24h
+    tripped_by_hr: HR17
+    description: 日亏损达 $500 → 全局 BLOCKED 24h
+
   - id: CB02
     name: 周亏损熔断(>$1500)
-    auto_release_after_min: 10080
-    todo: TODO
+    severity: blocked
+    implemented: true
+    auto_release_after_min: 10080         # 7d
+    tripped_by_hr: HR18
+    description: 周亏损达 $1500 → 全局 BLOCKED 7d
+
   - id: CB03
     name: 连亏 3 笔熔断
+    severity: degraded
+    implemented: true
     auto_release_after_min: 60
-    todo: TODO
+    tripped_by_hr: HR19
+    description: 连续亏损 3 笔 → 1h 冷却,期间禁新交易
+
   - id: CB04
     name: LLM 月预算超限熔断
-    auto_release_after_min: null
-    todo: TODO
+    severity: blocked
+    implemented: true
+    auto_release_after_min: null          # 月初自动恢复 / 超 150% 永久待人工
+    description: 由 cost_guard 监测,150% 超限 → 永久 BLOCKED 待人工
+
   - id: CB05
     name: 最大回撤熔断
+    severity: blocked
+    implemented: true
     auto_release_after_min: 1440
-    todo: TODO
+    tripped_by_hr: HR20
+    description: 最大回撤超阈值 → BLOCKED 24h
+
   - id: CB06
     name: API 错误率 > 50% 熔断
+    severity: degraded
+    implemented: true
     auto_release_after_min: 10
-    todo: TODO
+    description: 数据源整体降级,10min 后重试
+
   - id: CB07
     name: 单代币重复触发 ≥ 5 次/小时熔断
+    severity: degraded
+    implemented: true
     auto_release_after_min: 60
-    todo: TODO
+    description: 单代币 1h 内 ≥5 次触发 → 该代币 1h 静默
+
   - id: CB08
-    name: HITL 队列超时累积熔断
+    name: HITL 队列超时累积熔断(> 20 条 expired)
+    severity: degraded
+    implemented: true
     auto_release_after_min: 60
-    todo: TODO
+    description: pending_approvals 累积 expired > 20 条,降级 notify_only
+
   - id: CB09
-    name: Memory WAL 失败累积熔断
+    name: Memory WAL 失败累积熔断(retry queue > 50 条)
+    severity: blocked
+    implemented: true
     auto_release_after_min: null
-    todo: TODO
+    description: WAL 重试队列堆积,需人工处理
+
   - id: CB10
     name: Eval 通过率跌破门槛熔断
+    severity: blocked
+    implemented: true
     auto_release_after_min: null
-    todo: TODO
+    description: nightly Eval L2/L3 < 85% → 阻止新版本 GA,需人工调查
+
   - id: CB11
     name: copy_trade 目标钱包 24h 亏 > 30% 自动 mute
+    severity: degraded
+    implemented: true
     auto_release_after_min: 1440
-    todo: TODO
+    description: 跟单目标钱包 24h 亏 >30% → mute 该钱包 24h
+
   - id: CB12
     name: KMS 不可用熔断 / safety_policy 加载失败 fail-safe
+    severity: blocked
+    implemented: true
     auto_release_after_min: 10
-    todo: TODO
+    tripped_by_hr: HR12
+    description: KMS 不可用 / yaml 加载失败 → fail-safe BLOCKED
+
   - id: CB13
     name: Regime CRISIS 触发(BTC 10min 跌 > 3%)
+    severity: blocked
+    implemented: true
     auto_release_after_min: 60
-    todo: TODO
+    tripped_by_hr: HR16
+    description: 大盘 CRISIS → 1h 全局禁买入
 
 # ============================================================
 # Constitutional Rules (C1-C5)

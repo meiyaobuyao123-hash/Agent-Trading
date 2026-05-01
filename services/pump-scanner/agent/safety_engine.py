@@ -1,9 +1,9 @@
 """
-Safety Engine — runtime check 入口(完整实施 v0.2)
+Safety Engine — runtime check 入口(完整实施 v0.3)
 引用 docs/agent-pm/08-safety-policy.md + docs/agent-pm/17-tech-plan.md Phase 0
-引用 safety_policy.yaml v0.2
+引用 safety_policy.yaml v0.3
 
-加载 safety_policy.yaml → 构建 30 HR + 13 CB + 5 C 规则集(目前 10 HR + 5 C 实施)
+加载 safety_policy.yaml → 30 HR + 13 CB + 5 C 全部 implemented
 fail-safe: 加载失败 → 整个 Agent BLOCKED(CB12)
 
 调用方:
@@ -12,28 +12,18 @@ fail-safe: 加载失败 → 整个 Agent BLOCKED(CB12)
   - agent/loops/chat_loop.py: LLM 调用前(W7 接入)
   - api/routes_*: 中间件层(W4 接入)
 
-调用约定:
-  ctx = {
-      "amount_usd": 250.0,
-      "daily_total_usd": 1500,
-      "strategy_position_pct": 0.05,
-      "liquidity_usd": 50000,
-      "is_honeypot": False,
-      "regime": "TRENDING_UP",       # CRISIS / TRENDING_UP / ...
-      "action": "buy",                # buy / sell / hold
-      "token_address": "...",
-      "blacklist_tokens": ["..."],
-      "seconds_since_last_trade": 90,
-      "hitl_required": False,
-      "hitl_approved": True,
-      "agent_global_state": "normal", # normal / blocked / degraded
-  }
-  results = engine.check_trade(ctx)
-  if any(r.outcome == BLOCK for r in results):
-      raise SafetyBlocked(results)
+核心 API:
+  engine.check_trade(ctx) → list[CheckResult]      # 跑全部 active CB + implemented HR
+  engine.check_constitutional(text, ...) → list[CheckResult]  # 跑 5 C
+  engine.trip_breaker(cb_id, reason)               # 主动触发熔断
+  engine.release_breaker(cb_id)                    # 主动解除
+  engine.is_breaker_active(cb_id) → bool
+  engine.get_active_breakers() → dict
+  engine.set_state_persister(fn)                   # 注入 DB 持久化回调(W3 D3 接 agent_global_state)
 """
 from __future__ import annotations
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any, Callable
 from pathlib import Path
@@ -62,26 +52,33 @@ class CheckResult:
     severity: str = "BLOCK"
 
 
+@dataclass
+class BreakerState:
+    cb_id: str
+    name: str
+    tripped_at: datetime
+    auto_release_at: datetime | None    # None = 永久待人工
+    reason: str
+    severity: str                        # 'blocked' | 'degraded'
+
+
 # ============================================================
-# C 规则的 Python 函数注册(yaml type=function 时按 fn 名查这里)
+# C 规则 + 部分 HR 的 Python 函数注册
 # ============================================================
 
 def c2_thesis_risks_min_2(ctx: dict) -> bool:
-    """触发: risks 长度 < 2"""
     thesis = ctx.get("thesis", {}) or {}
     risks = thesis.get("risks", [])
     if not isinstance(risks, list):
-        return True  # 类型错也触发
+        return True
     return len(risks) < 2
 
 
 def c3_thesis_evidence_non_empty(ctx: dict) -> bool:
-    """触发: evidence 为空 / 无 source 字段"""
     thesis = ctx.get("thesis", {}) or {}
     evidence = thesis.get("evidence", [])
     if not isinstance(evidence, list) or not evidence:
         return True
-    # 每条 evidence 必须有 source(防 LLM 编造)
     for ev in evidence:
         if not isinstance(ev, dict) or not ev.get("source"):
             return True
@@ -90,11 +87,10 @@ def c3_thesis_evidence_non_empty(ctx: dict) -> bool:
 
 def c4_persona_tone(ctx: dict) -> bool:
     """同步 path 占位;异步 LLM judge 由 eval 跑"""
-    return False  # 不触发
+    return False
 
 
 def c5_hitl_completeness(ctx: dict) -> bool:
-    """触发: HITL 必需但缺 approval_id / signature / audit_log_id 之一"""
     if not ctx.get("hitl_required"):
         return False
     return not (
@@ -104,11 +100,51 @@ def c5_hitl_completeness(ctx: dict) -> bool:
     )
 
 
-C_FUNCTIONS: dict[str, Callable[[dict], bool]] = {
-    "c2_thesis_risks_min_2": c2_thesis_risks_min_2,
-    "c3_thesis_evidence_non_empty": c3_thesis_evidence_non_empty,
-    "c4_persona_tone": c4_persona_tone,
-    "c5_hitl_completeness": c5_hitl_completeness,
+def hr10_within_authorization(ctx: dict) -> bool:
+    """触发: 单笔超过用户授权额度。
+    auth_single_trade_max 缺失视为无授权(触发,要求显式提供)。
+    """
+    amount = ctx.get("amount_usd")
+    cap = ctx.get("auth_single_trade_max")
+    if amount is None:
+        return False  # 没在交易上下文,跳过
+    if cap is None:
+        return True   # 缺授权,触发
+    try:
+        return float(amount) > float(cap)
+    except (TypeError, ValueError):
+        return True
+
+
+def hr11_credentials_revoked(ctx: dict) -> bool:
+    """触发: device.credentials_revoked_at 非空且当前是真金交易。
+    paper / notify 不触发。
+    """
+    if ctx.get("mode") not in ("auto", "live"):
+        return False
+    return bool(ctx.get("credentials_revoked_at"))
+
+
+def hr24_slippage_within_limit(ctx: dict) -> bool:
+    """触发: 滑点 > 用户配置上限。"""
+    slip = ctx.get("slippage_pct")
+    cap = ctx.get("max_slippage_pct")
+    if slip is None or cap is None:
+        return False
+    try:
+        return float(slip) > float(cap)
+    except (TypeError, ValueError):
+        return False
+
+
+CHECK_FUNCTIONS: dict[str, Callable[[dict], bool]] = {
+    "c2_thesis_risks_min_2":         c2_thesis_risks_min_2,
+    "c3_thesis_evidence_non_empty":  c3_thesis_evidence_non_empty,
+    "c4_persona_tone":               c4_persona_tone,
+    "c5_hitl_completeness":          c5_hitl_completeness,
+    "hr10_within_authorization":     hr10_within_authorization,
+    "hr11_credentials_revoked":      hr11_credentials_revoked,
+    "hr24_slippage_within_limit":    hr24_slippage_within_limit,
 }
 
 
@@ -139,7 +175,6 @@ def _eval_check(check: dict, ctx: dict) -> bool:
     if t == "simple":
         actual = ctx.get(check["field"])
         op = check["op"]
-        # value 可能直接来自 yaml 静态值,或来自 ctx 的另一个字段
         if "value_field" in check:
             value = ctx.get(check["value_field"], [])
         else:
@@ -180,7 +215,7 @@ def _eval_check(check: dict, ctx: dict) -> bool:
             return False
 
     if t == "function":
-        fn = C_FUNCTIONS.get(check.get("fn", ""))
+        fn = CHECK_FUNCTIONS.get(check.get("fn", ""))
         if fn is None:
             log.warning("unknown function: %s", check.get("fn"))
             return False
@@ -208,14 +243,20 @@ def _format_message(template: str, ctx: dict) -> str:
 # Engine 主体
 # ============================================================
 
-@dataclass
 class SafetyEngine:
-    hard_rules: list[dict] = field(default_factory=list)
-    circuit_breakers: list[dict] = field(default_factory=list)
-    constitutional: list[dict] = field(default_factory=list)
-    loaded: bool = False
-    load_error: str | None = None
-    _active_breakers: set[str] = field(default_factory=set)
+    """单例(by get_safety_engine());不直接实例化生产代码。"""
+
+    def __init__(self) -> None:
+        self.hard_rules: list[dict] = []
+        self.circuit_breakers: list[dict] = []
+        self.constitutional: list[dict] = []
+        self.hr_to_cb_map: dict[str, str] = {}
+        self.loaded: bool = False
+        self.load_error: str | None = None
+        self._active_breakers: dict[str, BreakerState] = {}
+        self._cb_index: dict[str, dict] = {}    # cb_id → yaml entry
+        # DB 持久化回调(W3 D3 注入,接 agent_global_state 表)
+        self._state_persister: Callable[[dict], None] | None = None
 
     def load(self, path: Path | None = None) -> None:
         p = path or POLICY_PATH
@@ -227,13 +268,16 @@ class SafetyEngine:
             self.hard_rules = policy.get("hard_rules", []) or []
             self.circuit_breakers = policy.get("circuit_breakers", []) or []
             self.constitutional = policy.get("constitutional", []) or []
+            self.hr_to_cb_map = policy.get("hr_to_cb_map", {}) or {}
+            self._cb_index = {cb["id"]: cb for cb in self.circuit_breakers if "id" in cb}
             self.loaded = True
             self.load_error = None
             log.info(
-                "[SafetyEngine] loaded HR=%d CB=%d C=%d",
+                "[SafetyEngine] loaded HR=%d CB=%d C=%d hr→cb=%d",
                 len(self.hard_rules),
                 len(self.circuit_breakers),
                 len(self.constitutional),
+                len(self.hr_to_cb_map),
             )
         except Exception as e:
             self.load_error = str(e)
@@ -242,10 +286,15 @@ class SafetyEngine:
                 "[SafetyEngine] FAIL-SAFE: policy load failed → BLOCKED. err=%s", e
             )
 
-    # ----- HR 检查入口(trade_executor 调) -----
+    def set_state_persister(self, fn: Callable[[dict], None] | None) -> None:
+        """注入 DB 持久化回调(每次状态变化时调用)。fn(state_dict) 由调用方实现。"""
+        self._state_persister = fn
+
+    # ----- HR + CB 统一检查入口 -----
     def check_trade(self, ctx: dict) -> list[CheckResult]:
-        """对一笔潜在交易跑全部 implemented HR;返回所有 BLOCK 结果。
-        加载失败时直接返回 CB12 fail-safe。
+        """对一笔潜在交易跑 active CB + implemented HR;返回所有 BLOCK 结果。
+        加载失败时返回 CB12 fail-safe。
+        过程中 HR 触发可能 trip 新 CB(yaml.trips_breaker 字段)。
         """
         if not self.loaded:
             return [
@@ -257,7 +306,23 @@ class SafetyEngine:
                 )
             ]
 
+        # 1. 自动释放过期 CB
+        self._release_expired_breakers()
+
+        # 2. 检查所有 active CB(blocked 级 → BLOCK,degraded → BLOCK 但带标记)
         results: list[CheckResult] = []
+        for cb_id, state in self._active_breakers.items():
+            results.append(
+                CheckResult(
+                    rule_id=cb_id,
+                    rule_name=f"CB active: {state.name}",
+                    outcome=CheckOutcome.BLOCK,
+                    reason=state.reason,
+                    severity=state.severity,
+                )
+            )
+
+        # 3. 跑 HR(即使 CB 已 active,也跑完拿全部违规列表给上层审计)
         for rule in self.hard_rules:
             if not rule.get("implemented"):
                 continue
@@ -265,22 +330,27 @@ class SafetyEngine:
             if not check:
                 continue
             if _eval_check(check, ctx):
+                rid = rule["id"]
                 results.append(
                     CheckResult(
-                        rule_id=rule["id"],
+                        rule_id=rid,
                         rule_name=rule["name"],
                         outcome=CheckOutcome.BLOCK,
                         reason=_format_message(rule.get("message", ""), ctx),
                         severity=rule.get("severity", "BLOCK"),
                     )
                 )
+                # HR 触发 → 自动 trip CB(trips_breaker 字段优先,fallback 到 hr_to_cb_map)
+                cb_id = rule.get("trips_breaker") or self.hr_to_cb_map.get(rid)
+                if cb_id and cb_id not in self._active_breakers:
+                    self.trip_breaker(cb_id, reason=f"triggered by {rid}")
+
         return results
 
     # ----- Constitutional 检查(LLM 输出过滤) -----
     def check_constitutional(self, text: str, persona: str = "中级",
                              thesis: dict | None = None,
                              hitl_ctx: dict | None = None) -> list[CheckResult]:
-        """对 LLM 输出 + thesis + hitl 上下文跑 C1-C5。"""
         if not self.loaded:
             return []
 
@@ -296,7 +366,6 @@ class SafetyEngine:
         for rule in self.constitutional:
             if not rule.get("implemented"):
                 continue
-            # partial 也跑(C4 只是同步路径不触发)
             check = rule.get("check")
             if not check:
                 continue
@@ -312,17 +381,114 @@ class SafetyEngine:
                 )
         return results
 
-    # ----- CB 状态查询 -----
+    # ============================================================
+    # CB 状态管理
+    # ============================================================
+
+    def trip_breaker(self, cb_id: str, reason: str) -> BreakerState | None:
+        """触发熔断;若 cb_id 不在 yaml 注册则忽略。
+        幂等:重复 trip 同一 cb 不更新 tripped_at(保留首次触发时间)。
+        """
+        cb = self._cb_index.get(cb_id)
+        if cb is None:
+            log.warning("[SafetyEngine] trip 未注册的 CB: %s", cb_id)
+            return None
+
+        if cb_id in self._active_breakers:
+            return self._active_breakers[cb_id]  # 幂等
+
+        now = datetime.now(timezone.utc)
+        auto_min = cb.get("auto_release_after_min")
+        auto_release_at = (
+            now + timedelta(minutes=auto_min) if auto_min else None
+        )
+        state = BreakerState(
+            cb_id=cb_id,
+            name=cb.get("name", cb_id),
+            tripped_at=now,
+            auto_release_at=auto_release_at,
+            reason=reason,
+            severity=cb.get("severity", "blocked"),
+        )
+        self._active_breakers[cb_id] = state
+        log.warning(
+            "[SafetyEngine] CB tripped: %s (%s) auto_release=%s",
+            cb_id, reason, auto_release_at,
+        )
+        self._notify_state_change()
+        return state
+
+    def release_breaker(self, cb_id: str, manual: bool = True) -> bool:
+        """解除熔断。manual=True 表示人工解除(写 audit log);auto=自动到期。"""
+        if cb_id not in self._active_breakers:
+            return False
+        state = self._active_breakers.pop(cb_id)
+        log.info(
+            "[SafetyEngine] CB released: %s (was: %s) manual=%s",
+            cb_id, state.reason, manual,
+        )
+        self._notify_state_change()
+        return True
+
     def is_breaker_active(self, cb_id: str) -> bool:
+        self._release_expired_breakers()
         return cb_id in self._active_breakers
 
-    def trip_breaker(self, cb_id: str, reason: str) -> None:
-        log.warning("[SafetyEngine] CB tripped: %s (%s)", cb_id, reason)
-        self._active_breakers.add(cb_id)
-        # TODO: 写 agent_global_state + security_audit_log
+    def get_active_breakers(self) -> dict[str, BreakerState]:
+        self._release_expired_breakers()
+        return dict(self._active_breakers)
 
-    def release_breaker(self, cb_id: str) -> None:
-        self._active_breakers.discard(cb_id)
+    def get_global_state(self) -> str:
+        """Agent 全局状态:'normal' / 'degraded' / 'blocked'
+        - 任一 blocked 级 CB → blocked
+        - 任一 degraded 级 CB → degraded
+        - 否则 normal
+        """
+        self._release_expired_breakers()
+        if any(s.severity == "blocked" for s in self._active_breakers.values()):
+            return "blocked"
+        if any(s.severity == "degraded" for s in self._active_breakers.values()):
+            return "degraded"
+        return "normal"
+
+    def _release_expired_breakers(self) -> None:
+        now = datetime.now(timezone.utc)
+        expired = [
+            cb_id for cb_id, s in self._active_breakers.items()
+            if s.auto_release_at and s.auto_release_at <= now
+        ]
+        for cb_id in expired:
+            state = self._active_breakers.pop(cb_id)
+            log.info("[SafetyEngine] CB auto-released: %s (after %s)",
+                     cb_id, state.auto_release_at)
+        if expired:
+            self._notify_state_change()
+
+    def _notify_state_change(self) -> None:
+        """每次 active_breakers 变化时,通知 DB 持久化层。"""
+        if self._state_persister is None:
+            return
+        try:
+            payload = {
+                "state": self.get_global_state(),
+                "active_breakers": [
+                    {
+                        "cb_id": s.cb_id,
+                        "name": s.name,
+                        "tripped_at": s.tripped_at.isoformat(),
+                        "auto_release_at": (
+                            s.auto_release_at.isoformat()
+                            if s.auto_release_at else None
+                        ),
+                        "reason": s.reason,
+                        "severity": s.severity,
+                    }
+                    for s in self._active_breakers.values()
+                ],
+            }
+            self._state_persister(payload)
+        except Exception as e:
+            log.warning("[SafetyEngine] state persister failed: %s", e)
 
 
 # 全局单例

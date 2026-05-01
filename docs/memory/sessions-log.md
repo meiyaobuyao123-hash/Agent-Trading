@@ -856,3 +856,66 @@
   4. **服务器执行 migrations**（需用户 SSH 确认后才动）
   5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
 - 注意:040 是给 Supabase 表加字段(agent_memory/agent_strategies),需 Supabase Dashboard 执行,不在 local_pg/
+
+---
+
+## 2026-05-01 会话 3（W3 D2：safety_engine v0.3 全量 + CB 状态管理）
+
+### 关键决策（用户中途追加）
+- **新工作规则**：**长 session 每 10 分钟更新记忆三件套**（双端 MEMORY.md + sessions-log + topic 文件）
+  - 写入本地 + 仓库 `rules.md`
+  - 目的：session 中断时不丢工作，下次接手能从最近 10 分钟的进度恢复
+
+### 做了什么
+- **safety_policy.yaml v0.3**（v0.2 → v0.3）：
+  - 30 HR 全部 implemented（W3 D1 已 10，本次补 20：HR03/05/06/08/10/11/12/13/14/15/17/18/19/20/23/24/26/27/29/30）
+  - 13 CB 全部 implemented + auto_release_after_min 配置
+  - 加 `hr_to_cb_map`：HR16→CB13, HR17→CB01, HR18→CB02, HR19→CB03, HR20→CB05, HR12→CB12
+  - HR 加 `trips_breaker` 字段（HR17/18/19/20 自动联动 CB）
+  - CB 加 `severity` 字段（blocked / degraded）
+- **safety_engine.py 重写 v0.3**：
+  - 加 `BreakerState` dataclass（cb_id/name/tripped_at/auto_release_at/reason/severity）
+  - `trip_breaker(cb_id, reason)` → 写 _active_breakers + 计算 auto_release_at + 通知 persister
+  - `release_breaker(cb_id, manual)` 主动解除
+  - `_release_expired_breakers()` 自动检查到期 CB → 释放
+  - `is_breaker_active` / `get_active_breakers` / `get_global_state`（normal/degraded/blocked，blocked 优先）
+  - `set_state_persister(fn)` 注入 DB 持久化回调（W3 D3 接 agent_global_state 表）
+  - `check_trade` 升级：先检查 active CB → 跑全部 implemented HR → HR 命中后自动 trip CB
+  - 加 3 个 Python 函数：`hr10_within_authorization` / `hr11_credentials_revoked`（paper 模式不触发） / `hr24_slippage_within_limit`
+- **migration 042_agent_global_state.sql**（local_pg/）：
+  - `agent_global_state` 单例表（id=1，state + active_breakers JSONB）
+  - `agent_global_state_history` 状态变更审计（90d 保留）
+- **测试扩展**：
+  - 加 41 个新 HR 测试（20 HR 各 1-2 路 + 边界）
+  - 加 12 个 CB 状态管理测试（trip/release/idempotent/auto-expire/persister）
+  - 加 7 个 HR-CB 联动测试（HR12/16/17/18/19/20 → 自动 trip 对应 CB）
+  - 加 10 个 HR 函数直测（HR10/11/24）
+  - **总计 132 测试 全部通过 2.28s**（W3 D1 是 62，翻倍）
+
+### 讨论结论
+- **CB 状态机设计**：内存层 `_active_breakers: dict[cb_id, BreakerState]` + DB 持久化层（state_persister 回调）+ 自动到期释放
+- **HR-CB 联动**：HR 触发后自动 trip 对应 CB（yaml `trips_breaker` 字段优先于 `hr_to_cb_map`）
+- **幂等 trip**：重复 trip 同一 CB 保留首次 tripped_at（不重置冷却时间）
+- **持久化失败不阻断**：state_persister 异常吞掉，CB 状态变更照常生效（避免 DB 故障导致 safety 失效）
+- **paper 模式特殊处理**：HR11（credentials revoked）只在 mode=auto/live 触发；HR29（新币 < 1h）只在 mode=auto 触发
+- **fixture function scope**：每个测试新建 SafetyEngine 实例，避免 CB 状态污染
+
+### 被否定的方案
+- ~~CB 自动触发条件写在 yaml 的 check 字段~~：CB 是被 trip 的，不是被 evaluate 的，触发逻辑在 HR
+- ~~persister 失败抛异常阻断流程~~：safety 高可用要求，DB 故障不应让 CB 失效
+- ~~每次 check_trade 都跑 13 CB evaluator~~：CB 状态由内存管理，不需要 evaluate，只需查 _active_breakers
+- ~~30 HR 一次写完不分批~~：分 W3 D1（10 HR）+ W3 D2（20 HR）两次，方便回溯调试
+
+### 仓库状态（W3 D2 待 commit）
+- 修改：safety_policy.yaml / safety_engine.py / tests/test_safety_engine.py
+- 新增：migrations/local_pg/042_agent_global_state.sql
+- 双份记忆：rules.md / MEMORY.md / sessions-log.md（本条）
+
+### 下次 session 接手
+- 读本条目
+- 已就绪：safety_engine v0.3（30 HR + 13 CB + 5 C 全实施 + 132 测试通过）
+- 候选下一步（按优先级）：
+  1. **state_persister 接 agent_global_state 表**（用 local_db 写 PG）+ 启动恢复
+  2. **trade_executor 接入 safety_engine.check_trade**（W4 阻塞 launch 的关键路径）
+  3. **CB 自动触发的外部条件**（CB07 单代币重复/CB08 HITL 队列累积/CB09 WAL 失败累积/CB11 跟单亏损）需要外部 monitor 调 trip_breaker
+  4. **服务器跑 migrations**（prod 操作，需用户确认）

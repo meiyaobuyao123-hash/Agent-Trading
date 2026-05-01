@@ -91,6 +91,16 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 
 ---
 
+## 2026-05-01 本次会话（W1 启动 + W3 D1/D2 safety_engine）
+- ✅ W1 启动包（commit `e08eae1`）：28 文件 +2266 行，migrations/agent骨架/Flutter models 全部就位
+- ✅ W3 D1（commit `4bbc05d`）：safety_engine 10 HR + 5 C，**62 测试通过**；migrations 迁本地 PG；db_cleanup 加 8 表 TTL
+- ✅ W3 D2（进行中）：safety_policy.yaml v0.3 全部 30 HR + 13 CB + 5 C 实施；safety_engine 加 BreakerState/trip/release/auto-expire/persister；migration 042 agent_global_state；**132 测试通过**（翻倍）
+- 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
+- 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
+- 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）
+
+---
+
 ## 2026-04-30 本次会话
 - ✅ 记忆恢复 + 服务器健康检查（43.156.207.26 新加坡运行正常，实例 lhins-ph7ak7k9 / Ubuntu-GFLK）
 - ✅ 跨机器代码 SHA1 对比：服务器 vs 本地 387 个 tracked 文件**完全一致**（除 Podfile.lock 1 个本地未提交差异）
@@ -207,7 +217,21 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
     - Phase 5 PRD-009 多 DEX 路由：1911 行，21/22 测试通过
     - Phase 6 PRD-010 优化 Agent 升级：1843 行，33/39 测试通过
     - 总计新增 ~9000 行代码，120/132 测试通过（91%）
-  - migration 030/031/032 待执行（debates/paper_trades/ab_tests 表）
+  - migration 030/031/032/033 已执行（debates/paper_trades/ab_tests/hot_sim_trades 表）
+- ✅ **Supabase 优化**：
+  - db_cleanup.py 每 6h 清理
+  - token_trades 只存信号池+毕业代币（减少 95%）
+  - 月增长从 ~120MB 降至 ~30MB，免费版可用 2 年+
+- ✅ **全信号源策略监控**：
+  - hot_sim_trader.py: 4 信号源（热币/聪明钱/内盘/BTC-ETH）
+  - BTC $50 + ETH $20 + 其他 $10，止盈止损 15%
+  - repeat + unique 两种模式（BTC/ETH 只有 repeat）
+  - 毫秒级价格检查（DEX swap 事件驱动）
+  - Flutter 策略监控看板：5 Tab + 弱化入口
+- ✅ **数据 Tab**：全链盈亏分布 + 交易成本 + 时段/生命周期/金额分布
+- ✅ **BTC/ETH 白色主题适配**：所有暗色→iOS 系统色
+- ✅ **Agent 流式打字机**：SSE 推送 + 光标闪烁
+- ✅ **Agent 多轮工具调用**：create_strategy + list_strategies + run_backtest
 - ✅ **Supabase 优化**：
   - db_cleanup.py 每 6h 清理
   - token_trades 95% 缩减（只存信号池+毕业代币）

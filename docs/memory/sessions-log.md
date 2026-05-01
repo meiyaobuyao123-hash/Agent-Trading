@@ -1748,3 +1748,73 @@ get_tool_registry() = {
 5. **18 Prompt Library** — frontmatter / cache_breakpoints / A/B 灰度
 6. **Eval golden 1660 条** — L1-L4
 7. **KMS AwsKmsProvider** — 需 AWS 账号
+
+---
+
+## 会话 11 续 4(Memory 升级 + T05/T06,2026-05-01,autonomous-loop)
+
+### 触发
+autonomous-loop-dynamic 自驱动继续,选 Memory 4 层升级(最大杠杆 + 全 LLM-free)
+
+### 实际产出(commit `5bf2868` deploy)
+
+**Memory 4 层升级**
+
+- `episodic_memory.py.get_relevant`:对齐 PRD-005 评分公式
+  - trigger_source(+3) + chain(+2) + token_type(+2) + mcap_bucket(+1)
+  - regime_distance(0/0.5/1/2 by 7-state ordered table)
+  - freshness 30d 半衰(0~1.5 clamp)
+  - match_count log10 bonus(0~1)
+  - score < 3.0 过滤掉
+  - 命中后 _bump_match_count(异步,失败不阻断)
+- `semantic_memory.py`:
+  - 5 条硬晋升常量 STRICT_PROMOTE_*(REFLECTIONS=3 / SAMPLES=20 /
+    WILSON_LOWER=0.55 / TTEST_P=0.05 / MIN_REGIMES=2 / SHADOW_DAYS=14)
+  - check_strict_promotion_gates(static):返 {passed, gates, summary}
+  - 内置 Welch's t-test(无 scipy 依赖,处理零方差边界)
+  - try_promote_strict:5 全过 + duplicate 检查 + 上限 → 写 agent_memory +
+    shadow_mode_until=+14d + propose_count_so_far=reflections
+- `reflection.py`:
+  - jaccard_distance(static):简易 (k,v) pair 集合 Jaccard
+  - deduplicate_proposed_rules(new, existing, threshold=0.20):
+    distance < 20% 视为重复跳过,case-normalize,空 existing 全保留
+
+**新 Tool(8/17)**
+
+- T05 list_strategies:StrategyManager.list_strategies 包装,精简返
+  + active_count(供 Agent ≤ 20 配额检查)
+- T06 update_strategy_status:VALID_TRANSITIONS 校验 + 幂等(同状态 noop) +
+  archived terminal + strategy_not_found / invalid_transition 透明 reason
+
+### 测试 (tests/test_memory_upgrades.py — 26 cases)
+- episodic min_score / freshness 衰减 / regime distance / match_count log
+- semantic 5 gate all_pass / fail_low_reflections / fail_few_samples /
+  fail_low_wilson / fail_single_regime + try_promote_strict 写入 / duplicate / failed_gates
+- reflection jaccard identical/different / dedupe close match / case normalize / empty existing
+- T05 basic / invalid_status / empty
+- T06 active→paused / idempotent / archived terminal / not_found / paused→active
+- registry 8 tools
+
+**26/26 PASSED**;服务器 git pull + 验证 8 Tool 注册 OK
+
+### Phase 进度更新
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**8/17 Tool 已实施** / **Memory 4 层评分公式 + 5 条硬晋升 + JSON-diff dedupe ✅** / WAL 已存 ⏸ 真接入
+- Phase 2:review_engine v1 ✅ / 共创状态机骨架 ✅ / Skill SKILL.md ⏸ / Loop / Prompt Library ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话(W3 D5 + 续 1 + 续 2 + 续 3 + 续 4)
+- 后端 Python:25 + 29 + 12 + 17 + 19 + 26 = **128 后端新测试**
+- Flutter:7 + 17 = **24 Flutter 新测试**
+- **session 共 152 新测试,100% PASSED**
+- 8 commits 全部 deploy 服务器
+
+### 下次接手候选
+1. **review_engine v2 Claude Haiku 4.5** — 接 LLM 写 headline / body / proposals
+2. **共创 chat_loop LLM** — 根据 stage 选 prompt + tool_use(集成 8 Tool)
+3. **剩余 9 Tool** — T01/T02/T03/T07/T08/T09/T10/T12/T16
+4. **18 Prompt Library** — frontmatter / cache_breakpoints / A/B 灰度
+5. **Eval golden 1660 条** L1-L4
+6. **WAL 真接入** — 关键写入(trade_outcome/risk_lesson/approve_rule)走 WAL
+7. **KMS AwsKmsProvider** — 需 AWS 账号

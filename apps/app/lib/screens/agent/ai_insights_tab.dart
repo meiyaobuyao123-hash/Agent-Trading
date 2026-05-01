@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../services/agent_service.dart';
+import 'review_page.dart';
+import 'memory_management_page.dart';
 
 /// AI 洞察 Tab — Regime 状态 + 学到的规则 + 反思 + 风控
 class AiInsightsTab extends StatefulWidget {
@@ -51,6 +53,8 @@ class _AiInsightsTabState extends State<AiInsightsTab> with AutomaticKeepAliveCl
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildPhase3Entry(),
+          const SizedBox(height: 12),
           _buildRegimeCard(),
           const SizedBox(height: 12),
           _buildPerformanceCard(),
@@ -61,6 +65,67 @@ class _AiInsightsTabState extends State<AiInsightsTab> with AutomaticKeepAliveCl
         ],
       ),
     );
+  }
+
+  /// Phase 3 入口:复盘 + 记忆管理
+  Widget _buildPhase3Entry() {
+    Widget tile({
+      required IconData icon,
+      required String title,
+      required String subtitle,
+      required Color color,
+      required VoidCallback onTap,
+    }) {
+      return Expanded(
+        child: Material(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(icon, color: color, size: 18),
+                  const SizedBox(height: 6),
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
+                  Text(subtitle,
+                      style: const TextStyle(
+                          fontSize: 11, color: Colors.white60)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(children: [
+      tile(
+        icon: Icons.summarize_outlined,
+        title: '复盘报告',
+        subtitle: '日 / 周 / 月',
+        color: Colors.tealAccent,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const ReviewPage()),
+        ),
+      ),
+      const SizedBox(width: 10),
+      tile(
+        icon: Icons.psychology_outlined,
+        title: '我的规则',
+        subtitle: '记忆管理',
+        color: Colors.purpleAccent,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const MemoryManagementPage()),
+        ),
+      ),
+    ]);
   }
 
   /// Regime 状态条

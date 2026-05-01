@@ -7,6 +7,7 @@ import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
+import '../../widgets/agent/cocreation_stepper.dart';
 import '../../models/thesis.dart';
 import '../../models/pending_approval.dart';
 import 'strategy_detail_page.dart';
@@ -242,6 +243,9 @@ class _ChatTabState extends State<_ChatTab>
   bool _loadingThesis = false;
   String? _thesisErr;
 
+  /// W3 D5: 共创 stepper demo — 用户点 banner 后循环演示 7 阶段
+  CocreationStage? _demoCocreationStage;
+
   @override
   bool get wantKeepAlive => true;
 
@@ -404,6 +408,66 @@ class _ChatTabState extends State<_ChatTab>
                 ),
               ),
               const Icon(Icons.arrow_forward, size: 14, color: Colors.orange),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// W3 D5 Cocreation Stepper Demo Banner — 点击展开/隐藏 stepper,
+  /// 展开后显示当前阶段,再点切换到下一阶段(循环演示 7 阶段)
+  Widget _buildCocreationDemoBanner() {
+    final scheme = Theme.of(context).colorScheme;
+    if (_demoCocreationStage != null) {
+      return Column(children: [
+        CocreationStepper(current: _demoCocreationStage!),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.skip_next, size: 16),
+                label: const Text('下一阶段', style: TextStyle(fontSize: 12)),
+                onPressed: () => setState(() {
+                  final values = CocreationStage.values;
+                  final next = (_demoCocreationStage!.index + 1) % values.length;
+                  _demoCocreationStage = values[next];
+                }),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(
+              child: const Text('关闭 Demo', style: TextStyle(fontSize: 12)),
+              onPressed: () => setState(() => _demoCocreationStage = null),
+            ),
+          ]),
+        ),
+      ]);
+    }
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Material(
+        color: scheme.primary.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _demoCocreationStage = CocreationStage.idle),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(children: [
+              Icon(Icons.auto_awesome, size: 18, color: scheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🪄 试一试 共创 7 阶段 (Demo)',
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              Icon(Icons.arrow_forward, size: 14, color: scheme.primary),
             ]),
           ),
         ),
@@ -597,6 +661,8 @@ class _ChatTabState extends State<_ChatTab>
         _buildThesisDemoSection(),
         // W3 D4 HITL Demo Banner
         _buildHitlDemoBanner(),
+        // W3 D5 Cocreation Stepper Demo Banner
+        _buildCocreationDemoBanner(),
         Expanded(
           child: ListView.builder(
             controller: _scrollController,

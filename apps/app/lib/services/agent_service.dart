@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
+import '../models/review.dart';
+import '../models/semantic_rule.dart';
 
 /// Agent API 服务 — 对接后端 FastAPI
 class AgentService {
@@ -543,6 +545,253 @@ class AgentService {
       return resp.statusCode == 200;
     } catch (_) {
       return false;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // 复盘 / 规则 / 记忆 (S07 review-engine + Memory)
+  // 后端尚未实施 → 返回 mock 数据,Flutter UI 可联调
+  // ═══════════════════════════════════════════════════════
+
+  /// 获取复盘报告(daily/weekly/monthly)。后端 endpoint 暂未实施,返 mock。
+  Future<Review?> getReview(String period, {DateTime? date}) async {
+    final d = date ?? DateTime.now();
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/reviews?period=$period'
+            '&date=${d.toIso8601String().substring(0, 10)}'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (resp.statusCode == 200) {
+        return Review.fromJson(jsonDecode(resp.body) as Map<String, dynamic>);
+      }
+    } catch (_) {/* fallthrough to mock */}
+    return _mockReview(period, d);
+  }
+
+  Review _mockReview(String period, DateTime d) {
+    final from = period == 'daily'
+        ? d.subtract(const Duration(days: 1))
+        : period == 'weekly'
+            ? d.subtract(const Duration(days: 7))
+            : d.subtract(const Duration(days: 30));
+    return Review(
+      reviewId: 'mock-${period}-${d.millisecondsSinceEpoch}',
+      period: period,
+      periodFrom: from,
+      periodTo: d,
+      summary: ReviewSummary(
+        headline: period == 'daily'
+            ? '今日 4 笔 — 胜率 75%,EV +2.1%'
+            : period == 'weekly'
+                ? '本周 18 笔 — 胜率 61%,EV +1.4%,夏普 1.8'
+                : '本月 64 笔 — 胜率 58%,EV +1.1%,最大回撤 -6.2%',
+        body: period == 'daily'
+            ? '上午 SOL TRENDING_UP,聪明钱跟单 3 笔全胜;下午 EVM regime 转 RANGING,1 笔小亏出场。整体执行符合策略框架。'
+            : '本期 RANGING 与 TRENDING_UP 各占一半。聪明钱跟单策略胜率明显高于规则触发,建议在 RANGING 期间收紧 BC 进场阈值至 8%。',
+      ),
+      insights: [
+        const Insight(
+          type: 'win_pattern',
+          text: '聪明钱 elite ≥ 75 + 流动性 > \$50K + Regime ∈ {TRENDING_UP, BREAKOUT} 时,胜率 78% (n=14)',
+          evidenceTradeIds: ['t-2031', 't-2034', 't-2038'],
+          llmJudgeScore: 0.82,
+        ),
+        const Insight(
+          type: 'loss_pattern',
+          text: 'BC < 5% + 持有时长 > 4h 全部亏损 (n=5),建议加 4h 强制平仓',
+          evidenceTradeIds: ['t-1998', 't-2001', 't-2007'],
+          llmJudgeScore: 0.71,
+        ),
+        const Insight(
+          type: 'risk_warning',
+          text: 'CRISIS 期间 1 笔仍触发(HR16 已修),整体风险暴露在阈值内',
+          evidenceTradeIds: ['t-2042'],
+          llmJudgeScore: 0.65,
+        ),
+      ],
+      ruleProposals: [
+        const RuleProposal(
+          proposalId: 'rp-001',
+          humanReadable: 'RANGING regime 期间,BC 进场阈值从 5% 收紧到 8%',
+          formalCondition: {
+            'when': {'regime': 'RANGING', 'bc_pct': {'<': 8}},
+            'then': {'block_entry': true},
+          },
+          sampleSize: 22,
+          winRateDiff: 12.4,
+          wilsonCiLower: 0.58,
+          activeRegimes: ['RANGING'],
+          reflectionId: 'refl-2026-04-29',
+        ),
+        const RuleProposal(
+          proposalId: 'rp-002',
+          humanReadable: 'BC < 5% 且持仓 > 4h 强制平仓',
+          formalCondition: {
+            'when': {'bc_pct': {'<': 5}, 'hold_hours': {'>': 4}},
+            'then': {'force_close': true},
+          },
+          sampleSize: 14,
+          winRateDiff: 8.7,
+          wilsonCiLower: 0.51,
+          activeRegimes: ['RANGING', 'HIGH_VOLATILITY'],
+          reflectionId: 'refl-2026-04-30',
+        ),
+      ],
+      metrics: ReviewMetrics(
+        tradeCount: period == 'daily' ? 4 : (period == 'weekly' ? 18 : 64),
+        winRate: 0.61,
+        evPct: 1.4,
+        sharpe: 1.8,
+        maxDrawdownPct: -6.2,
+        profitFactor: 1.92,
+        klyFraction: 0.18,
+      ),
+      coldStartState: 'normal',
+    );
+  }
+
+  /// 列出 Semantic Memory 规则。后端 endpoint 暂未实施,返 mock。
+  Future<List<SemanticRule>> listSemanticRules() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/memory/rules'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return (data['rules'] as List? ?? const [])
+            .map((x) => SemanticRule.fromJson(x as Map<String, dynamic>))
+            .toList();
+      }
+    } catch (_) {/* fallthrough to mock */}
+    return _mockSemanticRules();
+  }
+
+  List<SemanticRule> _mockSemanticRules() {
+    final now = DateTime.now();
+    return [
+      SemanticRule(
+        ruleId: 'sm-001',
+        humanReadable: '聪明钱 elite ≥ 75 + 流动性 > \$50K → 仓位上调 20%',
+        formalCondition: const {
+          'when': {'smart_score': {'>=': 75}, 'liquidity_usd': {'>': 50000}},
+          'then': {'position_size_multiplier': 1.2},
+        },
+        activeRegimes: const ['TRENDING_UP', 'BREAKOUT'],
+        evidence: const RuleEvidence(
+          sampleSize: 28,
+          winRateDiff: 14.2,
+          tTestP: 0.03,
+          wilsonCiLower: 0.62,
+          regimesObserved: ['TRENDING_UP', 'BREAKOUT'],
+        ),
+        status: RuleStatus.active,
+        matchCount: 47,
+        proposeCount: 1,
+        createdAt: now.subtract(const Duration(days: 21)),
+        updatedAt: now.subtract(const Duration(days: 2)),
+      ),
+      SemanticRule(
+        ruleId: 'sm-002',
+        humanReadable: 'CRISIS regime → 全局禁止开新仓',
+        formalCondition: const {
+          'when': {'regime': 'CRISIS'},
+          'then': {'block_entry': true},
+        },
+        activeRegimes: const ['CRISIS'],
+        evidence: const RuleEvidence(
+          sampleSize: 8,
+          winRateDiff: -22.0,
+          regimesObserved: ['CRISIS'],
+        ),
+        status: RuleStatus.active,
+        matchCount: 3,
+        proposeCount: 0,
+        createdAt: now.subtract(const Duration(days: 32)),
+        updatedAt: now.subtract(const Duration(days: 5)),
+      ),
+      SemanticRule(
+        ruleId: 'sm-003',
+        humanReadable: 'RANGING regime → BC 进场阈值收紧到 8% (Shadow)',
+        formalCondition: const {
+          'when': {'regime': 'RANGING', 'bc_pct': {'<': 8}},
+          'then': {'block_entry': true},
+        },
+        activeRegimes: const ['RANGING'],
+        evidence: const RuleEvidence(
+          sampleSize: 22,
+          winRateDiff: 12.4,
+          wilsonCiLower: 0.58,
+          regimesObserved: ['RANGING'],
+        ),
+        status: RuleStatus.shadow,
+        shadowModeUntil: now.add(const Duration(days: 9)),
+        matchCount: 2,
+        proposeCount: 1,
+        createdAt: now.subtract(const Duration(days: 5)),
+        updatedAt: now.subtract(const Duration(hours: 3)),
+      ),
+      SemanticRule(
+        ruleId: 'sm-004',
+        humanReadable: 'KOL Tier-1 sentiment > 0.7 → 加权进场分 +5',
+        formalCondition: const {
+          'when': {'kol_tier': 1, 'sentiment': {'>': 0.7}},
+          'then': {'score_bonus': 5},
+        },
+        activeRegimes: const ['TRENDING_UP'],
+        evidence: const RuleEvidence(
+          sampleSize: 12,
+          winRateDiff: 6.0,
+          regimesObserved: ['TRENDING_UP'],
+        ),
+        status: RuleStatus.dormant,
+        dormantSince: now.subtract(const Duration(days: 31)),
+        matchCount: 0,
+        proposeCount: 0,
+        createdAt: now.subtract(const Duration(days: 80)),
+        updatedAt: now.subtract(const Duration(days: 31)),
+      ),
+    ];
+  }
+
+  /// 启用/禁用规则
+  Future<bool> updateRule(String ruleId, {required bool enabled}) async {
+    try {
+      final resp = await _client.patch(
+        Uri.parse('$_apiBase/api/agent/memory/rules/$ruleId'),
+        headers: _headers,
+        body: jsonEncode({'status': enabled ? 'active' : 'disabled'}),
+      ).timeout(const Duration(seconds: 15));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return true; // mock 返成功
+    }
+  }
+
+  /// 删除规则
+  Future<bool> deleteRule(String ruleId) async {
+    try {
+      final resp = await _client.delete(
+        Uri.parse('$_apiBase/api/agent/memory/rules/$ruleId'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return true; // mock 返成功
+    }
+  }
+
+  /// 采纳规则提议(T11 approve_rule)
+  Future<bool> approveRuleProposal(String proposalId) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/memory/rule-proposals/$proposalId/approve'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return true; // mock 返成功
     }
   }
 }

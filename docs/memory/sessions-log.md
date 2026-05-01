@@ -785,3 +785,74 @@
   3. cost_guard 5 级降级实施（接 prompt_invocations 表）
   4. routes_admin Kill Switch 实施（< 10s 全局 BLOCKED）
 - 仓库状态：分支 agent-v1 在 e08eae1，main 在 429f5a8（未变）
+
+---
+
+## 2026-05-01 会话 2（W3 D1 safety_engine 实施 + 数据库迁本地 PG）
+
+### 关键决策（用户中途追加）
+- **数据库不放 Supabase**：8 张新表迁服务器本地 PostgreSQL（`agent_trading_local`，PG 14，已经在跑 dex_address_stats）
+- **节省空间 + 自动 TTL**：每张表配 TTL，db_cleanup.py 每 6h 跑
+
+### 做了什么
+- 服务器 PG 验证：postgres 14/main 端口 5432 在跑，用户 `agent_local` / DB `agent_trading_local` 已就绪
+- **safety_engine 完整实施**（commit `4bbc05d`，12 文件 +1140 / -120）：
+  - safety_policy.yaml v0.2：check 字段从字符串改为机器可读结构化条件（type=simple/boolean/compound/regex/function；op=gt/gte/lt/lte/eq/ne/in/not_in/contains/starts_with）
+  - safety_engine.py 完整 evaluator：load+fail-safe / check_trade / check_constitutional / _eval_check 通用 / 4 个 C 函数（c2/c3/c4/c5）
+  - 实施 10 条 HR：HR01/02/04/07/09/16/21/22/25/28
+  - 实施 5 条 C：C1 blocklist regex / C2 risks≥2 / C3 evidence 非空+source / C4 占位 / C5 HITL 完整
+- **tests/test_safety_engine.py**：**62 用例 全部 PASSED 0.62s**
+  - 4 加载 + 22 HR 正反 + 14 C + 10 evaluator + 3 format + 9 C 函数直测
+- **migrations 迁本地 PG**：
+  - 7 个 SQL 移到 `migrations/local_pg/`（034/035/036/037/038/039/041）
+  - 每个 SQL 头部加 `CREATE EXTENSION IF NOT EXISTS pgcrypto`
+  - 040 例外（ALTER Supabase 表）留 `migrations/` 根目录
+  - local_pg/README.md 说明执行步骤(SSH→psql)+ TTL 表
+- **db_cleanup.py 扩展**：
+  - 9 条 LOCAL_PG_RULES（8 表 + agent_thesis L3 例外）
+  - run_local_pg_cleanup() 用 psycopg2 连本地 PG，各表独立事务
+  - 表不存在时静默跳过（migration 未跑也不报错）
+  - run_full_cleanup() = Supabase + 本地 PG（主程序入口）
+
+### TTL 清理规则
+| 表 | TTL | 触发字段 |
+|---|---|---|
+| security_audit_log | 90d | ts |
+| pending_approvals | decided_at + 30d | decided_at |
+| memory_write_wal | flushed_at + 7d | flushed_at |
+| memory_write_retry_queue | resolved=true + 7d | created_at |
+| conversation_states | expires_at + 24h | expires_at |
+| prompt_versions | retired_at + 30d | retired_at |
+| prompt_invocations | 30d | ts |
+| agent_thesis | 30d（L3+conviction>0.8 例外90d） | ts |
+| eval_results | 90d | ts |
+| kms_key_aliases | 永久 | - |
+
+### 讨论结论
+- **服务器有 PG 14 现成**：端口 5432，agent_trading_local 数据库 + agent_local 用户已配（local_db.py 已对接 dex_address_stats）。直接复用，不用新装
+- **040 必须留 Supabase**：ALTER agent_memory + agent_strategies，这两个表本身在 Supabase
+- **migrations 不在本 session 执行**：只产出 SQL 文件，prod 执行需要 SSH+psql 单独操作
+- **safety_engine 设计选择**：check 字段结构化（不是字符串），机器可读支持 5 种 type、9 种 op、嵌套 compound。比 Python 函数注册更灵活（yaml 改不重启）
+- **62/62 测试通过**：覆盖 yaml 加载/fail-safe/10 HR 正反/5 C/evaluator 各 path/format/C 函数直测
+
+### 被否定的方案
+- ~~check 字段写 Python 表达式（eval()）~~：安全风险，改结构化条件
+- ~~所有 8 张表都进 local_pg/~~：040 必须留 Supabase（改 agent_memory/agent_strategies 字段）
+- ~~Supabase 全部继续用~~：用户明确说节省空间，新表迁本地 PG
+- ~~只跑 25 测试（计划数）~~：实际 62 测试（parametrize+边界覆盖更全）
+
+### 仓库状态
+- agent-v1 分支 commit `4bbc05d` 已推 GitHub
+- main 仍 `429f5a8`（未动）
+- 文件统计：+1140 / -120，12 文件改动（3 modified + 7 renamed + 2 new）
+
+### 下次 session 接手
+- 读本条目 + 17-tech-plan.md Phase 0 剩余任务
+- 已实施：safety_engine 10 HR + 5 C / tests 62/62 / migrations 迁 local_pg
+- 候选下一步（按优先级）：
+  1. **补全剩余 20 HR**（HR03/05/06/08/10/11/12/13/14/15/17-20/23/24/26/27/29/30）+ 测试
+  2. **CB 13 个熔断器实施** evaluator + agent_global_state 表 + 自动恢复定时器
+  3. **trade_executor 接入 safety_engine**（W4 任务，是阻塞 launch 的关键路径）
+  4. **服务器执行 migrations**（需用户 SSH 确认后才动）
+  5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
+- 注意:040 是给 Supabase 表加字段(agent_memory/agent_strategies),需 Supabase Dashboard 执行,不在 local_pg/

@@ -1126,3 +1126,306 @@ async def reject_pending_approval(
             "status": "rejected",
         }
     raise HTTPException(status_code=501, detail="W7-W12 实施;当前请用 MOCK_MODE=true")
+
+
+# ═══════════════════════════════════════════════════════════
+# W3 D5+: Memory rules CRUD + Reviews(对接 Phase 3 Flutter UI)
+# ═══════════════════════════════════════════════════════════
+#
+# 设计:
+#   - GET  /memory/rules                — 列表(读 agent_memory type=semantic)
+#   - PATCH /memory/rules/{id}          — 启用/禁用(改 is_active)
+#   - DELETE /memory/rules/{id}         — 删除(改 is_active=false + status=archived)
+#   - POST /memory/rule-proposals/{id}/approve — 采纳提议(MOCK,后续接 reflection)
+#   - GET  /reviews?period=daily        — 复盘(MOCK,后续接 S07 review-engine)
+
+
+def _shadow_remaining_iso(shadow_until: Optional[str]) -> Optional[str]:
+    return shadow_until
+
+
+def _to_semantic_rule(row: Dict[str, Any]) -> Dict[str, Any]:
+    """把 Supabase agent_memory row 映射成 Flutter SemanticRule schema。"""
+    sd = row.get("structured_data") or {}
+    if not isinstance(sd, dict):
+        sd = {}
+    cw = row.get("comply_win", 0) or 0
+    cl = row.get("comply_lose", 0) or 0
+    total = cw + cl
+    win_rate = cw / total if total > 0 else 0.0
+
+    is_active = bool(row.get("is_active", True))
+    shadow_until = row.get("shadow_mode_until")
+    dormant_since = row.get("dormant_since")
+    if shadow_until:
+        status = "shadow"
+    elif dormant_since:
+        status = "dormant"
+    elif is_active:
+        status = "active"
+    else:
+        status = "disabled"
+
+    return {
+        "rule_id": str(row.get("id", "")),
+        "human_readable": row.get("content", "")[:280],
+        "formal_condition": {
+            "condition": sd.get("condition", ""),
+            "action": sd.get("action", ""),
+        },
+        "active_regimes": sd.get("active_regimes", []) or [],
+        "evidence": {
+            "sample_size": total,
+            "win_rate_diff": round((win_rate - 0.5) * 100, 1),
+            "wilson_ci_lower": row.get("wilson_ci_lower"),
+            "regimes_observed": sd.get("regimes_observed", []) or [],
+        },
+        "status": status,
+        "shadow_mode_until": shadow_until,
+        "dormant_since": dormant_since,
+        "match_count": row.get("match_count", row.get("usage_count", 0)) or 0,
+        "propose_count": row.get("propose_count_so_far", 0) or 0,
+        "created_at": row.get("created_at") or "1970-01-01T00:00:00Z",
+        "updated_at": row.get("updated_at") or row.get("created_at")
+        or "1970-01-01T00:00:00Z",
+    }
+
+
+@router.get("/memory/rules")
+async def list_memory_rules(
+    user_id: str = Depends(get_current_user),
+):
+    """列出所有 semantic 规则(active + shadow + dormant + disabled)给 Flutter 记忆管理页。
+
+    后端读 Supabase `agent_memory` 表(type=semantic),映射成 Flutter SemanticRule schema。
+    若 DB 不可达,返回空数组而不是 500(Flutter 会自动 fallback 到本地 mock)。
+    """
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        # MOCK_MODE 下返同样 shape 的占位数据,让 Flutter 测试期能联调
+        return {"rules": [], "source": "mock"}
+
+    try:
+        from database import get_db
+
+        res = (
+            get_db()
+            .table("agent_memory")
+            .select("*")
+            .eq("type", "semantic")
+            .order("importance", desc=True)
+            .limit(100)
+            .execute()
+        )
+        rows = res.data or []
+        rules = [_to_semantic_rule(r) for r in rows]
+        return {"rules": rules, "source": "db", "count": len(rules)}
+    except Exception as e:
+        log.warning("list_memory_rules failed: %s", e)
+        return {"rules": [], "source": "error", "error": str(e)[:120]}
+
+
+class MemoryRuleUpdate(BaseModel):
+    status: Optional[str] = Field(
+        None, description="active | disabled (启用/禁用),其他状态由系统管理"
+    )
+
+
+@router.patch("/memory/rules/{rule_id}")
+async def update_memory_rule(
+    rule_id: str,
+    payload: MemoryRuleUpdate,
+    user_id: str = Depends(get_current_user),
+):
+    """启用/禁用规则。status='active' → is_active=true,status='disabled' → false。"""
+    if payload.status not in ("active", "disabled"):
+        raise HTTPException(status_code=400, detail="status must be 'active' or 'disabled'")
+
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {"ok": True, "rule_id": rule_id, "status": payload.status}
+
+    try:
+        from database import get_db
+        is_active = payload.status == "active"
+        get_db().table("agent_memory").update(
+            {"is_active": is_active}
+        ).eq("id", rule_id).execute()
+        # 强制 SemanticMemory 缓存刷新
+        try:
+            from agent.memory import get_memory_manager
+            get_memory_manager().semantic.force_refresh()
+        except Exception:
+            pass
+        return {"ok": True, "rule_id": rule_id, "status": payload.status}
+    except Exception as e:
+        log.warning("update_memory_rule failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.delete("/memory/rules/{rule_id}")
+async def delete_memory_rule(
+    rule_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """软删除规则:is_active=false,保留行用于审计。"""
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {"ok": True, "rule_id": rule_id, "deleted": True}
+
+    try:
+        from database import get_db
+        get_db().table("agent_memory").update(
+            {"is_active": False}
+        ).eq("id", rule_id).execute()
+        try:
+            from agent.memory import get_memory_manager
+            get_memory_manager().semantic.force_refresh()
+        except Exception:
+            pass
+        return {"ok": True, "rule_id": rule_id, "deleted": True}
+    except Exception as e:
+        log.warning("delete_memory_rule failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+@router.post("/memory/rule-proposals/{proposal_id}/approve")
+async def approve_rule_proposal(
+    proposal_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """采纳规则提议 → 进入 14 天 Shadow Mode。
+
+    MOCK_MODE 直接返成功;真实施需要 reflection 表 + S07 → SemanticMemory.try_promote
+    (W7-W12)。
+    """
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {
+            "ok": True,
+            "proposal_id": proposal_id,
+            "promoted_rule_id": f"sm-{proposal_id[-6:]}",
+            "shadow_mode_days": 14,
+        }
+    raise HTTPException(
+        status_code=501,
+        detail="规则采纳真实施在 W7-W12;当前请用 MOCK_MODE=true",
+    )
+
+
+# ── Reviews (复盘) ───────────────────────────────────────────────
+
+def _mock_review(period: str, target_date: Optional[str]) -> Dict[str, Any]:
+    """MOCK 复盘报告。Flutter UI 测试用,真实施在 S07 review-engine(W7-W12)。"""
+    from datetime import datetime, timedelta, timezone
+    if target_date:
+        try:
+            dt = datetime.fromisoformat(target_date)
+        except Exception:
+            dt = datetime.now(timezone.utc)
+    else:
+        dt = datetime.now(timezone.utc)
+
+    delta = {"daily": 1, "weekly": 7, "monthly": 30}.get(period, 1)
+    period_from = dt - timedelta(days=delta)
+    period_to = dt
+
+    metrics_per_period = {
+        "daily": {"trades": 4, "win_rate": 0.75, "ev_pct": 2.1, "sharpe": 1.8},
+        "weekly": {"trades": 18, "win_rate": 0.61, "ev_pct": 1.4, "sharpe": 1.8},
+        "monthly": {"trades": 64, "win_rate": 0.58, "ev_pct": 1.1, "sharpe": 1.6},
+    }
+    m = metrics_per_period.get(period, metrics_per_period["daily"])
+
+    headline_per_period = {
+        "daily": "今日 4 笔 — 胜率 75%,EV +2.1%",
+        "weekly": "本周 18 笔 — 胜率 61%,EV +1.4%,夏普 1.8",
+        "monthly": "本月 64 笔 — 胜率 58%,EV +1.1%,最大回撤 -6.2%",
+    }
+    body_per_period = {
+        "daily": "上午 SOL TRENDING_UP,聪明钱跟单 3 笔全胜;下午 EVM regime 转 RANGING,1 笔小亏出场。整体执行符合策略框架。",
+        "weekly": "本周 RANGING 与 TRENDING_UP 各占一半。聪明钱跟单胜率高于规则触发,建议在 RANGING 期间收紧 BC 进场阈值至 8%。",
+        "monthly": "全月 64 笔,SOL 链占 70%。CRISIS 出现 1 次但风控生效未触发交易。最大回撤 -6.2% 出现在 04-22 BTC 急跌窗口。",
+    }
+
+    return {
+        "review_id": f"mock-{period}-{int(dt.timestamp())}",
+        "period": period,
+        "period_from": period_from.isoformat(),
+        "period_to": period_to.isoformat(),
+        "summary": {
+            "headline": headline_per_period.get(period, headline_per_period["daily"]),
+            "body": body_per_period.get(period, body_per_period["daily"]),
+        },
+        "insights": [
+            {
+                "type": "win_pattern",
+                "text": "聪明钱 elite ≥ 75 + 流动性 > $50K + Regime ∈ {TRENDING_UP, BREAKOUT} 时,胜率 78% (n=14)",
+                "evidence_trade_ids": ["t-2031", "t-2034", "t-2038"],
+                "llm_judge_score": 0.82,
+            },
+            {
+                "type": "loss_pattern",
+                "text": "BC < 5% + 持有时长 > 4h 全部亏损 (n=5),建议加 4h 强制平仓",
+                "evidence_trade_ids": ["t-1998", "t-2001", "t-2007"],
+                "llm_judge_score": 0.71,
+            },
+            {
+                "type": "risk_warning",
+                "text": "CRISIS 期间 1 笔仍触发(HR16 已修),整体风险暴露在阈值内",
+                "evidence_trade_ids": ["t-2042"],
+                "llm_judge_score": 0.65,
+            },
+        ],
+        "rule_proposals": [
+            {
+                "proposal_id": "rp-001",
+                "human_readable": "RANGING regime 期间,BC 进场阈值从 5% 收紧到 8%",
+                "formal_condition": {
+                    "when": {"regime": "RANGING", "bc_pct": {"<": 8}},
+                    "then": {"block_entry": True},
+                },
+                "sample_size": 22,
+                "win_rate_diff": 12.4,
+                "wilson_ci_lower": 0.58,
+                "active_regimes": ["RANGING"],
+                "reflection_id": "refl-2026-04-29",
+            },
+            {
+                "proposal_id": "rp-002",
+                "human_readable": "BC < 5% 且持仓 > 4h 强制平仓",
+                "formal_condition": {
+                    "when": {"bc_pct": {"<": 5}, "hold_hours": {">": 4}},
+                    "then": {"force_close": True},
+                },
+                "sample_size": 14,
+                "win_rate_diff": 8.7,
+                "wilson_ci_lower": 0.51,
+                "active_regimes": ["RANGING", "HIGH_VOLATILITY"],
+                "reflection_id": "refl-2026-04-30",
+            },
+        ],
+        "metrics": {
+            "trade_count": m["trades"],
+            "win_rate": m["win_rate"],
+            "ev_pct": m["ev_pct"],
+            "sharpe": m["sharpe"],
+            "max_drawdown_pct": -6.2,
+            "profit_factor": 1.92,
+            "kelly_fraction": 0.18,
+        },
+        "cold_start_state": "normal",
+        "source": "mock",
+    }
+
+
+@router.get("/reviews")
+async def get_review(
+    period: str = Query("daily", pattern="^(daily|weekly|monthly)$"),
+    date: Optional[str] = Query(None, description="ISO 日期,默认今天"),
+    user_id: str = Depends(get_current_user),
+):
+    """日/周/月复盘报告。
+
+    当前实施:固定 MOCK 数据(让 Flutter UI 联调)
+    后续 S07 review-engine 真实施:从 agent_executions / agent_memory / token_performance
+    汇总 → Claude Haiku 4.5 写 headline+body → 返回。
+    """
+    return _mock_review(period, date)
+

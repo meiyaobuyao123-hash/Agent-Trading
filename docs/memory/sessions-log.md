@@ -1818,3 +1818,74 @@ autonomous-loop-dynamic 自驱动继续,选 Memory 4 层升级(最大杠杆 + �
 5. **Eval golden 1660 条** L1-L4
 6. **WAL 真接入** — 关键写入(trade_outcome/risk_lesson/approve_rule)走 WAL
 7. **KMS AwsKmsProvider** — 需 AWS 账号
+
+---
+
+## 会话 11 续 5(autonomous-loop:T07/T09/T10/T12 四 Tool,2026-05-01)
+
+### 触发
+ScheduleWakeup 60s 自驱动 → autonomous-loop-dynamic 第二轮
+
+### 实际产出(commit `2673c4a` deploy)
+
+4 个包装现有功能的 Tool,Phase 1 Tool 进度 8/17 → 12/17(70%)
+
+**T07 run_paper_trade**(agent/tools/t07_run_paper_trade.py)
+- buy:open_position(strategy/user/token/chain/price/amount/sl_pct/tp_pct)
+  paper_engine 自带 +1.5% 模拟滑点
+- sell:close_position(trade_id + price + reason)
+- missing buy params 透明返(不抛错)
+- non-idempotent + side=DB_WRITE
+
+**T09 create_approval_request**(agent/tools/t09_create_approval_request.py)
+- 写本地 PG `pending_approvals` 表
+- 强幂等(idempotency_key UNIQUE 约束):同 key 返已有 + idempotent_hit=true
+- 默认 5min,上限 60min(对齐 schema CHECK)
+- 不依赖 trigger 必有 token/chain/amount(thesis-only HITL 也支持)
+- side=DB_WRITE / permission=DEVICE_ONLY
+
+**T10 get_paper_performance**(agent/tools/t10_get_paper_performance.py)
+- 包装 paper_engine.get_stats / get_comparison
+- 加 promotion_eligible(closed≥30 + avg_pnl_pct≥1.0)对齐 17-tech-plan.md C5
+- promotion_blockers 数组列出未达项
+- 只读 idempotent
+
+**T12 save_strategy**(agent/tools/t12_save_strategy.py)
+- 包装 StrategyManager.create_strategy
+- 默认 active 配额检查(≥20 阻止),skip_quota_check 可绕过
+- ValueError → reason=spec_invalid;RuntimeError → reason=db_write_failed
+- 输入 schema 检查 conditions+actions 必填
+
+### 测试 (tests/test_tools_t07_t09_t10_t12.py — 24 cases)
+- T07: 6(buy basic / missing params / sell basic / sell missing id /
+        open returns None / invalid action)
+- T10: 5(eligible / blocked few trades / blocked low EV /
+        DB error / include_comparison)
+- T12: 6(basic / quota exceeded / skip_quota / ValueError /
+        RuntimeError / no actions schema invalid)
+- T09: 6(creates new / idempotent_hit / no idem_key / DB failure /
+        timeout validation / metadata idempotent)
+- registry 12 tools
+
+**24/24 PASSED**;**累计本会话 152 测试全过**
+
+### Phase 1 Tool 进度
+- ✅ 已实施 12 个:T04/T05/T06/T07/T09/T10/T11/T12/T13/T14/T15/T17
+- ⏸ 剩余 5 个:T01 query_market / T02 query_holders /
+              T03 query_onchain_activity / T08 execute_swap / T16 run_backtest
+  (这 5 个需要 OKX/Helius/GoPlus 真实 API + KMS 签名,留下次)
+
+### 服务器状态(2026-05-01 14:30 UTC)
+- agent-v1 commit `2673c4a` 已 deploy
+- pump-scanner-api active(8000 LISTEN)+ pump-scanner active
+- agent.tools 12 Tool 注册 OK + 全部能 to_anthropic_tool_spec
+- /api/agent/* 全部端点正常
+
+### 下次接手候选
+1. **review_engine v2 LLM** — Claude Haiku 4.5 写 headline/body
+2. **共创 chat_loop LLM** — 集成 12 Tool 真实 tool_use
+3. **18 Prompt Library** — frontmatter / cache_breakpoints / A/B 灰度
+4. **剩余 5 Tool** — T01/T02/T03/T08/T16(需外部 API + KMS)
+5. **Eval golden 1660 条**(L1-L4)
+6. **WAL 真接入** — 关键写入路径走 WAL
+7. **KMS AwsKmsProvider** — 需 AWS 账号

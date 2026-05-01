@@ -153,6 +153,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - reflection.deduplicate_proposed_rules JSON-diff < 20% 去重(jaccard 距离 + case 归一)
   - T05 list_strategies(StrategyManager 包装,精简 + active_count)+ T06 update_strategy_status(VALID_TRANSITIONS + 幂等 + 透明 reason)
   - **26 单元测试全过**;服务器 8 Tool 注册 OK
+- ✅ **W3 D5+ T07/T09/T10/T12 四 Tool**(commit `2673c4a` deploy):Phase 1 Tool 共 12/17
+  - T07 run_paper_trade:buy(open_position +1.5% 滑点)/ sell(close_position by trade_id),透明 missing 参数
+  - T09 create_approval_request:写本地 PG pending_approvals,idempotency_key UNIQUE 强幂等(同 key 返已有 + idempotent_hit=true);默认 5min,上限 60min
+  - T10 get_paper_performance:get_stats + 可选 get_comparison;加 promotion_eligible / promotion_blockers 字段(closed≥30 + avg_pnl_pct≥1.0 对齐 C5 晋升门槛)
+  - T12 save_strategy:create_strategy + 默认配额(active≥20 阻止),skip_quota_check 可绕过;ValueError/RuntimeError 透明 reason
+  - **24 单元测试全过**;服务器 12 Tool 注册 OK
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

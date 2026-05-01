@@ -57,7 +57,7 @@ class AgentService {
     }
   }
 
-  /// 流式对话（打字机效果）— 返回 Stream<StreamEvent>
+  /// 流式对话（打字机效果）— 返回 `Stream<StreamEvent>`
   /// 每个 event: {"type":"delta","text":"..."} | {"type":"strategy","data":{...}} | {"type":"done"}
   Stream<StreamEvent> chatStream(String message,
       {Map<String, dynamic>? context}) async* {
@@ -437,6 +437,42 @@ class AgentService {
       if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
       return {};
     } catch (_) { return {}; }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  // W3 D3 — Thesis(S08 thesis-writer)
+  // 引用 docs/agent-pm/05-tool-catalog.md S08
+  // 引用 services/pump-scanner/api/routes_thesis.py(MOCK_MODE 返 fixture)
+  // ═══════════════════════════════════════════════════════════════
+
+  /// 触发新 thesis 生成
+  ///
+  /// [chain] solana / eth / bsc / base
+  /// [address] 代币合约地址
+  /// [level] 'auto' / 'L1' / 'L2' / 'L3'(默认 auto 由后端决定)
+  /// 后端 MOCK_MODE=true 时返 fixture(W7-W12 实施真实 thesis_loop)
+  Future<Map<String, dynamic>?> requestThesis({
+    required String chain,
+    required String address,
+    String level = 'auto',
+  }) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/thesis'),
+        headers: _headers,
+        body: jsonEncode({
+          'chain': chain,
+          'address': address,
+          'level': level,
+        }),
+      ).timeout(const Duration(seconds: 30));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
   }
 }
 

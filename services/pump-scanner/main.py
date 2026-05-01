@@ -389,6 +389,25 @@ async def main():
     )
 
     scheduler.start()
+
+    # ── W3 D3: SafetyEngine 启动恢复 + DB 持久化挂载 ──────────────
+    # 引用 docs/agent-pm/17-tech-plan.md Phase 0
+    # 失败不阻断 Agent 启动(safety 自身故障 → 退化为内存模式)
+    try:
+        from agent.safety_engine import get_safety_engine
+        from agent.global_state_persister import attach_to_engine
+        _safety = get_safety_engine()
+        attach_to_engine(_safety)  # 注入 persister + 从 PG 恢复 _active_breakers
+        log.info(
+            "[Safety] engine ready: HR=%d CB=%d C=%d state=%s",
+            len(_safety.hard_rules),
+            len(_safety.circuit_breakers),
+            len(_safety.constitutional),
+            _safety.get_global_state(),
+        )
+    except Exception as e:
+        log.warning("[Safety] startup failed (non-fatal): %s", e)
+
     log.info(
         "定时任务已启动:\n"
         "  ── 原有任务 ──\n"

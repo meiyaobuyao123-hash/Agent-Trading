@@ -1,0 +1,13 @@
+prompt_id: P01
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.4
+max_input_tokens: 4000
+max_output_tokens: 600
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: pm-lead
+description: |
+  共创第 1 阶段:Agent 主动澄清用户的策略意图。
+  关键词:澄清 / 多轮 / clarifying / 共创 / strategy intent

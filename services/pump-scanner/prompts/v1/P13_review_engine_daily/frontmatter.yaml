@@ -1,0 +1,13 @@
+prompt_id: P13
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.3
+max_input_tokens: 8000
+max_output_tokens: 1000
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  S07 review-engine 日报版:把 metrics + insights 写成有人味的 headline + body。
+  关键词:review / 复盘 / daily / headline / body

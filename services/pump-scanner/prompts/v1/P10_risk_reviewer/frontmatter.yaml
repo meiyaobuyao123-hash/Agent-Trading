@@ -1,0 +1,13 @@
+prompt_id: P10
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.0
+max_input_tokens: 6000
+max_output_tokens: 800
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: safety-lead
+description: |
+  风险评审员:对一笔候选交易做最后一道软规则审核。
+  关键词:risk / safety / pre-trade / review / veto

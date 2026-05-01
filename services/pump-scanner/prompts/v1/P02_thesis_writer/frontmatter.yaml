@@ -1,0 +1,13 @@
+prompt_id: P02
+version: v1.0
+model: claude-sonnet-4-6
+temperature: 0.2
+max_input_tokens: 12000
+max_output_tokens: 1500
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  S08 thesis-writer:把 3 路分析(技术/情绪/链上)合成 thesis JSON。
+  关键词:thesis / 立论 / 决策 / direction / conviction / risks

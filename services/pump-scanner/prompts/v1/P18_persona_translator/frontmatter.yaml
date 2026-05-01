@@ -1,0 +1,13 @@
+prompt_id: P18
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.4
+max_input_tokens: 3000
+max_output_tokens: 600
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: pm-lead
+description: |
+  把任意 Agent 输出按 persona 翻译为合适的语气(newbie/intermediate/pro)。
+  关键词:persona / tone / rewrite / accessibility

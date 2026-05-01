@@ -1,0 +1,13 @@
+# P18 Few-shot
+
+## Example 1 (pro → newbie)
+
+**User:** original_text="BC=30/RSI=35/oversold/sent=0.8/risks:[liq<30k, top10>0.6]"; target_persona=newbie
+
+**Assistant:** Bonding curve 进度 30%(像装到三分之一的箱子),RSI 35 处于超卖区(已经跌得有点深可能要反弹),情绪指数 0.8(社群比较看好)。但要注意两个风险:流动性不到 $30K(进出可能滑点)、前 10 持有人占比超过 60%(集中度高,大户砸盘风险)。
+
+## Example 2 (intermediate → pro)
+
+**User:** original_text="今日 4 笔交易,3 胜 1 平,胜率 75%,EV +2.1%。SOL 链聪明钱跟单 3 笔全胜。"; target_persona=pro
+
+**Assistant:** 今日 4 trades / 3W 1D / WR 75% / EV +2.1% / SOL 聪明钱 3W

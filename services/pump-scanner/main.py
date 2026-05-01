@@ -610,6 +610,7 @@ async def main():
         from datetime import datetime, timezone
         from agent.redis_client import safe_set, KEY_PUMP_SIGNAL_POOL
         tick = 0
+        log.info("[dump] thread entering main loop")
         while True:
             try:
                 from scanner_ref import get_scanner
@@ -626,10 +627,16 @@ async def main():
                     if (not redis_ok) or tick % 12 == 0:
                         with open("/tmp/pump_signal_pool.json", "w") as f:
                             f.write(payload)
+                    if tick % 12 == 0:
+                        log.info(f"[dump] tick={tick} count={len(sigs)} redis_ok={redis_ok}")
+                else:
+                    if tick % 12 == 0:
+                        log.warning(f"[dump] tick={tick} scanner is None")
             except Exception as _e:
-                log.warning(f"signal_pool dump 失败: {_e}")
+                log.warning(f"[dump] tick={tick} 失败: {_e}", exc_info=True)
             tick += 1
             _t.sleep(5)
+        log.error("[dump] thread exited unexpectedly")  # 不应到达
     _dump_thread = threading.Thread(target=_dump_signal_pool_thread, daemon=True, name="signal_pool_dump")
     _dump_thread.start()
     log.info("signal pool dump loop 已启动 (独立线程, Redis 5s + 文件 60s 兜底)")

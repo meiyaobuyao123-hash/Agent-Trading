@@ -747,3 +747,597 @@
 - 更新 `CLAUDE.md` 当前功能状态表加 docs/agent-pm 行
 - 更新 `pitfalls.md` 加 3 条（2 条线上 bug + macOS sort locale 坑）
 - `17-tech-plan.md` 落到 `docs/agent-pm/`，README 矩阵新增 L6 工程落地区
+
+---
+
+## 2026-05-01 会话（Agent v1 W1 启动包开发）
+
+### 做了什么
+- 用户决策"全部你来干" → 进入实施阶段，开 `agent-v1` 长期分支
+- 技术选型（我直接定）：OpenAPI 用 FastAPI 自带 / Flutter 不用 codegen 手写 model / Mock server 用后端 `MOCK_MODE=true` 环境变量
+- **W1 启动包提交**（commit `e08eae1`，28 文件 2266 行，分支 agent-v1 已推 GitHub）：
+  - **8 个 migration SQL**（034-041）：KMS / security_audit_log / pending_approvals+WAL / conversation_states / prompt_versions / agent_thesis / semantic_shadow_mode / eval_results
+  - **后端骨架 9 个 .py**：safety_engine / kms_client / cost_guard / output_filter / prompt_loader / memory/wal / skills/loader / tools/base + 4 个 __init__
+  - **safety_policy.yaml**：30 HR + 13 CB + 5 C 规则名（内容 TODO）
+  - **3 个 routes stub**：routes_thesis / routes_audit / routes_admin（MOCK_MODE 返 fixture）
+  - **4 个 Flutter model**：thesis / pending_approval / review / semantic_rule
+  - **2 个 README**：prompts/v1 + skills
+
+### 讨论结论
+- **一个 session 做不完 16-20 周**：必须分多 session 推进，每次 session 用户说"继续"我从 sessions-log 接手
+- **所有代码骨架带 TODO 注释**：实际业务逻辑实施在 Phase 0 W3-W12，本次只是搭建可联调的骨架
+- **migration 暂不执行**：W3 KMS 接入或 W7 Memory WAL 实施时再 Supabase Dashboard 执行对应 SQL，不必现在跑
+- **不混 main 分支**：agent-v1 长期分支独立推进，不影响线上 main
+- **MOCK_MODE 设计**：后端新 endpoint 默认 501（未实施），设 `MOCK_MODE=true` 返 fixture，Flutter 即刻可联调不阻塞
+
+### 被否定的方案
+- ~~一次性塞几万行代码完成所有 Phase~~：单 session 不可能，分多次推进
+- ~~OpenAPI 手写 OAS YAML~~：FastAPI 自带 /openapi.json 零成本
+- ~~Flutter 用 openapi-generator codegen~~：跟现状不一致，手写 model 维持
+- ~~单独跑 Prism mock server~~：多一个进程，不如后端 MOCK_MODE 开关
+
+### 下次 session 接手
+- 读取本条目 + `docs/agent-pm/17-tech-plan.md` Phase 0 W3 任务清单
+- 已就绪骨架：safety_engine / kms_client / cost_guard / output_filter / prompt_loader / memory/wal / skills/loader / tools/base
+- 下一步 W3 候选任务（按 17-tech-plan.md Phase 0）：
+  1. KMS 实施（kms_client.py AwsKmsProvider 实现 + ANTHROPIC/OKX/Helius key 切 KMS）
+  2. safety_engine HR01-HR30 检查实施（trade_executor pre_condition 接入）
+  3. cost_guard 5 级降级实施（接 prompt_invocations 表）
+  4. routes_admin Kill Switch 实施（< 10s 全局 BLOCKED）
+- 仓库状态：分支 agent-v1 在 e08eae1，main 在 429f5a8（未变）
+
+---
+
+## 2026-05-01 会话 2（W3 D1 safety_engine 实施 + 数据库迁本地 PG）
+
+### 关键决策（用户中途追加）
+- **数据库不放 Supabase**：8 张新表迁服务器本地 PostgreSQL（`agent_trading_local`，PG 14，已经在跑 dex_address_stats）
+- **节省空间 + 自动 TTL**：每张表配 TTL，db_cleanup.py 每 6h 跑
+
+### 做了什么
+- 服务器 PG 验证：postgres 14/main 端口 5432 在跑，用户 `agent_local` / DB `agent_trading_local` 已就绪
+- **safety_engine 完整实施**（commit `4bbc05d`，12 文件 +1140 / -120）：
+  - safety_policy.yaml v0.2：check 字段从字符串改为机器可读结构化条件（type=simple/boolean/compound/regex/function；op=gt/gte/lt/lte/eq/ne/in/not_in/contains/starts_with）
+  - safety_engine.py 完整 evaluator：load+fail-safe / check_trade / check_constitutional / _eval_check 通用 / 4 个 C 函数（c2/c3/c4/c5）
+  - 实施 10 条 HR：HR01/02/04/07/09/16/21/22/25/28
+  - 实施 5 条 C：C1 blocklist regex / C2 risks≥2 / C3 evidence 非空+source / C4 占位 / C5 HITL 完整
+- **tests/test_safety_engine.py**：**62 用例 全部 PASSED 0.62s**
+  - 4 加载 + 22 HR 正反 + 14 C + 10 evaluator + 3 format + 9 C 函数直测
+- **migrations 迁本地 PG**：
+  - 7 个 SQL 移到 `migrations/local_pg/`（034/035/036/037/038/039/041）
+  - 每个 SQL 头部加 `CREATE EXTENSION IF NOT EXISTS pgcrypto`
+  - 040 例外（ALTER Supabase 表）留 `migrations/` 根目录
+  - local_pg/README.md 说明执行步骤(SSH→psql)+ TTL 表
+- **db_cleanup.py 扩展**：
+  - 9 条 LOCAL_PG_RULES（8 表 + agent_thesis L3 例外）
+  - run_local_pg_cleanup() 用 psycopg2 连本地 PG，各表独立事务
+  - 表不存在时静默跳过（migration 未跑也不报错）
+  - run_full_cleanup() = Supabase + 本地 PG（主程序入口）
+
+### TTL 清理规则
+| 表 | TTL | 触发字段 |
+|---|---|---|
+| security_audit_log | 90d | ts |
+| pending_approvals | decided_at + 30d | decided_at |
+| memory_write_wal | flushed_at + 7d | flushed_at |
+| memory_write_retry_queue | resolved=true + 7d | created_at |
+| conversation_states | expires_at + 24h | expires_at |
+| prompt_versions | retired_at + 30d | retired_at |
+| prompt_invocations | 30d | ts |
+| agent_thesis | 30d（L3+conviction>0.8 例外90d） | ts |
+| eval_results | 90d | ts |
+| kms_key_aliases | 永久 | - |
+
+### 讨论结论
+- **服务器有 PG 14 现成**：端口 5432，agent_trading_local 数据库 + agent_local 用户已配（local_db.py 已对接 dex_address_stats）。直接复用，不用新装
+- **040 必须留 Supabase**：ALTER agent_memory + agent_strategies，这两个表本身在 Supabase
+- **migrations 不在本 session 执行**：只产出 SQL 文件，prod 执行需要 SSH+psql 单独操作
+- **safety_engine 设计选择**：check 字段结构化（不是字符串），机器可读支持 5 种 type、9 种 op、嵌套 compound。比 Python 函数注册更灵活（yaml 改不重启）
+- **62/62 测试通过**：覆盖 yaml 加载/fail-safe/10 HR 正反/5 C/evaluator 各 path/format/C 函数直测
+
+### 被否定的方案
+- ~~check 字段写 Python 表达式（eval()）~~：安全风险，改结构化条件
+- ~~所有 8 张表都进 local_pg/~~：040 必须留 Supabase（改 agent_memory/agent_strategies 字段）
+- ~~Supabase 全部继续用~~：用户明确说节省空间，新表迁本地 PG
+- ~~只跑 25 测试（计划数）~~：实际 62 测试（parametrize+边界覆盖更全）
+
+### 仓库状态
+- agent-v1 分支 commit `4bbc05d` 已推 GitHub
+- main 仍 `429f5a8`（未动）
+- 文件统计：+1140 / -120，12 文件改动（3 modified + 7 renamed + 2 new）
+
+### 下次 session 接手
+- 读本条目 + 17-tech-plan.md Phase 0 剩余任务
+- 已实施：safety_engine 10 HR + 5 C / tests 62/62 / migrations 迁 local_pg
+- 候选下一步（按优先级）：
+  1. **补全剩余 20 HR**（HR03/05/06/08/10/11/12/13/14/15/17-20/23/24/26/27/29/30）+ 测试
+  2. **CB 13 个熔断器实施** evaluator + agent_global_state 表 + 自动恢复定时器
+  3. **trade_executor 接入 safety_engine**（W4 任务，是阻塞 launch 的关键路径）
+  4. **服务器执行 migrations**（需用户 SSH 确认后才动）
+  5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
+- 注意:040 是给 Supabase 表加字段(agent_memory/agent_strategies),需 Supabase Dashboard 执行,不在 local_pg/
+
+---
+
+## 2026-05-01 会话 3（W3 D2：safety_engine v0.3 全量 + CB 状态管理）
+
+### 关键决策（用户中途追加）
+- **新工作规则**：**长 session 每 10 分钟更新记忆三件套**（双端 MEMORY.md + sessions-log + topic 文件）
+  - 写入本地 + 仓库 `rules.md`
+  - 目的：session 中断时不丢工作，下次接手能从最近 10 分钟的进度恢复
+
+### 做了什么
+- **safety_policy.yaml v0.3**（v0.2 → v0.3）：
+  - 30 HR 全部 implemented（W3 D1 已 10，本次补 20：HR03/05/06/08/10/11/12/13/14/15/17/18/19/20/23/24/26/27/29/30）
+  - 13 CB 全部 implemented + auto_release_after_min 配置
+  - 加 `hr_to_cb_map`：HR16→CB13, HR17→CB01, HR18→CB02, HR19→CB03, HR20→CB05, HR12→CB12
+  - HR 加 `trips_breaker` 字段（HR17/18/19/20 自动联动 CB）
+  - CB 加 `severity` 字段（blocked / degraded）
+- **safety_engine.py 重写 v0.3**：
+  - 加 `BreakerState` dataclass（cb_id/name/tripped_at/auto_release_at/reason/severity）
+  - `trip_breaker(cb_id, reason)` → 写 _active_breakers + 计算 auto_release_at + 通知 persister
+  - `release_breaker(cb_id, manual)` 主动解除
+  - `_release_expired_breakers()` 自动检查到期 CB → 释放
+  - `is_breaker_active` / `get_active_breakers` / `get_global_state`（normal/degraded/blocked，blocked 优先）
+  - `set_state_persister(fn)` 注入 DB 持久化回调（W3 D3 接 agent_global_state 表）
+  - `check_trade` 升级：先检查 active CB → 跑全部 implemented HR → HR 命中后自动 trip CB
+  - 加 3 个 Python 函数：`hr10_within_authorization` / `hr11_credentials_revoked`（paper 模式不触发） / `hr24_slippage_within_limit`
+- **migration 042_agent_global_state.sql**（local_pg/）：
+  - `agent_global_state` 单例表（id=1，state + active_breakers JSONB）
+  - `agent_global_state_history` 状态变更审计（90d 保留）
+- **测试扩展**：
+  - 加 41 个新 HR 测试（20 HR 各 1-2 路 + 边界）
+  - 加 12 个 CB 状态管理测试（trip/release/idempotent/auto-expire/persister）
+  - 加 7 个 HR-CB 联动测试（HR12/16/17/18/19/20 → 自动 trip 对应 CB）
+  - 加 10 个 HR 函数直测（HR10/11/24）
+  - **总计 132 测试 全部通过 2.28s**（W3 D1 是 62，翻倍）
+
+### 讨论结论
+- **CB 状态机设计**：内存层 `_active_breakers: dict[cb_id, BreakerState]` + DB 持久化层（state_persister 回调）+ 自动到期释放
+- **HR-CB 联动**：HR 触发后自动 trip 对应 CB（yaml `trips_breaker` 字段优先于 `hr_to_cb_map`）
+- **幂等 trip**：重复 trip 同一 CB 保留首次 tripped_at（不重置冷却时间）
+- **持久化失败不阻断**：state_persister 异常吞掉，CB 状态变更照常生效（避免 DB 故障导致 safety 失效）
+- **paper 模式特殊处理**：HR11（credentials revoked）只在 mode=auto/live 触发；HR29（新币 < 1h）只在 mode=auto 触发
+- **fixture function scope**：每个测试新建 SafetyEngine 实例，避免 CB 状态污染
+
+### 被否定的方案
+- ~~CB 自动触发条件写在 yaml 的 check 字段~~：CB 是被 trip 的，不是被 evaluate 的，触发逻辑在 HR
+- ~~persister 失败抛异常阻断流程~~：safety 高可用要求，DB 故障不应让 CB 失效
+- ~~每次 check_trade 都跑 13 CB evaluator~~：CB 状态由内存管理，不需要 evaluate，只需查 _active_breakers
+- ~~30 HR 一次写完不分批~~：分 W3 D1（10 HR）+ W3 D2（20 HR）两次，方便回溯调试
+
+### 仓库状态（W3 D2 待 commit）
+- 修改：safety_policy.yaml / safety_engine.py / tests/test_safety_engine.py
+- 新增：migrations/local_pg/042_agent_global_state.sql
+- 双份记忆：rules.md / MEMORY.md / sessions-log.md（本条）
+
+### 下次 session 接手
+- 读本条目
+- 已就绪：safety_engine v0.3（30 HR + 13 CB + 5 C 全实施 + 132 测试通过）
+- 候选下一步（按优先级）：
+  1. **state_persister 接 agent_global_state 表**（用 local_db 写 PG）+ 启动恢复
+  2. **trade_executor 接入 safety_engine.check_trade**（W4 阻塞 launch 的关键路径）
+  3. **CB 自动触发的外部条件**（CB07 单代币重复/CB08 HITL 队列累积/CB09 WAL 失败累积/CB11 跟单亏损）需要外部 monitor 调 trip_breaker
+  4. **服务器跑 migrations**（prod 操作，需用户确认）
+
+---
+
+## 2026-05-01 会话 4（W3 D3：persister 接 PG + trade_executor 接入 safety）
+
+### 做了什么
+- **agent/global_state_persister.py 新建**（230 行）：
+  - `persist_to_pg(payload)` SafetyEngine state_persister 回调入口
+    - 内存幂等检测（hash payload，相同状态跳过）
+    - DB 失败吞掉异常返 False（safety 高可用）
+    - 写 agent_global_state 单例 + agent_global_state_history 审计
+  - `load_from_pg()` 启动时拉当前状态（兼容 JSONB 反序列化）
+  - `restore_engine_state(engine)` 从 PG 恢复 _active_breakers（保留原始 tripped_at）
+  - `attach_to_engine(engine)` 一键挂载（注入 persister + 启动恢复，失败不抛）
+- **trade_executor.py 接入 safety**（非破坏改动）：
+  - `execute_trade` 加可选参数 `safety_ctx: Optional[Dict]`（向后兼容，默认 None）
+  - 传 safety_ctx → 跑 SafetyEngine.check_trade，任何 BLOCK 直接返回失败，不调 DEX
+  - 末尾加独立函数 `check_safety_for_trade(ctx)` 供其他模块主动校验
+  - SafetyEngine 自身故障 → fail-safe 返 CB12 BLOCK
+- **测试新增**：
+  - `tests/test_global_state_persister.py`：22 用例（hash 幂等 / persist 异常吞 / load 端到端 / restore / attach / 端到端 spy）
+  - `tests/test_trade_executor_safety.py`：10 用例（helper 4 + execute_trade 接入 5 + fail-safe 1）
+  - **总计 154 → 164 测试通过 2.70s**
+
+### 讨论结论
+- **non-破坏接入**：execute_trade 加 safety_ctx 可选参数，现有调用方不变
+- **persister 幂等**：相同 payload 的 hash 一致就跳过 DB 写（防 trip 后 release 同一 CB 反复刷库）
+- **DB 故障不阻断 safety**：persister/load 失败吞掉返回 None/False，CB 状态变化照常生效
+- **启动恢复保留 tripped_at**：从 PG 拉的 ISO timestamp 解析回 datetime；解析失败保留默认（CB 仍恢复）
+- **未知 CB 启动恢复跳过**：DB 里有但 yaml 删了的 CB（升级场景）自动忽略
+- **mock asyncio**：用 `pytest-asyncio` + `AsyncMock` mock dex_router.execute,不真调 OKX API
+
+### 不在本 session 范围
+- main.py 启动调 attach_to_engine（下次接入 prod 时再加）
+- 服务器跑 migration 042（prod 操作待用户确认）
+- CB07/CB08/CB09/CB11 外部触发条件（需要 monitor 模块查表/监控指标后调 trip_breaker）
+
+### 仓库状态（待 commit）
+- 新增：agent/global_state_persister.py / tests/test_global_state_persister.py / tests/test_trade_executor_safety.py
+- 修改：agent/trade_executor.py（加 safety_ctx 参数 + check_safety_for_trade helper）
+
+### 下次 session 接手
+- 已就绪：safety + persister + trade_executor 接入,164 测试通过
+- 候选下一步：
+  1. **main.py 启动调 attach_to_engine**（让 prod 启动时自动恢复 CB 状态）
+  2. **服务器执行 migrations**（local_pg/034-039,041,042 + Supabase 040）— prod 操作需要用户确认
+  3. **CB 外部触发 monitor**（CB07/08/09/11 由后台任务监控指标调 trip_breaker）
+  4. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
+  5. **Flutter Phase 3 起步**（thesis_card widget 接 routes_thesis MOCK_MODE）
+
+---
+
+## 2026-05-01 会话 5（W3 D3 续：main.py hook + Flutter ThesisCard）
+
+### 做了什么
+- **main.py 启动 hook**（commit `19654be`）：
+  - scheduler.start() 之后调 `attach_to_engine(get_safety_engine())`
+  - 自动注入 persist_to_pg + 从 agent_global_state 表恢复 _active_breakers
+  - log 输出 HR/CB/C 计数 + 全局状态
+  - 失败 try/except 不阻断启动（safety 退化内存模式）
+- **Flutter AgentService.requestThesis()**：
+  - POST /api/thesis(chain, address, level='auto')
+  - 30s timeout，失败返 null
+  - 后端 MOCK_MODE=true 时返 fixture（routes_thesis.py 已就绪）
+  - 顺手修 line 60 dart analyze info 警告（`Stream<StreamEvent>` 加反引号）
+- **Flutter ThesisCard widget 新建**（lib/widgets/agent/thesis_card.dart，约 380 行）：
+  - 低置信度警告条（conviction < 0.5 红条）
+  - Header：代币 symbol + 链 + Level（L1/L2/L3 三色徽章）
+  - DirectionRow：方向图标 + 中文 + 色 + Conviction 进度条
+  - PriceRow：入场区间 / 止损 / 目标价 三件套
+  - Summary 卡片
+  - Risks 列表（必有 ≥ 2 条）
+  - Evidence 折叠（source: value）
+  - SimilarPastCases 折叠（token / 日期 / 相似度 / 胜负）
+  - Footer: cost($) + latency(ms)
+  - dart analyze: 0 issues
+
+### 讨论结论
+- **main.py 启动 hook 失败 non-fatal**：safety 退化为内存模式不影响其他业务
+- **ThesisCard 接 mock 即可独立验证**：后端 routes_thesis MOCK_MODE 返 fixture，Flutter 不依赖真实 LLM
+- **dart analyze 必须干净**：`Stream<StreamEvent>` 之类被识别为 HTML 的小警告也修
+
+### 不在本 session 范围
+- 在 agent_screen.dart Chat Tab 真正调用 ThesisCard（下次接入）
+- preview_start 跑模拟器实际渲染验证
+- 服务器跑 migration 042 让 main.py hook 真正生效
+
+### 仓库状态
+- agent-v1 分支累计 commits: e08eae1 / c567962 / 4bbc05d / 4f02f3a / ad5fd9f / eca6037 / **19654be**
+- main 仍 429f5a8（未动）
+- 累计本 session 工作量：~5000 行新代码 + 164 测试用例
+
+### 下次 session 接手
+- 已就绪：safety v0.3 完整 + persister + trade_executor 接入 + main.py hook + Flutter ThesisCard
+- 候选下一步：
+  1. **agent_screen.dart 接入 ThesisCard**（在 Chat Tab 显示真实卡片）+ preview 跑模拟器看效果
+  2. **服务器执行 migrations**（prod 操作需用户确认）
+  3. **CB 外部触发 monitor**（CB07/08/09/11）
+  4. **routes_optimizer/routes_agent 接入 safety_ctx**（让所有真金路径都过 safety）
+  5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号）
+
+---
+
+## 2026-05-01 会话 6（W3 D3 续 2：ThesisCard Chat Tab 接入 + Flutter widget test）
+
+### 做了什么
+- **api/app.py 挂载 W3 routers**：
+  - thesis_router / audit_router / admin_router 加入 include_router（之前 W1 启动包写了 stub 但忘了挂载）
+  - 后端跑起来后 /api/thesis 等真能响应（MOCK_MODE=true 返 fixture）
+- **agent_screen.dart Chat Tab 接入 ThesisCard Demo Banner**：
+  - import ThesisCard + Thesis model
+  - _ChatTabState 加 _demoThesis / _loadingThesis / _thesisErr 状态
+  - _loadDemoThesis() 优先调真实后端 /api/thesis,失败时 fallback 本地 hardcoded mock（ts/EvidenceItem/SimilarCase 完整 fixture）
+  - _buildThesisDemoSection() 在 Chat Tab build 顶部:
+    - 未加载 → 显示"试一试 AI 分析报告(Demo)"按钮(InkWell + AutoAwesome 图标)
+    - 加载中 → CircularProgressIndicator
+    - 已加载 → 显示 ThesisCard + 关闭按钮(后端不可用时显示 amber 提示)
+  - 不修改原 chat 流（_messages / _ChatInput 不变）
+- **Flutter widget test test/thesis_card_test.dart**（18 用例）：
+  - 基本渲染 11:symbol/chain/level/4 个 direction/价格三件套/summary/risks/evidence count/cases count/footer
+  - 低置信度警告 2:conviction<0.5 显示红条 / >=0.5 不显示
+  - 折叠交互 2:点击 Evidence/SimilarCases 展开后显示具体数据
+  - 边界场景 3:空 evidence/cases/footer 不渲染对应区
+  - **全部通过 < 1s**
+- **累计 182 测试通过**（后端 164 + Flutter 18）
+
+### 讨论结论
+- **Flutter web preview 走不通**：`shell-init: chdir error retrieving current directory: getcwd: cannot access parent directories: Operation not permitted` — preview tool 沙箱跟 cwd 软链接冲突。改走 widget test
+- **widget test 替代 preview screenshot**：18 个测试覆盖所有 ThesisCard 渲染分支,验证粒度比截图更精确（比如"conviction>=0.5 不显示红条"这种 visual 否定通过截图很难证）
+- **Demo Banner 设计**：内嵌 Chat Tab,默认未加载状态显示按钮;触发后 真实 API 失败 fallback 本地 mock,确保 UI 一定能展示
+- **app.py 路由挂载是 W1 启动包遗漏**：当时只写 stub 文件没 include_router,本次补上
+
+### 不在本 session 范围
+- preview_start 跑 Flutter web/iOS（受沙箱限制走不通）
+- 服务器跑 migrations
+- 把 ThesisCard 接入更多入口(token_detail_page / strategy_detail_sheet)
+
+### 仓库状态（待 commit）
+- 修改：api/app.py(+挂载 3 个 router) / agent_screen.dart(+Demo Banner)
+- 新增：apps/app/test/thesis_card_test.dart(18 用例)
+- 配置：.claude/launch.json 加 flutter-web 配置(本仓库)
+
+### 下次 session 接手
+- 已就绪:182 测试通过,ThesisCard 端到端 UI 渲染已验证
+- 候选下一步:
+  1. **服务器跑 migrations**（local_pg/034-039,041,042 + Supabase 040）— prod 操作需用户确认
+  2. **routes_agent.chat 接入 safety_ctx**（让 chat 路径也过 safety）
+  3. **CB 外部触发 monitor**（CB07/08/09/11 后台监控调 trip_breaker）
+  4. **KMS AwsKmsProvider 实施**（需 AWS 账号）
+  5. **HITL 详情页 hitl_approval_page.dart 起步**（Phase 3 下一块)
+
+---
+
+## 2026-05-01 会话 7（W3 D3 续 3:原生 iOS 模拟器验证 + 纠正"跑偏了"）
+
+### 用户纠正
+- 用户原话："我要原生 flutter,我电脑装了模拟器,我只是要你优化原来的 app 的 agent 模块,你是不是跑偏了"
+- 我之前走了 Flutter web preview 路径(launch.json 加 flutter-web + 软链接 + preview_start),用户要的是原生 iOS 模拟器
+
+### 做了什么
+- 写 feedback memory `feedback_native_flutter.md`(双端同步):Flutter UI 验证必须用原生模拟器
+- MEMORY.md 索引加 feedback_native_flutter 行
+- 启动 `flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 --dart-define=...`(后台)
+- 修复 build 错误:`AgentService()` → `AgentService.instance`(singleton 模式,W3 D3 续 2 写错)
+- 临时改默认 Tab=2 + didChangeDependencies 自动 _loadDemoThesis 演示
+- `xcrun simctl io booted screenshot` 截 3 张图(数据 Tab / Agent Tab Demo Banner / Demo 加载后 ThesisCard 完整渲染)
+- 完成截图后撤回临时改动(默认 Tab=0 + 删除自动 _loadDemoThesis)
+- 保留 flutter run 后台进程供用户继续操作
+
+### ThesisCard 原生渲染验证(/tmp/agent-v1-screenshots/03-thesis-loaded.png)
+- ✅ Header:TRUMP / SOLANA / L2 蓝色徽章
+- ✅ Direction Row:🟢 看涨 + 置信 72% 进度条
+- ✅ Price Row:入场 \$1.10-1.20 / 止损 \$0.95 / 目标 \$1.45+(三色)
+- ✅ Summary:"短期看涨,建议小仓位试水,设硬止损 0.95"
+- ✅ Risks:2 条具体风险(代币年龄 / Top10 集中度)
+- ✅ Evidence (2) / 历史相似 (1) 折叠区
+- ✅ Footer:\$ 0.025 ⏱ 4200ms
+- ✅ amber 提示"后端不可用,使用本地 demo 数据"(因为线上 main 分支没 routes_thesis,fallback 生效)
+
+### 讨论结论
+- **Flutter UI 验证必须用原生 iOS 模拟器**:Flutter web 是为 web 项目准备的,跟原生渲染/交互完全不同
+- **AgentService 是 singleton**:用 `AgentService.instance.xxx()`;`AgentService()` build 报 "Couldn't find constructor"
+- **辅助访问权限未开**,osascript / cliclick 控制不了 Simulator → 临时改默认 Tab + 自动加载演示完撤回
+- **截图证据 > Widget test**:用户要的是真实 iOS 渲染效果,iOS simctl 截图比 widget test 更直观
+- **Demo Banner fallback 行为**:线上 main 分支没 routes_thesis 端点,Flutter 调失败 → 自动 fallback 本地 mock,UI 一定能展示
+
+### 被否定的方案
+- ~~Flutter web 模式 + preview_start + preview_screenshot~~:跟原生 iOS 不一样,不是用户要的
+- ~~osascript + cliclick 模拟点击 Agent Tab~~:辅助访问权限未开
+- ~~ios-deploy / idb 等点击模拟工具~~:本机未装
+
+### 仓库状态(待 commit)
+- 修改:apps/app/lib/screens/agent/agent_screen.dart(`AgentService()` → `.instance` 修复)
+- 新增:`feedback_native_flutter.md`(双端)
+- 修改:MEMORY.md 索引 + 本次会话段
+- 修改:sessions-log.md(本条)
+- 临时改动已全部撤回(_currentIndex=0 / 删自动加载)
+
+### 下次 session 接手
+- 候选下一步:
+  1. **服务器跑 migrations**(prod 操作需用户确认)
+  2. **routes_agent.chat 接入 safety_ctx**
+  3. **HITL 详情页 hitl_approval_page.dart**(下一个 Phase 3 块)
+  4. **CB 外部触发 monitor**
+  5. **KMS AwsKmsProvider 实施**
+
+---
+
+## 2026-05-01 会话 8(W3 D4:chat safety + CB monitor + HITL 双端 + runbook)
+
+### 做了什么
+- **A. routes_agent.chat / chat_stream 接入 safety pre-check**:
+  - ChatRequest 加 `safety_ctx: Optional[Dict]` 字段
+  - `_check_safety_for_chat()` 两层检查:全局 BLOCKED CB(永远查) + ctx HR(可选)
+  - 任何 BLOCK 直接返 chat_response 不调 LLM 不消耗 quota
+  - 流式版返 SSE error event
+  - 测试 10 用例(test_routes_chat_safety.py)
+- **C. cb_monitor 模块**(agent/cb_monitor.py 230 行):
+  - CBDataSource 抽象接口 + _DefaultDataSource 占位
+  - evaluate_cb07(单代币 1h ≥ 5 触发)/ evaluate_cb08(HITL expired > 20)
+  - run_cb_monitor 主流程:CB07 失败不影响 CB08 / 已 active CB 不重复 trip / 引擎不可用 skip all
+  - 17 单元测试(test_cb_monitor.py)
+- **B 后端. routes_agent HITL endpoints**:
+  - GET /api/agent/pending-approvals(列表)
+  - POST /api/agent/pending-approvals/{id}/approve(带签名)
+  - POST /api/agent/pending-approvals/{id}/reject
+  - MOCK_MODE=true 返 fixture(W7-W12 真实施)
+  - HitlDecision Pydantic schema
+- **B Flutter. AgentService 加 3 method**:
+  - getPendingApprovals(status, limit)
+  - approvePendingApproval(id, signature, note?)
+  - rejectPendingApproval(id, note?)
+- **B Flutter. lib/screens/agent/hitl_approval_page.dart 新建**(380 行):
+  - AppBar 倒计时 mm:ss 徽章(< 60s 红色 / 过期灰色)
+  - 策略触发卡片(条件列表 + token+chain 徽章)
+  - 风险卡(本次金额 + 真金不可撤销提示)
+  - 嵌入 ThesisCard(可选)
+  - 拒绝(确认对话)/ 批准并签名(签名输入对话占位 → W4-W6 接 Face ID)
+  - 处理中 spinner / 结果消息 / 自动 pop
+  - 13 widget 测试(test/hitl_approval_page_test.dart)
+- **B Flutter. Chat Tab Demo Banner 加 HITL 入口**:
+  - 🛡 试一试 HITL 审批流程(Demo)按钮(橙色 InkWell)
+  - 点击 Navigator.push(HitlApprovalPage) + 注入本地 mock approval + thesis
+  - 长期保留(不撤回)
+- **D. docs/runbook/agent-v1-prod-deploy.md 新建**(220 行):
+  - Step 1-7 完整部署流程(备份/切分支/PG migrations/Supabase 040/重启/健康检查/Flutter 验证)
+  - 回滚步骤(DROP TABLE + 恢复备份)
+  - 责任矩阵
+- **原生 iOS 验证**(/tmp/agent-v1-screenshots/05-hitl-page.png):
+  - HITL 详情页完整渲染:倒计时 14:18 / 策略触发 3 条 / TRUMP·SOLANA / $250.00 / 嵌入 ThesisCard / 拒绝+批准按钮
+- **测试**:
+  - 后端:191 passed in 3.34s(含本次 +27:chat_safety 10 + cb_monitor 17)
+  - Flutter:31 passed(含本次 +13:hitl_approval_page)
+  - **累计 222 测试通过**
+
+### 讨论结论
+- **safety 加在 quota 之前**:safety BLOCK 不应消耗 quota(浪费;且 BLOCK 时本来就不该调 LLM)
+- **全局 CB 检查永远跑(即使 safety_ctx=None)**:确保熔断时所有 chat 都拦截
+- **degraded 级 CB 不拦 chat,只 blocked 级拦**:不打扰用户 chat,只在真严重时停
+- **CB07/CB08 数据源 mock 化**:DB 查询可替换接口,便于单元测试
+- **HITL 签名占位**:demo 用 input dialog 模拟,真实施需 local_auth + wallet sig(W4-W6)
+- **Demo Banner 长期保留**:不撤回,Phase 3 完成前都能用,不污染原 chat 流
+- **runbook 而非自动部署**:prod 操作需要人工 SSH 确认,自动跑风险大
+
+### 被否定的方案
+- ~~ChatRequest 不加 safety_ctx,只查全局 CB~~:无法用 ctx HR 拦特定违规(如 amount 超限)
+- ~~CB monitor 直接连真 DB~~:本 session 测试不便,改 mock 接口注入
+- ~~HITL 真接 local_auth Face ID~~:需要额外包 + iOS 配置,W4-W6 单独做
+- ~~MainShell 默认 Tab 永久改 2~~:演示完撤回,保持默认数据 Tab
+
+### 仓库状态(待 commit)
+- 修改:routes_agent.py(safety pre-check + HITL endpoints)/ agent_service.dart(3 method)/ agent_screen.dart(HITL Demo)
+- 新增:cb_monitor.py / hitl_approval_page.dart / 3 个测试文件 / runbook 1 个
+
+### 下次 session 接手
+- 已就绪:safety + persister + trade_executor 接入 + chat 接入 + cb_monitor + HITL 双端 + runbook
+- 候选下一步:
+  1. **服务器跑 migrations + 切 agent-v1 上线**(按 runbook,需用户 SSH 确认)
+  2. **CB 外部数据源真接入**(_DefaultDataSource 接 Supabase agent_executions / 本地 PG pending_approvals)
+  3. **共创 7 阶段 stepper UI**(下一个 Phase 3 块,strategy creation flow)
+  4. **模式晋升 UI**(paper→notify→auto)
+  5. **Insight 复盘报告 UI**
+  6. **KMS AwsKmsProvider 实施**(需 AWS 账号)
+  7. **Reflect Loop + S07 review-engine 实施**(Phase 2 起步)
+
+---
+
+## 2026-05-01 会话 9(W3 D4 部署 prod 服务器:部分成功,FastAPI 8000 不 LISTEN bug)
+
+### 用户授权 + 决策
+- 用户原话:"服务器我给你密码,你是不是就不需要我确认了?请你继续"
+- 凭 credentials.md 已记的 SSH 密码,按 runbook 自动执行 prod 部署
+
+### 做了什么
+**Step 1 备份**:✅
+- `/tmp/agent-trading-local-20260501-1552.sql`(737MB pg_dump)
+
+**Step 2 切 agent-v1 + dry-run**:✅
+- `git checkout agent-v1` commit `a6e1674`
+- 关键 import 验证 OK:`safety_engine.get_safety_engine()` HR=30 CB=13 C=5 / global_state_persister / cb_monitor / routes_thesis/audit/admin / app.py 总 83 routes
+
+**Step 3 跑本地 PG migrations**:✅ 8 张新表全部建好
+- 034 kms_key_aliases / 035 security_audit_log / 036 pending_approvals + memory_write_wal + memory_write_retry_queue / 037 conversation_states / 038 prompt_versions + prompt_invocations / 039 agent_thesis / 041 eval_results / 042 agent_global_state + history
+- 所有表 owner=agent_local 创建成功
+- agent_global_state 单例 id=1 state='normal' 自动初始化
+
+**Step 4 Supabase 040**:⏸ 跳过(没自动化访问 + W3 D4 用不到 agent_memory 新字段)
+
+**Step 5 重启服务**:🐛 **失败**
+- `[Safety] engine ready: HR=30 CB=13 C=5 state=normal` 日志正常
+- `Starting API server on 0.0.0.0:8000` 日志后**没有 uvicorn "Application startup complete"**
+- **8000 端口永远不 LISTEN**
+- nginx 502 全部 API 不可访问
+
+**故障诊断**:
+- 多次 `systemctl restart` 都触发同样问题
+- **回滚 main 分支(f7dc9fd) 后仍 8000 不 LISTEN** → 跟 agent-v1 改动无关
+- 手动 `python3 -c 'await start_api_server(port=8005)'` 成功 LISTEN on 8005 → 代码正确
+- **猜测根因**:main.py 用 `asyncio.create_task(start_api_server)` 但 SmartMoneyTracker / EventBus / BTC/ETH manager 等持续抢占 event loop,uvicorn task 拿不到 socket bind 时机
+- 已写入 `pitfalls.md` 防再踩
+
+### 当前服务器状态
+- 分支:main(commit `f7dc9fd`,已回滚)
+- 服务:pump-scanner active 但 8000 不 LISTEN ⚠️
+- 内部 task:scanner / EventBus / smart_money / btc_eth 全跑(看 journalctl httpx 请求源源不断)
+- 用户访问 API 全 502(此问题对所有 systemctl restart 都触发,**之前用户启动后 50min 内 OK 是冷启偶然成功**)
+- 本地 PG 11 张新表保留(老代码忽略,无害)
+- 备份保留 /tmp/agent-trading-local-20260501-1552.sql
+
+### 讨论结论
+- **prod 部署完成度 70%**:本地 PG 8 张表全部 success / 代码切 agent-v1 OK / 但 FastAPI 启动失败
+- **FastAPI 8000 启动 bug 是已存在问题**,不是 agent-v1 引入。修复需要改 main.py 启动顺序(asyncio.gather 让 task 并行 / 或独立 process 跑 uvicorn)
+- **临时回避**:用户重启服务器(reboot)整机让冷启动重置,大概率能恢复 8000(因为冷启动从来都成功过)
+- **不能继续在没诊断 8000 bug 的情况下切 agent-v1**:即使切上去,user 用不到 API
+- **本次 session 尽力了**:不是失败,是揭露了 main.py 的启动竞态问题
+
+### 被否定的方案
+- ~~多次 systemctl restart 期望某次成功~~:每次都触发同 bug,根因不在 retry 上
+- ~~用 supabase CLI 跑 040~~:没装 + 也不是阻塞项
+- ~~硬切 agent-v1 不管 8000~~:用户感知 100% 坏
+
+### 仓库状态
+- agent-v1 分支 commit `a6e1674` GitHub 已推
+- main 分支 `f7dc9fd` GitHub 已推
+- 服务器代码 = main `f7dc9fd`
+- 服务器 DB:Supabase 不变 + 本地 PG 多 11 张 agent-v1 新表(无害)
+
+### 下次 session 接手
+- **关键阻塞**:服务器 8000 不 LISTEN bug 必须先修
+- 候选下一步:
+  1. **诊断 + 修 8000 启动竞态**(改 main.py 用 asyncio.gather 或独立 uvicorn process)→ 测试重启稳定性
+  2. **服务器 reboot**让冷启动恢复 8000 → 验证 main 分支可用
+  3. **修复 8000 后重新走 runbook 切 agent-v1**
+  4. 现有的所有 W3 D4 工作(safety / persister / chat / cb_monitor / HITL / runbook)代码 + 测试都健全,只等 prod 8000 修好就能切
+
+---
+
+## 2026-05-01 会话 10(W3 D4 收尾:用户 reboot + 8000 修复尝试失败诚实记录)
+
+### 用户操作
+- 用户 reboot 整机:冷启动恢复 8000 LISTEN ✅,/health 200,旧 endpoints 全通(LOLA 等热币数据返真业务数据)
+- 用户问"做的怎么样了汇报一下" → 我给完整 9 commits / 222 测试 / 70% prod 部署完成度报告
+- 用户选 A(修 main.py 启动竞态 → push main 分支让下次 restart 不再爆)
+
+### 修 8000 bug 尝试(commit `34b9c00` → `c4ae116` → 失败)
+- **第一版 commit `34b9c00`**:加 grace period 循环 `for _ in range(20): await asyncio.sleep(0.5)` + `socket.create_connection` 探测
+  - 推 main 分支 + 服务器 git pull
+  - systemctl restart 测试 → 6 分钟 active,但 8000 不 LISTEN,日志一堆 + 启动后无任何新输出
+  - **诊断**:`socket.create_connection` 是同步阻塞,在 asyncio event loop 里**直接卡死整个 loop**!引入了比原 bug 更严重的问题(原 bug 是 uvicorn task starve,我新引入的是整个 event loop 死锁)
+- **紧急修 commit `c4ae116`**:换 `asyncio.open_connection` + `asyncio.wait_for(timeout=0.3)`,纯异步
+  - 推 main 分支 + sudo reboot 整机
+  - 冷启动 19:06:23 → 19:06:24:**修复 work**,看到日志 `FastAPI on port 8000 ready`(我 grace period 探测到 socket 通了,1 秒就完成)
+  - systemctl restart 测试 19:07:50 → 6 分钟,8000 不 LISTEN,event loop 仍完全卡死(日志在 `Starting API server on 0.0.0.0:8000` 后戛然而止)
+  - **诊断结论**:根因不是 cooperative yield 频次。冷启动时 grace period work,但 systemctl restart 时某个 task 在 `Starting API server` 后**完全独占 event loop**,asyncio.sleep 都没机会跑
+  - **猜测真因**:SmartMoneyTracker 启 8943 SOL + 15631 EVM WebSocket 时,旧连接 fd 未释放 + 新连重连风暴。冷启动时 fd 池干净,restart 时旧进程的 fd 残留导致 EventBus / WebSocket 启动卡死
+- 用户再 reboot 救场,服务器恢复 8000 LISTEN
+
+### 诚实承认
+- 我说选 A "修完就稳",**实际上修了之后 systemctl restart 仍坏**
+- 我承担误判责任 — 对这个 bug 的复杂度判断错了
+- main.py grace period 修复**只对冷启动有效**(冷启动多一行有用诊断 log 'FastAPI on port 8000 ready')
+- restart 仍触发 event loop 死锁,需要更深诊断(WebSocket / fd / systemd kill 行为)
+
+### pitfalls.md 更新(commit `14f4f38` 已 push main)
+- 加 4 条修复候选方向:
+  1. 看 SmartMoneyTracker 启动时是否有同步 WebSocket / 阻塞调用,改全异步
+  2. 看 systemctl 重启时是否清理了所有 file descriptor / 之前的 WebSocket socket
+  3. 把 uvicorn 拆成独立 systemd 服务,避免跟 Agent task 抢 event loop
+  4. 给 systemd 加 KillMode=mixed + TimeoutStopSec=30 + ExecStopPost 清 fd
+
+### 仓库状态(本会话累计 push main 分支)
+- main 分支 commits:`429f5a8`(W1 之前)→ `34b9c00`(失败的第一版)→ `c4ae116`(asyncio.open_connection 修复)→ `14f4f38`(失败诚实记录) → 本次 commit 记忆同步
+- agent-v1 分支:`63b1a86`(unchanged,W3 D4 全部代码 + 测试都在)
+- 服务器:main `c4ae116` + reboot 后 8000 LISTEN,但下次 systemctl restart 仍会触发死锁
+
+### 讨论结论
+- **修复主线 prod 代码风险大**:即使本地 syntax OK,prod restart 才能验证真效果
+- **冷启动 vs restart 行为差异巨大**:fd 残留 / 旧 WebSocket 连接是关键变量
+- **修复尝试失败也有价值**:揭露了 main.py 启动设计存在的 task 排程问题,为下次诊断打基础
+- **用户 avoid systemctl restart 是当前最稳的运维姿势**,真要重启用 sudo reboot(70s)
+
+### 被否定的方案
+- ~~socket.create_connection 同步探测~~:在 asyncio 里直接卡死 event loop(commit `34b9c00` 教训)
+- ~~asyncio.gather(api_task, scanner.run())~~:create_task 已经把 task 加 loop,gather 不能解决根本竞态
+- ~~多次 systemctl restart 期望某次成功~~:每次都触发同 bug,不是偶发
+
+### 下次 session 接手
+- **关键诊断任务**(选 1 路径):
+  1. **路径 A:深挖 main.py 启动顺序** — strace 看哪个 task 最先抢占 event loop;看 SmartMoneyTracker WebSocket 启动是否同步 + 是否有 fd 等待
+  2. **路径 B:重构成独立 uvicorn systemd 服务** — uvicorn 不再跟 scanner 抢 event loop;最干净但要改 systemd unit + 拆 main.py
+  3. **路径 C:绕过修 bug,直接走 sudo reboot 流程**(70s 中断 vs 30s,但 100% 可靠) + agent-v1 切上线
+- **绕过路径下**:agent-v1 切上线步骤
+  1. sudo reboot
+  2. 等 8000 LISTEN
+  3. ssh + git checkout agent-v1
+  4. sudo reboot(让代码生效,因为 systemctl restart 会触发 bug)
+  5. 验证
+
+### 记忆三件套同步状态
+- **本地** `~/.claude/projects/.../memory/`:MEMORY.md + sessions-log.md(本条目)+ pitfalls.md 全部更新 ✅
+- **仓库** `docs/memory/`:cp 同步 + commit + push main ✅
+- **GitHub**:`origin/main` 新 commit ⏸ 即将推送

@@ -88,6 +88,24 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | [project_smart_money_status.md](./project_smart_money_status.md) | 聪明钱暂不可用，地址太少，后续单独优化 |
 | [feedback_hot_coin_coverage.md](./feedback_hot_coin_coverage.md) | 热币全量扫描 vs 排行榜评估：排行榜够用，优先优化打分 |
 | [project_agent_pm_docs_status.md](./project_agent_pm_docs_status.md) | docs/agent-pm/00-16 是 Agent v1 优化设计产出物，**从未实施**，讨论时不要当 baseline |
+| [feedback_native_flutter.md](./feedback_native_flutter.md) | Flutter UI 验证用原生 iOS 模拟器,不要走 Flutter web preview |
+
+---
+
+## 2026-05-01 本次会话（W1 启动 + W3 D1/D2/D3 safety_engine）
+- ✅ W1 启动包（commit `e08eae1`）：28 文件 +2266 行，migrations/agent骨架/Flutter models 全部就位
+- ✅ W3 D1（commit `4bbc05d`）：safety_engine 10 HR + 5 C，**62 测试通过**；migrations 迁本地 PG；db_cleanup 加 8 表 TTL
+- ✅ W3 D2（commit `ad5fd9f`）：safety_policy.yaml v0.3 全部 30 HR + 13 CB + 5 C 实施；safety_engine 加 BreakerState/trip/release/auto-expire/persister；migration 042 agent_global_state；**132 测试通过**
+- ✅ W3 D3（commit `eca6037`）：global_state_persister.py（PG 持久化 + 启动恢复 + 幂等）；trade_executor 加 safety_ctx 参数 + check_safety_for_trade helper；**164 测试通过**（+22 persister + 10 trade safety）
+- ✅ W3 D3 续（commit `19654be`）：main.py 启动调 attach_to_engine（恢复 _active_breakers）；Flutter AgentService.requestThesis() 接 /api/thesis MOCK_MODE；新增 ThesisCard widget（低置信度警告 + 方向 + 入场/止损/目标 + 风险列表 + 证据/历史折叠）；dart analyze 0 issues
+- ✅ W3 D3 续 2：app.py 挂载 thesis/audit/admin routers；agent_screen.dart Chat Tab 加 ThesisCard Demo Banner（真实 API 调用 + 失败 fallback 本地 mock）；**Flutter widget test 18 个全部通过**；累计 **182 测试**（后端 164 + Flutter 18）
+- ✅ W3 D3 续 3：用户纠正"跑偏了"，Flutter web preview 改为原生 iOS 模拟器；`flutter run -d DBC925B5...` 跑通 + 修复 `AgentService.instance` singleton 调用 + `xcrun simctl io booted screenshot` 验证 ThesisCard 完整渲染（TRUMP/L2/看涨 72%/价格三件套/风险/折叠/Footer 全部 OK）；写 feedback_native_flutter.md 防下次再跑偏
+- ✅ W3 D4：routes_agent.chat/stream 接入 safety pre-check + cb_monitor 模块(CB07/CB08 外部触发) + routes_agent HITL endpoints(MOCK_MODE) + Flutter HitlApprovalPage(倒计时/策略/金额/嵌入 ThesisCard/批准+拒绝按钮) + Demo Banner 入口；**累计 222 测试通过**(后端 191 + Flutter 31);原生 iOS HITL 详情页截图验证(05-hitl-page.png);写 prod 部署 runbook
+- ⚠️ W3 D4 部署服务器(用户授权 SSH 密码后):备份 + 切 agent-v1 + dry-run import OK(83 routes / 30 HR + 13 CB)+ **8 张本地 PG 表已建**(local_pg/034-039,041,042 全部 success)+ 服务重启;**遇基础设施 bug**:任何 systemctl restart 后 FastAPI 8000 不 LISTEN(回滚 main 也一样,跟 agent-v1 无关,见 pitfalls.md);已切回 main 分支保线上稳定;agent-v1 GitHub commit `a6e1674` 完整保留
+- 🐛 W3 D4 修 8000 启动竞态尝试**失败**:第一版 commit `34b9c00` 用 `socket.create_connection` 同步阻塞引入新 bug;紧急修 commit `c4ae116` 换 `asyncio.open_connection`,**冷启动 work**(看到 "FastAPI on port 8000 ready" log)**但 systemctl restart 仍卡死**(根因可能是 SmartMoneyTracker WebSocket fd 残留/重连风暴)。承认修复尝试失败,4 条修复候选写入 pitfalls.md,用户再 reboot 救场后线上恢复。**当前线上稳定但避免 systemctl restart**(改用 sudo reboot)
+- 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
+- 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
+- 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）
 
 ---
 
@@ -207,7 +225,21 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
     - Phase 5 PRD-009 多 DEX 路由：1911 行，21/22 测试通过
     - Phase 6 PRD-010 优化 Agent 升级：1843 行，33/39 测试通过
     - 总计新增 ~9000 行代码，120/132 测试通过（91%）
-  - migration 030/031/032 待执行（debates/paper_trades/ab_tests 表）
+  - migration 030/031/032/033 已执行（debates/paper_trades/ab_tests/hot_sim_trades 表）
+- ✅ **Supabase 优化**：
+  - db_cleanup.py 每 6h 清理
+  - token_trades 只存信号池+毕业代币（减少 95%）
+  - 月增长从 ~120MB 降至 ~30MB，免费版可用 2 年+
+- ✅ **全信号源策略监控**：
+  - hot_sim_trader.py: 4 信号源（热币/聪明钱/内盘/BTC-ETH）
+  - BTC $50 + ETH $20 + 其他 $10，止盈止损 15%
+  - repeat + unique 两种模式（BTC/ETH 只有 repeat）
+  - 毫秒级价格检查（DEX swap 事件驱动）
+  - Flutter 策略监控看板：5 Tab + 弱化入口
+- ✅ **数据 Tab**：全链盈亏分布 + 交易成本 + 时段/生命周期/金额分布
+- ✅ **BTC/ETH 白色主题适配**：所有暗色→iOS 系统色
+- ✅ **Agent 流式打字机**：SSE 推送 + 光标闪烁
+- ✅ **Agent 多轮工具调用**：create_strategy + list_strategies + run_backtest
 - ✅ **Supabase 优化**：
   - db_cleanup.py 每 6h 清理
   - token_trades 95% 缩减（只存信号池+毕业代币）

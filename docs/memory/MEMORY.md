@@ -120,6 +120,28 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - GET /api/agent/reviews?period=daily|weekly|monthly(MOCK,W7-W12 接 S07)
   - **16 单元测试全过**(local Py3.9 用 mini FastAPI 绕开 routes_thesis PEP 604)
   - 服务器 localhost curl 验证 5 endpoints 都返真实 JSON;CN IP 经 nginx 被 GEO middleware 拦,Flutter 自动 fallback 到本地 mock(数据形态对齐,UI 视觉一致)
+- ✅ **W3 D5+ S07 review-engine 真实施**(commit `8f9c0c0` deploy):mock → 真实 trade 数据汇总
+  - agent/review_engine.py:_load_trades(agent_executions + token_performance D3)+ _compute_metrics(win_rate/EV/Sharpe/max_dd/profit_factor/Kelly)+ 规则化 insights/proposals + Wilson CI
+  - cold_start 三态:no_trades / few_trades / normal
+  - routes /reviews 接通 + 失败降级 mock
+  - **25 单元测试全过**;线上验证 source=rule_engine,0 trades → "今日暂无交易"
+- ✅ **W3 D5+ 共创状态机骨架**(commit `8a63804` deploy):S04 状态机
+  - agent/orchestration/cocreation_state_machine.py:7 阶段 + STAGE_TRANSITIONS + suggest_next_stage 启发式
+  - load/create/append/transition/cleanup 操作本地 PG conversation_states
+  - 5 个 endpoint:GET state / POST start / message / transition / abort
+  - **29 单元测试全过**;线上 curl POST /cocreation/start 真返完整 state JSON
+- ✅ **W3 D5+ 推送深链**(commit `210653f`):后端 + Flutter 双端
+  - 后端 push_service.build_deep_link(category, **params) 6 类映射 + URL encode
+  - action_dispatcher 两处推送 push_data 加 category + deep_link
+  - Flutter lib/services/deep_link_router.dart:navigatorKey + handle/handleFromPushData
+  - app.dart MaterialApp 注入 navigatorKey;push_notification_service 三处 handler 接 router
+  - **后端 12 + Flutter 7 测试全过**
+- ✅ **W3 D5+ 核心 3 Tool**(commit `72616c4` deploy):T11 + T13 + T15
+  - T11 approve_rule:写 agent_memory + 14 天 Shadow Mode + 幂等(同 proposal_id 返 duplicate)
+  - T13 send_push_notification:包装 push_service + build_deep_link,非幂等(side=PUSH)
+  - T15 calc_risk_metrics:复用 review_engine,纯函数,permission=PUBLIC
+  - get_tool_registry() 返 3 个 Tool 实例;to_anthropic_tool_spec 可直接喂 Messages API
+  - **17 单元测试全过**;服务器 jsonschema 安装 + tools 注册 OK + api 健康
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

@@ -1557,3 +1557,110 @@ cd299f6  feat(flutter): Phase 3 UI — 共创 stepper + 复盘报告 + 记忆管
 - conversation_states 表写入 + 共创 stepper 状态机后端
 - 17 Tool 真实施 (T04 recall_memory / T11 approve_rule / T13 push 等)
 - Flutter 推送通知接入 strategy_triggered / hitl_approval / review_ready 三类深链
+
+---
+
+## 会话 11 续 2(W3 D5+:四块并行推进,2026-05-01)
+
+### 用户指令
+"继续工作,一直到所有工作完成"(我按优先级推 4 块)
+
+### 实际产出(4 commits + final memory sync)
+
+**P1: S07 review-engine 真实施(commit `8f9c0c0` deploy)**
+- 新建 agent/review_engine.py(437 行):
+  - generate_review(period, target_date, user_id) 主入口
+  - _load_trades:agent_executions buy/sell 配对 + token_performance D3 涨幅
+  - _compute_metrics:win_rate / EV / Sharpe / max_drawdown / profit_factor / Kelly
+  - 全开仓时用 D3 估算(D3 ≥ 20% 视为 win)
+  - _rule_based_insights:win_pattern / loss_pattern / risk_warning / observation
+  - _rule_based_proposals:tighten(亏损 streak)/ scale(高 PF)
+  - Wilson score lower(95% CI)
+  - cold_start 三态
+- routes /reviews 接通 + 失败降级 mock
+- tests/test_review_engine.py — 25 cases 全过
+- 线上 verify:source=rule_engine,0 trades → "今日暂无交易" ✅
+
+**P2: 共创状态机骨架(commit `8a63804` deploy)**
+- 新建 agent/orchestration/cocreation_state_machine.py(280 行):
+  - VALID_STAGES + STAGE_TRANSITIONS + is_valid_transition
+  - suggest_next_stage 启发式(短/长/intent/abort/satisfied)
+  - load_active_state / create_state / append_message / transition / cleanup_expired
+  - append_message 截断到 keep_last_n=20
+  - 30min 不活跃 → cleanup 标 aborted
+- routes 加 5 endpoint:GET state / POST start / message / transition / abort
+- tests/test_cocreation_state_machine.py — 29 cases 全过
+- 线上 verify:POST /cocreation/start 真返完整 state JSON ✅
+
+**P3: 推送深链(commit `210653f`)**
+- 后端 push_service.build_deep_link(category, **params):
+  - strategy_triggered → aitrading://strategy/{id}
+  - hitl_approval / review_ready / token_alert / rule_proposal / home
+  - URL encode 特殊字符
+- action_dispatcher 两处推送(_handle_alert + _handle_push)加 category + deep_link
+- Flutter lib/services/deep_link_router.dart:
+  - DeepLinkRouter.navigatorKey + handle(url) + handleFromPushData
+  - 解析 → push 对应页面(ReviewPage / MemoryManagementPage / home pop)
+- app.dart MaterialApp.navigatorKey: DeepLinkRouter.navigatorKey
+- push_notification_service 三处 handler 接 router
+- tests:后端 12 + Flutter 7 全过
+- 测试坑:testWidgets 触发真实 ReviewPage 会卡 pumpAndSettle(http timeout)
+  → 简化为只测 home/unknown 路径,跳过会触发 http 的目标页
+
+**P4: 核心 3 Tool(commit `72616c4` deploy)**
+- T11 approve_rule:
+  - 写 agent_memory(type=semantic, is_active=true, shadow_mode_until=+14d)
+  - structured_data.source_proposal_id 用于幂等
+  - 同 (user_id, proposal_id) 已写过 → 返 duplicate=true
+  - 写入后 SemanticMemory.force_refresh() 让 5min 缓存 invalidate
+- T13 send_push_notification:
+  - 包装 push_service.send_push + build_deep_link
+  - category enum:strategy_triggered / hitl_approval / review_ready /
+    token_alert / rule_proposal / system
+  - 返 sent_count / deep_link / category
+  - non-idempotent + side_effects=PUSH
+- T15 calc_risk_metrics:
+  - 复用 review_engine._compute_metrics + _wilson_lower
+  - 纯函数 + permission=PUBLIC
+- agent/tools/__init__.py:get_tool_registry() 返 3 Tool 实例
+- 每个 Tool 都能 to_anthropic_tool_spec()(Messages API 直用)
+- tests/test_tools_t11_t13_t15.py — 17 cases 全过
+- 服务器:pip install jsonschema → 注册 OK → api restart 健康
+
+### Commits 索引
+```
+8f9c0c0  feat(s07): review_engine v1 真实施 — 从 mock 升级到规则化生成
+8a63804  feat(s04): 共创状态机骨架 — 7 阶段 state machine + 5 endpoints
+210653f  feat(push): 深链路由 — alert payload deep_link + Flutter Navigator
+72616c4  feat(tools): T11/T13/T15 三个核心 Tool 真实施
+```
+
+### 测试累计(本次新增)
+- 后端 Python:25 + 29 + 12 + 17 = **83 新测试**
+- Flutter:7 新测试
+- **本 session 共 90 新测试,全部 PASSED**
+
+### 服务器状态(2026-05-01 13:40 UTC)
+- agent-v1 commit `72616c4` 已 deploy
+- pump-scanner-api active(8000 LISTEN)
+- pump-scanner active(scanner only)
+- Redis IPC 跑着
+- /api/agent/reviews → review_engine ✅
+- /api/agent/cocreation/* → 5 endpoint 全可用 ✅
+- agent.tools registry 3 Tool 加载 OK ✅
+
+### 已实施进度对齐 17-tech-plan.md
+- Phase 0(灾难漏洞):safety_engine v0.3 ✅ / KMS Provider ⏸ / pending_approvals 表 ✅
+- Phase 1(Tool + Memory):3/17 Tool ✅ / Memory 4 层升级 ⏸
+- Phase 2(Skill + Loop):review_engine v1 ✅ / 共创状态机骨架 ✅ / Skill SKILL.md ⏸
+- Phase 3(Flutter UI):4 个核心组件 + 17 widget tests ✅ + 4 张原生 iOS 截图
+- Phase 4(Eval + 上线):⏸
+
+### 下次接手候选
+1. **review_engine v2** — 接 Claude Haiku 4.5 写 headline / body / 提议规则
+2. **共创 LLM 接入** — chat_loop 根据 stage 选 prompt template + tool_use
+3. **Memory 4 层升级** — episodic 评分公式对齐 / WAL / Semantic 5 条硬晋升
+4. **17 Tool 补齐** — T01-T10/T12/T14/T16/T17 共 14 个
+5. **18 Prompt + version + A/B**
+6. **Eval golden set 1660 条**(L1-L4)
+7. **KMS AwsKmsProvider 真实施**

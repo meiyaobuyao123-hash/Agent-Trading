@@ -159,6 +159,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - T10 get_paper_performance:get_stats + 可选 get_comparison;加 promotion_eligible / promotion_blockers 字段(closed≥30 + avg_pnl_pct≥1.0 对齐 C5 晋升门槛)
   - T12 save_strategy:create_strategy + 默认配额(active≥20 阻止),skip_quota_check 可绕过;ValueError/RuntimeError 透明 reason
   - **24 单元测试全过**;服务器 12 Tool 注册 OK
+- ✅ **W3 D5+ Prompt Library v1 骨架 + 6 核心 P**(commit `2f34696` deploy):
+  - prompt_loader.py 完整重写:_parse_frontmatter(YAML 子集 + PyYAML 优先)/ _render_template({{var}}/{{nested.key}})/ PromptSpec(model/temp/max_tokens 派生属性)/ PromptLoader(load_from_disk + select_version + bucket + render + to_messages_request 含 cache_control + few-shot 拼接)
+  - select_version 优先级:ga(rollout 100) > beta(25) > canary(5) > draft fallback;bucket = sha1(device + prompt_id) % 100 独立灰度
+  - 6 个完整 P:P01 chat_clarify(澄清 2-4 回合)/ P02 thesis_writer(direction/conviction/risks≥2)/ P10 risk_reviewer(soft flags + verdict)/ P11 signal_strategy_builder(StrategySpec mode=paper)/ P13 review_engine_daily(headline+三段式 body)/ P18 persona_translator(newbie/intermediate/pro)
+  - 每个 P:frontmatter.yaml + prompt.md + examples.md(≥3 条 few-shot)
+  - **28 单元测试全过**;服务器 PyYAML 6.0.3 安装 + 6 P 加载 OK
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

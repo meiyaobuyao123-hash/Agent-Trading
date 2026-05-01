@@ -1889,3 +1889,77 @@ ScheduleWakeup 60s 自驱动 → autonomous-loop-dynamic 第二轮
 5. **Eval golden 1660 条**(L1-L4)
 6. **WAL 真接入** — 关键写入路径走 WAL
 7. **KMS AwsKmsProvider** — 需 AWS 账号
+
+---
+
+## 会话 11 续 6(autonomous-loop:Prompt Library v1 骨架,2026-05-01)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第三轮
+
+### 实际产出(commit `2f34696` deploy)
+
+**prompt_loader.py 完整重写**(82 → 320 行)
+- frontmatter parser:PyYAML 优先,降级 simple parser(支持 key:val / list /
+  bool / int / float / multiline `|` / quoted)
+- 模板替换:`{{var}}` / `{{nested.key}}`,缺失变量保留 placeholder
+- PromptSpec dataclass:model / temperature / max_input_tokens /
+  max_output_tokens 派生属性
+- PromptLoader:
+  - load_from_disk():扫 prompts/v1/Pxx_*/ → 读 frontmatter+prompt+examples
+  - _parse_examples_file():markdown ## Example/**User:**/**Assistant:**
+  - select_version:bucket = sha1(device+prompt_id) % 100 独立灰度;
+    优先 ga(100) > beta(25) > canary(5) > draft fallback
+  - render():模板替换
+  - to_messages_request():Anthropic Messages.create dict
+    + cache_control(ephemeral)+ few-shot 拼接成 user/assistant 对
+- 单例 + reset_loader_for_test
+
+**6 个完整 P**(覆盖核心闭环:共创 → thesis → 风评 → 复盘 → 翻译)
+- P01 chat_clarify:Haiku / 0.4 temp / 2-4 回合澄清 / STAGE_TRANSITION 标记
+- P02 thesis_writer:Sonnet / 0.2 / direction/conviction/risks≥2/evidence JSON
+- P10 risk_reviewer:Haiku / 0.0 / soft flags + verdict approve/veto/downgrade
+- P11 signal_strategy_builder:Sonnet / 0.3 / StrategySpec JSON 强 mode=paper
+- P13 review_engine_daily:Haiku / 0.3 / headline + 三段式 body + tone
+- P18 persona_translator:Haiku / 0.4 / newbie/intermediate/pro 翻译
+
+每个 P 含 frontmatter.yaml + prompt.md + examples.md(≥3 few-shot)
+
+剩余 12 P 留 W7-W12:
+P03 technical_analyst / P04 sentiment_analyst / P05 onchain_analyst /
+P06 debate_bull / P07 debate_bear / P08 debate_facilitator /
+P09 decision_agent / P12 trade_strategy_builder /
+P14/P15 review_engine_weekly/monthly / P16 reflection / P17 regime_explainer
+
+### 测试 (tests/test_prompt_loader.py — 28 cases)
+- frontmatter parser:basic / int / bool / multiline / quoted (5)
+- template renderer:simple / nested / missing var preserved / whitespace (4)
+- load_from_disk 真目录加载 6 个 P + skip 不带 P 前缀 (5)
+- bucket 确定性 / per-prompt 独立 / 不同 device 不同桶 (3)
+- select_version:fallback draft / ga 优先 canary / canary 5% 分布 1000 sample / no prompt None (4)
+- render + to_messages_request:cache_control / few-shot / no cache when disabled (4)
+- examples.md 解析:multiline assistant / 多对 (2)
+- prompts dict 验证 (1)
+
+**28/28 PASSED**;**累计本会话 152+28=180 测试全过**
+
+### 服务器 deploy 验证
+- pip install PyYAML 6.0.3
+- get_prompt_loader() 加载 6 P:[P01,P02,P10,P11,P13,P18]
+- P01 model = claude-haiku-4-5-20251001;examples 4 条
+
+### Phase 进度更新
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**12/17 Tool** / **Memory 4 层 ✅** / WAL 已存 ⏸ 真接入
+- Phase 2:review_engine v1 ✅ / 共创状态机 ✅ / **Prompt Library 骨架 ✅ + 6 P** /
+  Skill SKILL.md / Loop / chat_loop LLM ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 下次接手候选
+1. **review_engine v2 LLM** — 接 P13 真调 Claude(集成 prompt_loader)
+2. **共创 chat_loop LLM** — 接 P01/P11 + 12 Tool
+3. **剩余 12 P** + Skill SKILL.md 化(S01-S08)
+4. **5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
+5. **WAL 真接入** — agent.memory.wal 写入路径
+6. **Eval golden 1660 条**

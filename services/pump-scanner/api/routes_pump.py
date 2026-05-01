@@ -28,16 +28,53 @@ async def get_pump_signals():
     from scanner_ref import get_scanner
 
     scanner = get_scanner()
-    if scanner is None:
-        return {"signals": [], "count": 0, "message": "scanner not ready"}
+    if scanner is not None:
+        # 同进程:直读内存(实时,毫秒级)
+        signals = scanner.get_signals()
+        is_history = bool(signals and signals[0].get("is_history"))
+        return {
+            "signals": signals,
+            "count": len(signals),
+            "is_history": is_history,  # True = 当前无实时信号，展示最近 1h 历史回顾
+        }
 
-    signals = scanner.get_signals()
-    is_history = bool(signals and signals[0].get("is_history"))
-    return {
-        "signals": signals,
-        "count": len(signals),
-        "is_history": is_history,  # True = 当前无实时信号，展示最近 1h 历史回顾
-    }
+    # 独立 api 进程(脱钩自 main.py):scanner 不可用,DB fallback
+    # 查最近 1h score>=55 + BC 3-35% 的 token_snapshots(每 mint 最新)
+    # 引用 docs/runbook/pump-scanner-api.service
+    from datetime import datetime, timezone, timedelta
+    try:
+        from database import get_db
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        res = get_db().table("token_snapshots") \
+            .select("mint, snapshot_at, score, market_cap_sol, bc_progress_pct, "
+                    "buy_count, sell_count, unique_buyers, smart_elite_count, "
+                    "smart_verified_count, smart_money_net_sol") \
+            .gte("snapshot_at", cutoff) \
+            .gte("score", 55) \
+            .gte("bc_progress_pct", 3) \
+            .lte("bc_progress_pct", 35) \
+            .order("score", desc=True) \
+            .limit(50) \
+            .execute()
+        rows = res.data or []
+        seen = set()
+        signals = []
+        for row in rows:
+            mint = row.get("mint")
+            if mint and mint not in seen:
+                seen.add(mint)
+                signals.append({**row, "is_history": True})
+        signals = signals[:30]
+        return {
+            "signals": signals,
+            "count": len(signals),
+            "is_history": True,
+            "source": "db_fallback",
+        }
+    except Exception as e:
+        log.warning("pump signals DB fallback 失败: %s", e)
+        return {"signals": [], "count": 0, "message": "scanner not ready",
+                "error": str(e)[:100]}
 
 
 @router.get("/stats")

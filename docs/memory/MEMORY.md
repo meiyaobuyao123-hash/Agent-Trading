@@ -104,6 +104,15 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 - ⚠️ W3 D4 部署服务器(用户授权 SSH 密码后):备份 + 切 agent-v1 + dry-run import OK(83 routes / 30 HR + 13 CB)+ **8 张本地 PG 表已建**(local_pg/034-039,041,042 全部 success)+ 服务重启;**遇基础设施 bug**:任何 systemctl restart 后 FastAPI 8000 不 LISTEN(回滚 main 也一样,跟 agent-v1 无关,见 pitfalls.md);已切回 main 分支保线上稳定;agent-v1 GitHub commit `a6e1674` 完整保留
 - 🐛 W3 D4 修 8000 启动竞态尝试**失败**:第一版 commit `34b9c00` 用 `socket.create_connection` 同步阻塞引入新 bug;紧急修 commit `c4ae116` 换 `asyncio.open_connection`,**冷启动 work**(看到 "FastAPI on port 8000 ready" log)**但 systemctl restart 仍卡死**(根因可能是 SmartMoneyTracker WebSocket fd 残留/重连风暴)。承认修复尝试失败,4 条修复候选写入 pitfalls.md,用户再 reboot 救场后线上恢复。**当前线上稳定但避免 systemctl restart**(改用 sudo reboot)
 - ✅ **W3 D4 8000 bug 治本**(commits `03d9cd1` + `660f4dc`):走候选 3 — 独立 uvicorn systemd service。新 `api_server.py`(独立 process)+ `pump-scanner-api.service`,原 pump-scanner 加 `ENABLE_API=false`(只跑 scanner)。8000 跟 scanner 完全脱钩。**5 次 restart pump-scanner 8000 全程稳定 + 3 次同时 restart 两服务都秒恢复**。遗留 _signal_pool 跨进程问题:文件 IPC 解决(`/tmp/pump_signal_pool.json` 60s dump,routes_pump 读)。线上现在 systemctl restart 完全稳定,不需要 reboot
+- ✅ **W3 D5 agent-v1 切上线**(commit `2171af7` deploy):服务器切 agent-v1 + SafetyEngine v0.3 加载 `HR=30 CB=13 C=5 hr→cb=6 state=normal`,12 张 agent_v1 本地 PG 表全部确认存在,8000 正常 LISTEN
+- ✅ **W3 D5 Redis IPC**(commits `5b39e14` + `769f849`):`pump:signal_pool` 5s set + 文件 60s 兜底,routes_pump 读取 Redis → 文件 → 空 三层降级,API `dump_age_ms` 实测 < 1s。dump loop 改 threading.Thread 绕开 event loop starvation。修服务器 `.env ENABLE_API=true` 覆盖 systemd 的隐藏 bug。3×restart 全稳定
+- ✅ **W3 D5 Phase 3 Flutter UI**(commit `cd299f6`):3 个新组件 + 17 widget tests
+  - cocreation_stepper.dart(7 阶段进度条 idle→...→saved)
+  - review_page.dart(日/周/月切换 + Summary + 6 metrics + Insights + RuleProposals)
+  - memory_management_page.dart(Active/Shadow/Dormant 状态 + 14d 倒计时 + Dormant 提示)
+  - agent_service.dart 加 mock methods(getReview/listSemanticRules/etc.)
+  - ai_insights_tab 加 Phase 3 入口卡 + agent_screen 加共创 demo banner
+  - 原生 iOS 4 张截图验证渲染完整(/tmp/screenshot-1..4)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

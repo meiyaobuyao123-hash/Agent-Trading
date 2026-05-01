@@ -274,7 +274,7 @@ class _ChatTabState extends State<_ChatTab>
       _thesisErr = null;
     });
     try {
-      final raw = await AgentService().requestThesis(
+      final raw = await AgentService.instance.requestThesis(
         chain: 'solana',
         address: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
         level: 'auto',

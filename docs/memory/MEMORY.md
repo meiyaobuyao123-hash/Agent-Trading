@@ -88,6 +88,7 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 | [project_smart_money_status.md](./project_smart_money_status.md) | 聪明钱暂不可用，地址太少，后续单独优化 |
 | [feedback_hot_coin_coverage.md](./feedback_hot_coin_coverage.md) | 热币全量扫描 vs 排行榜评估：排行榜够用，优先优化打分 |
 | [project_agent_pm_docs_status.md](./project_agent_pm_docs_status.md) | docs/agent-pm/00-16 是 Agent v1 优化设计产出物，**从未实施**，讨论时不要当 baseline |
+| [feedback_native_flutter.md](./feedback_native_flutter.md) | Flutter UI 验证用原生 iOS 模拟器,不要走 Flutter web preview |
 
 ---
 
@@ -98,6 +99,7 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
 - ✅ W3 D3（commit `eca6037`）：global_state_persister.py（PG 持久化 + 启动恢复 + 幂等）；trade_executor 加 safety_ctx 参数 + check_safety_for_trade helper；**164 测试通过**（+22 persister + 10 trade safety）
 - ✅ W3 D3 续（commit `19654be`）：main.py 启动调 attach_to_engine（恢复 _active_breakers）；Flutter AgentService.requestThesis() 接 /api/thesis MOCK_MODE；新增 ThesisCard widget（低置信度警告 + 方向 + 入场/止损/目标 + 风险列表 + 证据/历史折叠）；dart analyze 0 issues
 - ✅ W3 D3 续 2：app.py 挂载 thesis/audit/admin routers；agent_screen.dart Chat Tab 加 ThesisCard Demo Banner（真实 API 调用 + 失败 fallback 本地 mock）；**Flutter widget test 18 个全部通过**；累计 **182 测试**（后端 164 + Flutter 18）
+- ✅ W3 D3 续 3：用户纠正"跑偏了"，Flutter web preview 改为原生 iOS 模拟器；`flutter run -d DBC925B5...` 跑通 + 修复 `AgentService.instance` singleton 调用 + `xcrun simctl io booted screenshot` 验证 ThesisCard 完整渲染（TRUMP/L2/看涨 72%/价格三件套/风险/折叠/Footer 全部 OK）；写 feedback_native_flutter.md 防下次再跑偏
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

@@ -1069,3 +1069,58 @@
   3. **CB 外部触发 monitor**（CB07/08/09/11 后台监控调 trip_breaker）
   4. **KMS AwsKmsProvider 实施**（需 AWS 账号）
   5. **HITL 详情页 hitl_approval_page.dart 起步**（Phase 3 下一块)
+
+---
+
+## 2026-05-01 会话 7（W3 D3 续 3:原生 iOS 模拟器验证 + 纠正"跑偏了"）
+
+### 用户纠正
+- 用户原话："我要原生 flutter,我电脑装了模拟器,我只是要你优化原来的 app 的 agent 模块,你是不是跑偏了"
+- 我之前走了 Flutter web preview 路径(launch.json 加 flutter-web + 软链接 + preview_start),用户要的是原生 iOS 模拟器
+
+### 做了什么
+- 写 feedback memory `feedback_native_flutter.md`(双端同步):Flutter UI 验证必须用原生模拟器
+- MEMORY.md 索引加 feedback_native_flutter 行
+- 启动 `flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 --dart-define=...`(后台)
+- 修复 build 错误:`AgentService()` → `AgentService.instance`(singleton 模式,W3 D3 续 2 写错)
+- 临时改默认 Tab=2 + didChangeDependencies 自动 _loadDemoThesis 演示
+- `xcrun simctl io booted screenshot` 截 3 张图(数据 Tab / Agent Tab Demo Banner / Demo 加载后 ThesisCard 完整渲染)
+- 完成截图后撤回临时改动(默认 Tab=0 + 删除自动 _loadDemoThesis)
+- 保留 flutter run 后台进程供用户继续操作
+
+### ThesisCard 原生渲染验证(/tmp/agent-v1-screenshots/03-thesis-loaded.png)
+- ✅ Header:TRUMP / SOLANA / L2 蓝色徽章
+- ✅ Direction Row:🟢 看涨 + 置信 72% 进度条
+- ✅ Price Row:入场 \$1.10-1.20 / 止损 \$0.95 / 目标 \$1.45+(三色)
+- ✅ Summary:"短期看涨,建议小仓位试水,设硬止损 0.95"
+- ✅ Risks:2 条具体风险(代币年龄 / Top10 集中度)
+- ✅ Evidence (2) / 历史相似 (1) 折叠区
+- ✅ Footer:\$ 0.025 ⏱ 4200ms
+- ✅ amber 提示"后端不可用,使用本地 demo 数据"(因为线上 main 分支没 routes_thesis,fallback 生效)
+
+### 讨论结论
+- **Flutter UI 验证必须用原生 iOS 模拟器**:Flutter web 是为 web 项目准备的,跟原生渲染/交互完全不同
+- **AgentService 是 singleton**:用 `AgentService.instance.xxx()`;`AgentService()` build 报 "Couldn't find constructor"
+- **辅助访问权限未开**,osascript / cliclick 控制不了 Simulator → 临时改默认 Tab + 自动加载演示完撤回
+- **截图证据 > Widget test**:用户要的是真实 iOS 渲染效果,iOS simctl 截图比 widget test 更直观
+- **Demo Banner fallback 行为**:线上 main 分支没 routes_thesis 端点,Flutter 调失败 → 自动 fallback 本地 mock,UI 一定能展示
+
+### 被否定的方案
+- ~~Flutter web 模式 + preview_start + preview_screenshot~~:跟原生 iOS 不一样,不是用户要的
+- ~~osascript + cliclick 模拟点击 Agent Tab~~:辅助访问权限未开
+- ~~ios-deploy / idb 等点击模拟工具~~:本机未装
+
+### 仓库状态(待 commit)
+- 修改:apps/app/lib/screens/agent/agent_screen.dart(`AgentService()` → `.instance` 修复)
+- 新增:`feedback_native_flutter.md`(双端)
+- 修改:MEMORY.md 索引 + 本次会话段
+- 修改:sessions-log.md(本条)
+- 临时改动已全部撤回(_currentIndex=0 / 删自动加载)
+
+### 下次 session 接手
+- 候选下一步:
+  1. **服务器跑 migrations**(prod 操作需用户确认)
+  2. **routes_agent.chat 接入 safety_ctx**
+  3. **HITL 详情页 hitl_approval_page.dart**(下一个 Phase 3 块)
+  4. **CB 外部触发 monitor**
+  5. **KMS AwsKmsProvider 实施**

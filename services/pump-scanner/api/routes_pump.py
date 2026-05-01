@@ -39,24 +39,25 @@ async def get_pump_signals():
         }
 
     # 独立 api 进程(脱钩自 main.py):scanner 不可用,DB fallback
-    # 查最近 1h score>=55 + BC 3-35% 的 token_snapshots(每 mint 最新)
+    # token_snapshots 没 score 列(scanner 内存算的),只能查 daily_picks(每日 Top20 推荐)
     # 引用 docs/runbook/pump-scanner-api.service
     from datetime import datetime, timezone, timedelta
     try:
         from database import get_db
-        cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-        res = get_db().table("token_snapshots") \
-            .select("mint, snapshot_at, score, market_cap_sol, bc_progress_pct, "
-                    "buy_count, sell_count, unique_buyers, smart_elite_count, "
-                    "smart_verified_count, smart_money_net_sol") \
-            .gte("snapshot_at", cutoff) \
-            .gte("score", 55) \
-            .gte("bc_progress_pct", 3) \
-            .lte("bc_progress_pct", 35) \
+        # daily_picks 是每日 UTC 00:05 生成的 pump Top20 推荐(source='pump')
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
+        res = get_db().table("daily_picks") \
+            .select("mint, name, symbol, score, market_cap_sol, "
+                    "bc_progress, image_url, twitter, telegram, website, "
+                    "smart_money_count, recommendation, created_at") \
+            .eq("source", "pump") \
+            .gte("created_at", cutoff) \
+            .order("created_at", desc=True) \
             .order("score", desc=True) \
             .limit(50) \
             .execute()
         rows = res.data or []
+        # 按 mint 去重(同 mint 多日推荐取最新)
         seen = set()
         signals = []
         for row in rows:
@@ -69,7 +70,7 @@ async def get_pump_signals():
             "signals": signals,
             "count": len(signals),
             "is_history": True,
-            "source": "db_fallback",
+            "source": "db_fallback_daily_picks",
         }
     except Exception as e:
         log.warning("pump signals DB fallback 失败: %s", e)

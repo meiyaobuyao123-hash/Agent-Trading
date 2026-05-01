@@ -968,3 +968,54 @@
   3. **CB 外部触发 monitor**（CB07/08/09/11 由后台任务监控指标调 trip_breaker）
   4. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
   5. **Flutter Phase 3 起步**（thesis_card widget 接 routes_thesis MOCK_MODE）
+
+---
+
+## 2026-05-01 会话 5（W3 D3 续：main.py hook + Flutter ThesisCard）
+
+### 做了什么
+- **main.py 启动 hook**（commit `19654be`）：
+  - scheduler.start() 之后调 `attach_to_engine(get_safety_engine())`
+  - 自动注入 persist_to_pg + 从 agent_global_state 表恢复 _active_breakers
+  - log 输出 HR/CB/C 计数 + 全局状态
+  - 失败 try/except 不阻断启动（safety 退化内存模式）
+- **Flutter AgentService.requestThesis()**：
+  - POST /api/thesis(chain, address, level='auto')
+  - 30s timeout，失败返 null
+  - 后端 MOCK_MODE=true 时返 fixture（routes_thesis.py 已就绪）
+  - 顺手修 line 60 dart analyze info 警告（`Stream<StreamEvent>` 加反引号）
+- **Flutter ThesisCard widget 新建**（lib/widgets/agent/thesis_card.dart，约 380 行）：
+  - 低置信度警告条（conviction < 0.5 红条）
+  - Header：代币 symbol + 链 + Level（L1/L2/L3 三色徽章）
+  - DirectionRow：方向图标 + 中文 + 色 + Conviction 进度条
+  - PriceRow：入场区间 / 止损 / 目标价 三件套
+  - Summary 卡片
+  - Risks 列表（必有 ≥ 2 条）
+  - Evidence 折叠（source: value）
+  - SimilarPastCases 折叠（token / 日期 / 相似度 / 胜负）
+  - Footer: cost($) + latency(ms)
+  - dart analyze: 0 issues
+
+### 讨论结论
+- **main.py 启动 hook 失败 non-fatal**：safety 退化为内存模式不影响其他业务
+- **ThesisCard 接 mock 即可独立验证**：后端 routes_thesis MOCK_MODE 返 fixture，Flutter 不依赖真实 LLM
+- **dart analyze 必须干净**：`Stream<StreamEvent>` 之类被识别为 HTML 的小警告也修
+
+### 不在本 session 范围
+- 在 agent_screen.dart Chat Tab 真正调用 ThesisCard（下次接入）
+- preview_start 跑模拟器实际渲染验证
+- 服务器跑 migration 042 让 main.py hook 真正生效
+
+### 仓库状态
+- agent-v1 分支累计 commits: e08eae1 / c567962 / 4bbc05d / 4f02f3a / ad5fd9f / eca6037 / **19654be**
+- main 仍 429f5a8（未动）
+- 累计本 session 工作量：~5000 行新代码 + 164 测试用例
+
+### 下次 session 接手
+- 已就绪：safety v0.3 完整 + persister + trade_executor 接入 + main.py hook + Flutter ThesisCard
+- 候选下一步：
+  1. **agent_screen.dart 接入 ThesisCard**（在 Chat Tab 显示真实卡片）+ preview 跑模拟器看效果
+  2. **服务器执行 migrations**（prod 操作需用户确认）
+  3. **CB 外部触发 monitor**（CB07/08/09/11）
+  4. **routes_optimizer/routes_agent 接入 safety_ctx**（让所有真金路径都过 safety）
+  5. **KMS AwsKmsProvider 实施**（依赖 AWS 账号）

@@ -1341,3 +1341,86 @@
 - **本地** `~/.claude/projects/.../memory/`:MEMORY.md + sessions-log.md(本条目)+ pitfalls.md 全部更新 ✅
 - **仓库** `docs/memory/`:cp 同步 + commit + push main ✅
 - **GitHub**:`origin/main` 新 commit ⏸ 即将推送
+
+---
+
+## 2026-05-01 会话 11(8000 bug 彻底治本:独立 uvicorn service + 文件 IPC)
+
+### 用户决策
+用户列 4 路径全选:
+1. 看 SmartMoneyTracker WebSocket 同步代码
+2. 看 systemd kill fd 清理
+3. 改用独立 uvicorn systemd service 把 FastAPI 完全脱钩
+4. 继续走 Phase 3 Flutter UI
+
+### 阶段 1 诊断完成(只读 SSH + grep)
+- **SmartMoneyTracker.start()** 用 `await asyncio.gather(_run_sol_dex_monitor, _run_evm_dex_monitor, _run_evm_poll_loop, _unknown_addr_flush_loop)`,4 个永久循环 task 抢 event loop
+- **WebSocket 启动是 async**(`async with websockets.connect(...)` 在 `_connect_sol_dex_ws`),理论上不阻塞,但启动瞬间发出大量 connect 请求 + Helius 限流可能产生竞态
+- **systemd unit 默认 KillMode=control-group**(没显式设),SIGTERM 给主进程,默认 30s 后 SIGKILL
+- **当前 fd 17 + TCP 13**(健康状态)
+- **猜测根因**:restart 时 SIGTERM → asyncio task cancel → WebSocket / aiohttp 不立即关 fd → 30s 后 SIGKILL 强释放 → 新进程启动时旧 fd 残留 / 端口处于 TIME_WAIT / WebSocket 重连风暴 → uvicorn task 拿不到 socket bind 时机
+
+### 阶段 2 走路径 3:独立 uvicorn systemd service(commit `03d9cd1`)
+- 新 `services/pump-scanner/api_server.py`(独立入口,只跑 `uvicorn.run("api.app:app", ...)`)
+- 新 `docs/runbook/pump-scanner-api.service` systemd unit:
+  - `KillMode=mixed` + `TimeoutStopSec=15`(graceful stop)
+  - `Wants=pump-scanner.service`(建议依赖,非强制)
+  - `Restart=always RestartSec=5`
+  - `MemoryMax=512M`(uvicorn 单进程够用)
+- 原 `pump-scanner.service` 加 `Environment=ENABLE_API=false`(scanner 不再启 FastAPI)
+- 服务器部署:`cp unit + sed Environment + daemon-reload + enable + start`
+
+### 阶段 3 解决 _signal_pool 跨进程读取(commit `660f4dc`)
+- **问题**:scanner.run() 在 pump-scanner 进程,scanner._signal_pool 是内存数据,api 独立进程读不到
+- **第一次尝试**(commit `67531e4`):routes_pump fallback 查 `token_snapshots` — 失败,该表没 score 列(scanner 内存算的)
+- **第二次尝试**(commit `b864107`):改查 `daily_picks` — 失败,该表 W3 D2 后 deprecated 没 source 列且数据停留在 2026-03-12
+- **最终方案**(commit `660f4dc`):**文件 IPC**
+  - main.py 加 `_dump_signal_pool_loop`:每 60s 调 `scanner.get_signals()` 写 `/tmp/pump_signal_pool.json`(含 signals/is_history/ts)
+  - routes_pump.py fallback 读这个文件,加 `dump_age_s` 字段(>5min 警告)
+  - 延迟最多 60s,对 Flutter 30s 轮询场景可接受
+  - 未来可优化:Redis pub/sub 毫秒级 / 落 DB 表
+
+### 验证(端到端)
+- `systemctl restart pump-scanner` × 5 次:**8000 始终稳定 LISTEN**(PID 5162 不变,因为 pump-scanner-api 独立)
+- `systemctl restart pump-scanner-api` × 3 次:8000 秒恢复(每次新 PID 5817 → 5843 → 5866)
+- `systemctl restart pump-scanner pump-scanner-api` × 3 次同时:8000 秒恢复(PID 8235 → 8268 → 8308)
+- `/health` 200,`/api/hot-coins` 真业务数据,`/api/pump/signals` 返 `source=file_ipc dump_age_s=80`
+- 两个服务 active
+
+### 讨论结论
+- **8000 bug 彻底治本**:独立 uvicorn process 跟 scanner event loop 完全脱钩,任何 systemctl restart 都不影响 8000
+- **scanner 主进程仍有原 bug**:其内部 event loop 在 restart 时仍可能卡死,但**对外体现**已经修复(因为 8000 在另一个进程)
+- **文件 IPC 是低工作量真解**:不用改 scanner 落库逻辑,只加 60s dump loop
+- **未来彻底优化方向**:scanner 自身 bug 本质是 main.py 启动时多 task 抢 event loop;真要根治得拆分 scanner 子模块到不同 process(可选项)
+- **内存 vs 文件 IPC 延迟差**:同进程毫秒级 vs 文件 60s,Flutter 30s 轮询无差异,真正高频场景才需要 Redis
+
+### 被否定的方案
+- ~~main.py grace period 探测 socket~~(commit `34b9c00`/`c4ae116`):asyncio.sleep 让出 event loop 没用,scanner task 完全独占
+- ~~routes_pump fallback 查 token_snapshots~~:没 score 列
+- ~~routes_pump fallback 查 daily_picks~~:已 deprecated
+- ~~不修接受 scanner not ready~~:Flutter 用户感知差,必须给真数据
+
+### 仓库状态(本会话累计 main 分支 commits)
+```
+14f4f38  docs(memory): grace period 修复尝试失败的诚实记录
+f11565c  docs(memory): 三件套同步 W3 D4 收尾
+03d9cd1  feat(prod): 独立 FastAPI 进程,从 pump-scanner main.py 脱钩 ⭐
+67531e4  fix: pump/signals 加 DB fallback (失败)
+b864107  fix: pump signals DB fallback 改用 daily_picks (失败)
+660f4dc  feat: pump signal pool 文件 IPC ⭐
++ 本次记忆三件套同步
+```
+
+### 服务器最终状态
+- 分支:main commit `660f4dc`
+- 服务:pump-scanner active(scanner only,不启 FastAPI)+ pump-scanner-api active(uvicorn only)
+- 端口:8000 LISTEN(归 pump-scanner-api,稳定)
+- 文件 IPC:`/tmp/pump_signal_pool.json` 每 60s 更新
+
+### 下次 session 接手
+- 8000 bug 已治本,**用户可以放心 systemctl restart pump-scanner 任何次数**
+- 候选下一步:
+  1. **agent-v1 切上线**(切回 agent-v1 分支,8 张本地 PG 表已建,直接 systemctl restart pump-scanner 生效)
+  2. **Phase 3 Flutter UI**(共创 stepper / 复盘 / 记忆管理 — 用户的 4 路径中第 4 项,本次未做)
+  3. **Redis IPC 优化**(把文件 IPC 升级到毫秒级)
+  4. **诊断 pump-scanner 自身 restart 卡死**(虽然 8000 不再受影响,但 scanner 自身可能仍卡 — 看是不是 SmartMoneyTracker / 别的)

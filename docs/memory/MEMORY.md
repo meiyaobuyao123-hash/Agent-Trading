@@ -142,6 +142,11 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - T15 calc_risk_metrics:复用 review_engine,纯函数,permission=PUBLIC
   - get_tool_registry() 返 3 个 Tool 实例;to_anthropic_tool_spec 可直接喂 Messages API
   - **17 单元测试全过**;服务器 jsonschema 安装 + tools 注册 OK + api 健康
+- ✅ **W3 D5+ 再加 3 Tool**(commit `3a11147` deploy):T04 + T14 + T17(Phase 1 Tool 共 6/17)
+  - T04 recall_memory:三层 memory(working/episodic/semantic)合并查询;单 layer 失败不阻断其他 layer
+  - T14 calc_technical_indicators:包装 btc_eth/indicators/technical.py(RSI/MACD/Bollinger/ATR/MA/SR);K 线不足返 null
+  - T17 calc_position_size:fixed_pct / kelly(half-kelly) / atr_risk 三 mode + HR01/HR04 风控硬上限 + capped_by 透明返回
+  - **19 单元测试全过**;服务器 6 Tool 注册 OK
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

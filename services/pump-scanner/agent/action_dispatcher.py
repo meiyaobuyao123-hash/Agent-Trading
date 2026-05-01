@@ -108,13 +108,19 @@ class ActionDispatcher:
 
                 # 同步推送通知到用户设备
                 try:
-                    from agent.push_service import send_push
+                    from agent.push_service import send_push, build_deep_link
                     push_data = {
                         "type": "alert",
                         "alert_id": str(alert_id),
                         "severity": severity,
                         "token_address": event.matched_token or "",
                         "chain": event.matched_chain or "",
+                        "category": "token_alert",
+                        "deep_link": build_deep_link(
+                            "token_alert",
+                            chain=event.matched_chain,
+                            address=event.matched_token,
+                        ),
                     }
                     await send_push(
                         user_id=event.user_id,
@@ -151,11 +157,17 @@ class ActionDispatcher:
         title = f"策略触发: {event.strategy_name}"
 
         # 构建推送附加数据（用于 Flutter 端路由跳转）
+        from agent.push_service import build_deep_link
         push_data = {
             "type": "strategy_trigger",
             "strategy_id": event.strategy_id or "",
             "token_address": event.matched_token or "",
             "chain": event.matched_chain or "",
+            "category": "strategy_triggered",
+            "deep_link": build_deep_link(
+                "strategy_triggered",
+                strategy_id=event.strategy_id,
+            ),
         }
 
         from agent.push_service import send_push

@@ -12,8 +12,51 @@ import asyncio
 import logging
 import os
 from typing import Optional, Dict, List
+from urllib.parse import quote
 
 log = logging.getLogger(__name__)
+
+
+# ── Deep link 构造器(W3 D5+) ────────────────────────────────
+# Flutter 拿到推送 data["deep_link"] 后路由跳转
+
+DEEP_LINK_SCHEME = "aitrading://"
+
+
+def build_deep_link(category: str, **params) -> str:
+    """构造深链 URL,Flutter 端解析跳转。
+
+    支持 category:
+      - strategy_triggered:  aitrading://strategy/{strategy_id}
+      - hitl_approval:       aitrading://hitl/{approval_id}
+      - review_ready:        aitrading://review/{period}
+      - token_alert:         aitrading://token/{chain}/{address}
+      - rule_proposal:       aitrading://memory/proposals/{proposal_id}
+      - default:             aitrading://home
+
+    参数缺失时返回 home(降级)。
+    """
+    def q(v):
+        return quote(str(v), safe="")
+
+    if category == "strategy_triggered":
+        sid = params.get("strategy_id")
+        return f"{DEEP_LINK_SCHEME}strategy/{q(sid)}" if sid else f"{DEEP_LINK_SCHEME}home"
+    if category == "hitl_approval":
+        aid = params.get("approval_id")
+        return f"{DEEP_LINK_SCHEME}hitl/{q(aid)}" if aid else f"{DEEP_LINK_SCHEME}home"
+    if category == "review_ready":
+        period = params.get("period", "daily")
+        return f"{DEEP_LINK_SCHEME}review/{q(period)}"
+    if category == "token_alert":
+        chain = params.get("chain")
+        addr = params.get("address")
+        if chain and addr:
+            return f"{DEEP_LINK_SCHEME}token/{q(chain)}/{q(addr)}"
+    if category == "rule_proposal":
+        pid = params.get("proposal_id")
+        return f"{DEEP_LINK_SCHEME}memory/proposals/{q(pid)}" if pid else f"{DEEP_LINK_SCHEME}memory"
+    return f"{DEEP_LINK_SCHEME}home"
 
 # Firebase Admin SDK 延迟初始化
 _firebase_app = None

@@ -5,6 +5,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 // Supabase SDK removed — auth token no longer used
+import 'deep_link_router.dart';
 
 /// 后台消息处理（必须是顶层函数）
 @pragma('vm:entry-point')
@@ -199,14 +200,7 @@ class PushNotificationService {
   /// 后台点击通知 → 导航到对应页面
   static void _handleMessageOpenedApp(RemoteMessage message) {
     debugPrint('[Push] Message opened app: ${message.data}');
-
-    final data = message.data;
-    final type = data['type'] ?? '';
-
-    // TODO: 根据 type 导航到对应页面
-    // 例如: strategy_trigger → 策略详情页
-    //       alert → 告警列表
-    debugPrint('[Push] Navigate for type: $type');
+    DeepLinkRouter.handleFromPushData(message.data);
   }
 
   /// 点击本地通知回调
@@ -216,9 +210,7 @@ class PushNotificationService {
     if (response.payload != null) {
       try {
         final data = jsonDecode(response.payload!) as Map<String, dynamic>;
-        final type = data['type'] ?? '';
-        debugPrint('[Push] Navigate for type: $type');
-        // TODO: 导航到对应页面
+        DeepLinkRouter.handleFromPushData(data);
       } catch (_) {}
     }
   }

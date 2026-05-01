@@ -8,6 +8,7 @@ import 'l10n/app_localizations.dart';
 import 'providers/locale_provider.dart';
 import 'theme/app_theme.dart';
 import 'theme/app_colors.dart';
+import 'services/deep_link_router.dart';
 import 'theme/gradients.dart';
 import 'screens/data/data_screen.dart';
 import 'screens/market/market_screen.dart';
@@ -72,6 +73,7 @@ class _PumpSignalAppState extends State<PumpSignalApp> {
     return MaterialApp(
       title: 'AI Trading',
       debugShowCheckedModeBanner: false,
+      navigatorKey: DeepLinkRouter.navigatorKey, // W3 D5+: 推送深链路由
       theme: AppTheme.light,
       darkTheme: AppTheme.dark,
       themeMode: themeNotifier.mode,

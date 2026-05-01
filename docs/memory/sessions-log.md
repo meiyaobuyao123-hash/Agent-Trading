@@ -919,3 +919,52 @@
   2. **trade_executor 接入 safety_engine.check_trade**（W4 阻塞 launch 的关键路径）
   3. **CB 自动触发的外部条件**（CB07 单代币重复/CB08 HITL 队列累积/CB09 WAL 失败累积/CB11 跟单亏损）需要外部 monitor 调 trip_breaker
   4. **服务器跑 migrations**（prod 操作，需用户确认）
+
+---
+
+## 2026-05-01 会话 4（W3 D3：persister 接 PG + trade_executor 接入 safety）
+
+### 做了什么
+- **agent/global_state_persister.py 新建**（230 行）：
+  - `persist_to_pg(payload)` SafetyEngine state_persister 回调入口
+    - 内存幂等检测（hash payload，相同状态跳过）
+    - DB 失败吞掉异常返 False（safety 高可用）
+    - 写 agent_global_state 单例 + agent_global_state_history 审计
+  - `load_from_pg()` 启动时拉当前状态（兼容 JSONB 反序列化）
+  - `restore_engine_state(engine)` 从 PG 恢复 _active_breakers（保留原始 tripped_at）
+  - `attach_to_engine(engine)` 一键挂载（注入 persister + 启动恢复，失败不抛）
+- **trade_executor.py 接入 safety**（非破坏改动）：
+  - `execute_trade` 加可选参数 `safety_ctx: Optional[Dict]`（向后兼容，默认 None）
+  - 传 safety_ctx → 跑 SafetyEngine.check_trade，任何 BLOCK 直接返回失败，不调 DEX
+  - 末尾加独立函数 `check_safety_for_trade(ctx)` 供其他模块主动校验
+  - SafetyEngine 自身故障 → fail-safe 返 CB12 BLOCK
+- **测试新增**：
+  - `tests/test_global_state_persister.py`：22 用例（hash 幂等 / persist 异常吞 / load 端到端 / restore / attach / 端到端 spy）
+  - `tests/test_trade_executor_safety.py`：10 用例（helper 4 + execute_trade 接入 5 + fail-safe 1）
+  - **总计 154 → 164 测试通过 2.70s**
+
+### 讨论结论
+- **non-破坏接入**：execute_trade 加 safety_ctx 可选参数，现有调用方不变
+- **persister 幂等**：相同 payload 的 hash 一致就跳过 DB 写（防 trip 后 release 同一 CB 反复刷库）
+- **DB 故障不阻断 safety**：persister/load 失败吞掉返回 None/False，CB 状态变化照常生效
+- **启动恢复保留 tripped_at**：从 PG 拉的 ISO timestamp 解析回 datetime；解析失败保留默认（CB 仍恢复）
+- **未知 CB 启动恢复跳过**：DB 里有但 yaml 删了的 CB（升级场景）自动忽略
+- **mock asyncio**：用 `pytest-asyncio` + `AsyncMock` mock dex_router.execute,不真调 OKX API
+
+### 不在本 session 范围
+- main.py 启动调 attach_to_engine（下次接入 prod 时再加）
+- 服务器跑 migration 042（prod 操作待用户确认）
+- CB07/CB08/CB09/CB11 外部触发条件（需要 monitor 模块查表/监控指标后调 trip_breaker）
+
+### 仓库状态（待 commit）
+- 新增：agent/global_state_persister.py / tests/test_global_state_persister.py / tests/test_trade_executor_safety.py
+- 修改：agent/trade_executor.py（加 safety_ctx 参数 + check_safety_for_trade helper）
+
+### 下次 session 接手
+- 已就绪：safety + persister + trade_executor 接入,164 测试通过
+- 候选下一步：
+  1. **main.py 启动调 attach_to_engine**（让 prod 启动时自动恢复 CB 状态）
+  2. **服务器执行 migrations**（local_pg/034-039,041,042 + Supabase 040）— prod 操作需要用户确认
+  3. **CB 外部触发 monitor**（CB07/08/09/11 由后台任务监控指标调 trip_breaker）
+  4. **KMS AwsKmsProvider 实施**（依赖 AWS 账号配置）
+  5. **Flutter Phase 3 起步**（thesis_card widget 接 routes_thesis MOCK_MODE）

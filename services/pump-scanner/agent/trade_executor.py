@@ -190,6 +190,7 @@ class TradeExecutor:
         slippage_pct: float = 1.0,
         wallet_address: Optional[str] = None,
         private_key: Optional[str] = None,
+        safety_ctx: Optional[Dict[str, Any]] = None,
     ) -> TradeResult:
         """
         执行买入或卖出交易 — PRD-009: 通过 DexRouter 多 DEX 路由
@@ -205,10 +206,31 @@ class TradeExecutor:
             slippage_pct: 滑点百分比
             wallet_address: 钱包地址（不传则从环境变量读取）
             private_key: 私钥（不传则从环境变量读取）
+            safety_ctx: W3 D3 加 — 可选 dict，传入后跑 SafetyEngine.check_trade
+                        任何 BLOCK 直接返回失败，不调 DEX。
+                        最小 ctx：{amount_usd, action, mode, agent_global_state, ...}
+                        完整字段见 docs/agent-pm/08-safety-policy.md
 
         Returns:
-            TradeResult
+            TradeResult（safety BLOCK 时 success=False, error="safety: <rule_id> <reason>"）
         """
+        # ── W3 D3 Safety pre-check ──────────────────────────────
+        if safety_ctx is not None:
+            block = check_safety_for_trade(
+                {**safety_ctx,
+                 "chain": chain, "token_address": token_address,
+                 "action": action, "amount_usd": amount_usd,
+                 "slippage_pct": safety_ctx.get("slippage_pct", slippage_pct / 100.0)},
+            )
+            if block is not None:
+                return TradeResult(
+                    success=False,
+                    error=f"safety BLOCKED: {block.rule_id} - {block.reason}",
+                    chain=chain,
+                    token_address=token_address,
+                    action=action,
+                )
+
         from config import USE_AVE
         if USE_AVE:
             return await self._execute_trade_ave(
@@ -871,3 +893,53 @@ def get_trade_executor() -> TradeExecutor:
     if _executor is None:
         _executor = TradeExecutor()
     return _executor
+
+
+# ═══════════════════════════════════════════════════════════════
+# W3 D3 — Safety Pre-Check Helper
+# ═══════════════════════════════════════════════════════════════
+
+def check_safety_for_trade(ctx: Dict[str, Any]):
+    """跑 SafetyEngine.check_trade,返回第一条 BLOCK (或 None 全过)。
+
+    用法:
+      block = check_safety_for_trade({
+        "amount_usd": 250, "action": "buy", "mode": "auto",
+        "regime": "TRENDING_UP", "agent_global_state": "normal",
+        "is_honeypot": False, "liquidity_usd": 50000,
+        "hitl_required": False, "hitl_approved": True,
+        ...  # 完整字段见 docs/agent-pm/08-safety-policy.md
+      })
+      if block is not None:
+          return TradeResult(success=False, error=f"BLOCKED: {block.rule_id}")
+      # 否则继续执行真金交易
+
+    引用: docs/agent-pm/17-tech-plan.md Phase 0 + agent/safety_engine.py
+    无副作用,幂等,纯查询(但 SafetyEngine 内部可能 trip CB)。
+    """
+    try:
+        from agent.safety_engine import get_safety_engine, CheckOutcome
+        engine = get_safety_engine()
+        results = engine.check_trade(ctx)
+        for r in results:
+            if r.outcome == CheckOutcome.BLOCK:
+                return r
+    except Exception as e:
+        log.error("safety check failed: %s", e, exc_info=True)
+        # SafetyEngine 自身故障 → fail-safe BLOCK(对应 CB12)
+        try:
+            from agent.safety_engine import CheckResult, CheckOutcome
+            return CheckResult(
+                rule_id="CB12",
+                rule_name="SafetyEngine 不可用 fail-safe",
+                outcome=CheckOutcome.BLOCK,
+                reason=str(e),
+            )
+        except Exception:
+            # 连 import 都失败,只能裸 dataclass
+            class _MinimalBlock:
+                rule_id = "CB12"
+                rule_name = "fail-safe"
+                reason = str(e)
+            return _MinimalBlock()
+    return None

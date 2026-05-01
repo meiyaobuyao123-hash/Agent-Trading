@@ -8,8 +8,10 @@ import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
 import '../../models/thesis.dart';
+import '../../models/pending_approval.dart';
 import 'strategy_detail_page.dart';
 import 'ai_insights_tab.dart';
+import 'hitl_approval_page.dart';
 
 /// Agent 策略中心 — 对话 + 策略管理 + AI 洞察
 class AgentScreen extends StatefulWidget {
@@ -377,6 +379,38 @@ class _ChatTabState extends State<_ChatTab>
     );
   }
 
+  Widget _buildHitlDemoBanner() {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+      child: Material(
+        color: Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: _openHitlDemo,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            child: Row(children: [
+              const Icon(Icons.fingerprint, size: 18, color: Colors.orange),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '🛡 试一试 HITL 审批流程(Demo)',
+                  style: TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600,
+                    color: scheme.onSurface,
+                  ),
+                ),
+              ),
+              const Icon(Icons.arrow_forward, size: 14, color: Colors.orange),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 后端不可用时的本地 fallback(纯演示)
   Thesis _localMockThesis() => Thesis(
         thesisId: 'demo-local-001',
@@ -529,12 +563,40 @@ class _ChatTabState extends State<_ChatTab>
   }
 
   @override
+  void _openHitlDemo() {
+    final now = DateTime.now();
+    final mockApproval = PendingApproval(
+      approvalId: 'mock-demo-001',
+      strategyId: 'strat-mock-1',
+      triggerConditionsMatched: const [
+        '聪明钱净流入 > \$30000(24h 内 2 个 Elite 钱包买入)',
+        '1h 涨幅 > 15%',
+        '流动性 > \$100K',
+      ],
+      thesisId: 'thesis-1',
+      tokenSymbol: 'TRUMP',
+      tokenAddress: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
+      chain: 'solana',
+      amountUsd: 250.0,
+      status: 'pending',
+      createdAt: now.subtract(const Duration(seconds: 30)),
+      expiresAt: now.add(const Duration(minutes: 14, seconds: 30)),
+    );
+    final mockThesis = _localMockThesis();
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => HitlApprovalPage(approval: mockApproval, thesis: mockThesis),
+    ));
+  }
+
+  @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin 要求
     return Column(
       children: [
         // W3 D3 ThesisCard Demo Banner
         _buildThesisDemoSection(),
+        // W3 D4 HITL Demo Banner
+        _buildHitlDemoBanner(),
         Expanded(
           child: ListView.builder(
             controller: _scrollController,

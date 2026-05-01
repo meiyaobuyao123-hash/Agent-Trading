@@ -1124,3 +1124,82 @@
   3. **HITL 详情页 hitl_approval_page.dart**(下一个 Phase 3 块)
   4. **CB 外部触发 monitor**
   5. **KMS AwsKmsProvider 实施**
+
+---
+
+## 2026-05-01 会话 8(W3 D4:chat safety + CB monitor + HITL 双端 + runbook)
+
+### 做了什么
+- **A. routes_agent.chat / chat_stream 接入 safety pre-check**:
+  - ChatRequest 加 `safety_ctx: Optional[Dict]` 字段
+  - `_check_safety_for_chat()` 两层检查:全局 BLOCKED CB(永远查) + ctx HR(可选)
+  - 任何 BLOCK 直接返 chat_response 不调 LLM 不消耗 quota
+  - 流式版返 SSE error event
+  - 测试 10 用例(test_routes_chat_safety.py)
+- **C. cb_monitor 模块**(agent/cb_monitor.py 230 行):
+  - CBDataSource 抽象接口 + _DefaultDataSource 占位
+  - evaluate_cb07(单代币 1h ≥ 5 触发)/ evaluate_cb08(HITL expired > 20)
+  - run_cb_monitor 主流程:CB07 失败不影响 CB08 / 已 active CB 不重复 trip / 引擎不可用 skip all
+  - 17 单元测试(test_cb_monitor.py)
+- **B 后端. routes_agent HITL endpoints**:
+  - GET /api/agent/pending-approvals(列表)
+  - POST /api/agent/pending-approvals/{id}/approve(带签名)
+  - POST /api/agent/pending-approvals/{id}/reject
+  - MOCK_MODE=true 返 fixture(W7-W12 真实施)
+  - HitlDecision Pydantic schema
+- **B Flutter. AgentService 加 3 method**:
+  - getPendingApprovals(status, limit)
+  - approvePendingApproval(id, signature, note?)
+  - rejectPendingApproval(id, note?)
+- **B Flutter. lib/screens/agent/hitl_approval_page.dart 新建**(380 行):
+  - AppBar 倒计时 mm:ss 徽章(< 60s 红色 / 过期灰色)
+  - 策略触发卡片(条件列表 + token+chain 徽章)
+  - 风险卡(本次金额 + 真金不可撤销提示)
+  - 嵌入 ThesisCard(可选)
+  - 拒绝(确认对话)/ 批准并签名(签名输入对话占位 → W4-W6 接 Face ID)
+  - 处理中 spinner / 结果消息 / 自动 pop
+  - 13 widget 测试(test/hitl_approval_page_test.dart)
+- **B Flutter. Chat Tab Demo Banner 加 HITL 入口**:
+  - 🛡 试一试 HITL 审批流程(Demo)按钮(橙色 InkWell)
+  - 点击 Navigator.push(HitlApprovalPage) + 注入本地 mock approval + thesis
+  - 长期保留(不撤回)
+- **D. docs/runbook/agent-v1-prod-deploy.md 新建**(220 行):
+  - Step 1-7 完整部署流程(备份/切分支/PG migrations/Supabase 040/重启/健康检查/Flutter 验证)
+  - 回滚步骤(DROP TABLE + 恢复备份)
+  - 责任矩阵
+- **原生 iOS 验证**(/tmp/agent-v1-screenshots/05-hitl-page.png):
+  - HITL 详情页完整渲染:倒计时 14:18 / 策略触发 3 条 / TRUMP·SOLANA / $250.00 / 嵌入 ThesisCard / 拒绝+批准按钮
+- **测试**:
+  - 后端:191 passed in 3.34s(含本次 +27:chat_safety 10 + cb_monitor 17)
+  - Flutter:31 passed(含本次 +13:hitl_approval_page)
+  - **累计 222 测试通过**
+
+### 讨论结论
+- **safety 加在 quota 之前**:safety BLOCK 不应消耗 quota(浪费;且 BLOCK 时本来就不该调 LLM)
+- **全局 CB 检查永远跑(即使 safety_ctx=None)**:确保熔断时所有 chat 都拦截
+- **degraded 级 CB 不拦 chat,只 blocked 级拦**:不打扰用户 chat,只在真严重时停
+- **CB07/CB08 数据源 mock 化**:DB 查询可替换接口,便于单元测试
+- **HITL 签名占位**:demo 用 input dialog 模拟,真实施需 local_auth + wallet sig(W4-W6)
+- **Demo Banner 长期保留**:不撤回,Phase 3 完成前都能用,不污染原 chat 流
+- **runbook 而非自动部署**:prod 操作需要人工 SSH 确认,自动跑风险大
+
+### 被否定的方案
+- ~~ChatRequest 不加 safety_ctx,只查全局 CB~~:无法用 ctx HR 拦特定违规(如 amount 超限)
+- ~~CB monitor 直接连真 DB~~:本 session 测试不便,改 mock 接口注入
+- ~~HITL 真接 local_auth Face ID~~:需要额外包 + iOS 配置,W4-W6 单独做
+- ~~MainShell 默认 Tab 永久改 2~~:演示完撤回,保持默认数据 Tab
+
+### 仓库状态(待 commit)
+- 修改:routes_agent.py(safety pre-check + HITL endpoints)/ agent_service.dart(3 method)/ agent_screen.dart(HITL Demo)
+- 新增:cb_monitor.py / hitl_approval_page.dart / 3 个测试文件 / runbook 1 个
+
+### 下次 session 接手
+- 已就绪:safety + persister + trade_executor 接入 + chat 接入 + cb_monitor + HITL 双端 + runbook
+- 候选下一步:
+  1. **服务器跑 migrations + 切 agent-v1 上线**(按 runbook,需用户 SSH 确认)
+  2. **CB 外部数据源真接入**(_DefaultDataSource 接 Supabase agent_executions / 本地 PG pending_approvals)
+  3. **共创 7 阶段 stepper UI**(下一个 Phase 3 块,strategy creation flow)
+  4. **模式晋升 UI**(paper→notify→auto)
+  5. **Insight 复盘报告 UI**
+  6. **KMS AwsKmsProvider 实施**(需 AWS 账号)
+  7. **Reflect Loop + S07 review-engine 实施**(Phase 2 起步)

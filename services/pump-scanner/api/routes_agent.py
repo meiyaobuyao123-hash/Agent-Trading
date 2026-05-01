@@ -17,6 +17,7 @@ Python 3.9 兼容。
 import asyncio
 import json
 import logging
+import os
 from datetime import date
 from typing import Any, Dict, List, Optional
 
@@ -43,6 +44,47 @@ _strategy_mgr = StrategyManager()
 class ChatRequest(BaseModel):
     message: str = Field(..., min_length=1, description="用户输入")
     context: Optional[Dict[str, Any]] = None
+    # W3 D4: 可选 safety ctx,传入后跑 SafetyEngine.check_trade
+    # 即使不传,全局 CB(任一 blocked 级 CB active)也会拦截所有 chat
+    safety_ctx: Optional[Dict[str, Any]] = None
+
+
+def _check_safety_for_chat(safety_ctx: Optional[Dict[str, Any]]) -> Optional[str]:
+    """W3 D4 chat 路径 safety pre-check。
+    返回 None = 通过;返回 str = BLOCK 原因(用户可读)。
+
+    检查 2 层:
+      1. 全局 CB(任一 blocked 级 CB active)→ 永远拦
+      2. 如果 safety_ctx 提供 → 跑 implemented HR(amount/regime/honeypot 等)
+
+    这一步不消耗 user quota,不调 LLM。
+    """
+    try:
+        from agent.safety_engine import get_safety_engine
+        engine = get_safety_engine()
+    except Exception:
+        return None  # SafetyEngine 不可用时不阻断 chat(降级)
+
+    # 1. 全局 CB(blocked 级)拦所有 chat
+    if engine.get_global_state() == "blocked":
+        active = engine.get_active_breakers()
+        cb_id = next(iter(active.keys()), "CB?")
+        cb_state = active.get(cb_id)
+        reason = cb_state.reason if cb_state else "global blocked"
+        return f"系统当前停机维护(CB {cb_id}: {reason}),请稍后重试"
+
+    # 2. 用户传了 safety_ctx → 跑 HR
+    if safety_ctx is not None:
+        from agent.trade_executor import check_safety_for_trade
+        ctx = {
+            **safety_ctx,
+            "action": safety_ctx.get("action", "chat"),
+            "amount_usd": safety_ctx.get("amount_usd", 0),
+        }
+        block = check_safety_for_trade(ctx)
+        if block is not None:
+            return f"{block.rule_id}: {block.reason}"
+    return None
 
 
 class ChatResponse(BaseModel):
@@ -79,7 +121,18 @@ async def chat(
     返回策略规范和 AI 回复，用户确认后调 POST /strategies 创建。
 
     每次调用前检查用户月度 API 配额（默认 20 次/月）。
+    W3 D4: 加 safety pre-check(全局 CB / 可选 ctx HR),BLOCK 时不消耗 quota / 不调 LLM。
     """
+    # ── W3 D4 Safety pre-check(在 quota 之前;BLOCK 不消耗 quota)─
+    safety_block = _check_safety_for_chat(req.safety_ctx)
+    if safety_block is not None:
+        return ChatResponse(
+            strategy=None,
+            message=f"⚠️ 安全策略阻止: {safety_block}",
+            requires_confirmation=False,
+        )
+    # ─────────────────────────────────────────────────────────────
+
     # ── 用户 API 配额检查 ──────────────────────────────────────────
     quota_ok, quota_resp = await _check_and_consume_quota(user_id)
     if quota_resp is not None:
@@ -121,8 +174,22 @@ async def chat_stream(
 
     返回 text/event-stream，逐 token 推送 Claude 回复。
     消息格式：data: {"type":"delta","text":"..."}\n\n
+
+    W3 D4: 加 safety pre-check(全局 CB / 可选 ctx HR),BLOCK 时直接返 SSE error 不调 LLM。
     """
     from fastapi.responses import StreamingResponse
+
+    # ── W3 D4 Safety pre-check ──────────────────────────────────
+    safety_block = _check_safety_for_chat(req.safety_ctx)
+    if safety_block is not None:
+        async def _safety_error():
+            payload = json.dumps({
+                'type': 'error',
+                'message': f'⚠️ 安全策略阻止: {safety_block}',
+            }, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+        return StreamingResponse(_safety_error(), media_type="text/event-stream")
+    # ─────────────────────────────────────────────────────────────
 
     # 配额检查
     quota_ok, quota_resp = await _check_and_consume_quota(user_id)
@@ -962,3 +1029,100 @@ async def compare_paper_live(
     engine = get_paper_engine()
     comparison = await engine.get_comparison(strategy_id)
     return comparison
+
+
+# ═══════════════════════════════════════════════════════════════
+# W3 D4 — HITL 待审批队列(对接 docs/agent-pm/05-tool-catalog.md T09)
+# 引用 migrations/local_pg/036_pending_approvals_wal.sql
+# MOCK_MODE=true 时返 fixture(后端真实施 W7-W12)
+# ═══════════════════════════════════════════════════════════════
+
+class HitlDecision(BaseModel):
+    signature: Optional[str] = Field(default=None, description="用户签名(Face ID + wallet sig)")
+    note: Optional[str] = Field(default=None, max_length=500)
+
+
+def _mock_pending_approval(approval_id: str = "mock-approval-001") -> Dict[str, Any]:
+    """Mock fixture(MOCK_MODE 用)"""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    now = _dt.now(_tz.utc)
+    return {
+        "approval_id": approval_id,
+        "strategy_id": "strat-mock-1",
+        "trigger_conditions_matched": [
+            "聪明钱净流入 > $30000",
+            "1h 涨幅 > 15%",
+        ],
+        "thesis_id": "demo-uuid-thesis-001",
+        "token_address": "TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9",
+        "token_symbol": "TRUMP",
+        "chain": "solana",
+        "amount_usd": 250.0,
+        "remaining_authorization_usd": 1750.0,  # 用户授权剩余
+        "status": "pending",
+        "created_at": now.isoformat(),
+        "expires_at": (now + _td(minutes=15)).isoformat(),
+    }
+
+
+@router.get("/pending-approvals")
+async def list_pending_approvals(
+    user_id: str = Depends(get_current_user),
+    status: str = "pending",
+    limit: int = 20,
+):
+    """W3 D4:列出 HITL 待审批队列。
+
+    MOCK_MODE=true 时返 fixture(W7-W12 真实施查 pending_approvals 表)。
+    """
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {
+            "approvals": [_mock_pending_approval()],
+            "total": 1,
+            "user_id": user_id,
+        }
+    # TODO W7-W12: 查 local_pg.pending_approvals WHERE device_id=user_id AND status=...
+    return {"approvals": [], "total": 0, "user_id": user_id}
+
+
+@router.post("/pending-approvals/{approval_id}/approve")
+async def approve_pending_approval(
+    approval_id: str,
+    decision: HitlDecision,
+    user_id: str = Depends(get_current_user),
+):
+    """W3 D4:用户批准 HITL 审批。
+
+    MOCK_MODE 返 success;真实施需:
+      1. 验证签名(Face ID + wallet sig)
+      2. UPDATE pending_approvals SET status='approved', signature=..., decided_at=now()
+      3. 写 security_audit_log(event_type='hitl_decision', severity='info')
+      4. 触发 trade_executor.execute_trade(safety_ctx={...})
+    """
+    if not decision.signature:
+        raise HTTPException(status_code=400, detail="signature 必填(Face ID + wallet)")
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {
+            "ok": True,
+            "approval_id": approval_id,
+            "status": "approved",
+            "tx_hash": "0xMOCK_TX_HASH",
+        }
+    # TODO W7-W12 真实施
+    raise HTTPException(status_code=501, detail="W7-W12 实施;当前请用 MOCK_MODE=true")
+
+
+@router.post("/pending-approvals/{approval_id}/reject")
+async def reject_pending_approval(
+    approval_id: str,
+    decision: HitlDecision,
+    user_id: str = Depends(get_current_user),
+):
+    """W3 D4:用户拒绝 HITL 审批。"""
+    if os.environ.get("MOCK_MODE", "false").lower() == "true":
+        return {
+            "ok": True,
+            "approval_id": approval_id,
+            "status": "rejected",
+        }
+    raise HTTPException(status_code=501, detail="W7-W12 实施;当前请用 MOCK_MODE=true")

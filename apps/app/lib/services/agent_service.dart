@@ -474,6 +474,77 @@ class AgentService {
       return null;
     }
   }
+
+  // ═══════════════════════════════════════════════════════════════
+  // W3 D4 — HITL 待审批队列
+  // 引用 services/pump-scanner/api/routes_agent.py W3 D4
+  // 引用 docs/agent-pm/05-tool-catalog.md T09 create_approval_request
+  // ═══════════════════════════════════════════════════════════════
+
+  /// 列出 HITL 待审批队列
+  Future<List<Map<String, dynamic>>> getPendingApprovals({
+    String status = 'pending',
+    int limit = 20,
+  }) async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/pending-approvals?status=$status&limit=$limit'),
+        headers: _headers,
+      ).timeout(const Duration(seconds: 15));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        return (data['approvals'] as List? ?? const [])
+            .cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// 批准 HITL(传签名)
+  /// 返回 {ok, status, tx_hash?} 或 null(失败)
+  Future<Map<String, dynamic>?> approvePendingApproval(
+    String approvalId, {
+    required String signature,
+    String? note,
+  }) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/pending-approvals/$approvalId/approve'),
+        headers: _headers,
+        body: jsonEncode({
+          'signature': signature,
+          if (note != null) 'note': note,
+        }),
+      ).timeout(const Duration(seconds: 30));
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 拒绝 HITL(可选 note)
+  Future<bool> rejectPendingApproval(
+    String approvalId, {
+    String? note,
+  }) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/pending-approvals/$approvalId/reject'),
+        headers: _headers,
+        body: jsonEncode({
+          if (note != null) 'note': note,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      return resp.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════

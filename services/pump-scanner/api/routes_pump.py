@@ -38,42 +38,34 @@ async def get_pump_signals():
             "is_history": is_history,  # True = 当前无实时信号，展示最近 1h 历史回顾
         }
 
-    # 独立 api 进程(脱钩自 main.py):scanner 不可用,DB fallback
-    # token_snapshots 没 score 列(scanner 内存算的),只能查 daily_picks(每日 Top20 推荐)
-    # 引用 docs/runbook/pump-scanner-api.service
-    from datetime import datetime, timezone, timedelta
+    # 独立 api 进程(脱钩自 main.py):scanner 不在本进程
+    # main.py 每 60s 把 _signal_pool 写到文件,api 进程读
+    # 引用 docs/runbook/pump-scanner-api.service + main.py signal_pool_dump_loop
+    import json
+    import os
+    DUMP_PATH = "/tmp/pump_signal_pool.json"
     try:
-        from database import get_db
-        # daily_picks 是每日 UTC 00:05 生成的 pump Top20 推荐(source='pump')
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=2)).isoformat()
-        res = get_db().table("daily_picks") \
-            .select("mint, name, symbol, score, market_cap_sol, "
-                    "bc_progress, image_url, twitter, telegram, website, "
-                    "smart_money_count, recommendation, created_at") \
-            .eq("source", "pump") \
-            .gte("created_at", cutoff) \
-            .order("created_at", desc=True) \
-            .order("score", desc=True) \
-            .limit(50) \
-            .execute()
-        rows = res.data or []
-        # 按 mint 去重(同 mint 多日推荐取最新)
-        seen = set()
-        signals = []
-        for row in rows:
-            mint = row.get("mint")
-            if mint and mint not in seen:
-                seen.add(mint)
-                signals.append({**row, "is_history": True})
-        signals = signals[:30]
+        if not os.path.exists(DUMP_PATH):
+            return {"signals": [], "count": 0, "is_history": False,
+                    "message": "信号池文件还未生成(scanner 启动后 60s 内首次)"}
+        # 文件 mtime 检查(超过 5min 视为陈旧)
+        from datetime import datetime, timezone
+        mtime = datetime.fromtimestamp(os.path.getmtime(DUMP_PATH), tz=timezone.utc)
+        age_s = (datetime.now(timezone.utc) - mtime).total_seconds()
+        if age_s > 300:
+            log.warning("pump signal_pool dump 文件陈旧 %ds", int(age_s))
+        with open(DUMP_PATH, "r") as f:
+            data = json.load(f)
+        signals = data.get("signals", [])
         return {
             "signals": signals,
             "count": len(signals),
-            "is_history": True,
-            "source": "db_fallback_daily_picks",
+            "is_history": data.get("is_history", False),
+            "source": "file_ipc",
+            "dump_age_s": int(age_s),
         }
     except Exception as e:
-        log.warning("pump signals DB fallback 失败: %s", e)
+        log.warning("读 signal pool 文件失败: %s", e)
         return {"signals": [], "count": 0, "message": "scanner not ready",
                 "error": str(e)[:100]}
 

@@ -572,6 +572,32 @@ async def main():
     except Exception as e:
         log.warning(f"PRD-006 Regime Detector 启动失败: {e}")
 
+    # ── pump signal pool dump loop ────────────────────────────
+    # 把 scanner._signal_pool 每 60s 写 /tmp/pump_signal_pool.json
+    # 让独立 api 进程(api_server.py)能读到实时信号(IPC 文件方式)
+    # 引用 docs/runbook/pump-scanner-api.service
+    async def _dump_signal_pool_loop():
+        import json
+        from datetime import datetime, timezone
+        while True:
+            try:
+                from scanner_ref import get_scanner
+                _sc = get_scanner()
+                if _sc is not None:
+                    sigs = _sc.get_signals()
+                    is_hist = bool(sigs and sigs[0].get("is_history"))
+                    with open("/tmp/pump_signal_pool.json", "w") as f:
+                        json.dump({
+                            "signals": sigs,
+                            "is_history": is_hist,
+                            "ts": datetime.now(timezone.utc).isoformat(),
+                        }, f, default=str)
+            except Exception as _e:
+                log.warning(f"signal_pool dump 失败: {_e}")
+            await asyncio.sleep(60)
+    asyncio.create_task(_dump_signal_pool_loop())
+    log.info("signal pool dump loop 已启动 (每 60s 写 /tmp/pump_signal_pool.json)")
+
     # 启动 FastAPI（如果启用）
     if ENABLE_API:
         from api.app import start_api_server

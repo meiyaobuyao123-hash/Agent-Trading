@@ -1616,6 +1616,58 @@ class CocreationChatRequest(BaseModel):
     skill_name: str = Field("signal-strategy-builder")
 
 
+class NotifyTriggerRequest(BaseModel):
+    """手动触发 notify_loop(测试 / Scout 接入桥)。"""
+    event: Dict[str, Any] = Field(...,
+        description="StrategyTriggeredEvent dict(strategy_id/user_id/strategy_name/matched_token/matched_chain/trigger_context)")
+    mode: str = Field("paper", pattern="^(paper|notify|auto)$")
+    thesis: Optional[Dict[str, Any]] = None
+    account_balance_usd: float = 1000.0
+    portfolio_pct_in_chain: float = 0.0
+    recent_trades_24h: int = 0
+    fixed_pct: float = 0.05
+    dry_run: bool = False
+
+
+@router.post("/notify/trigger")
+async def notify_trigger(
+    req: NotifyTriggerRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """手动触发 notify_loop(Scout 接入前的桥;dry_run 测试用)。"""
+    try:
+        from agent.loops.notify_loop import get_notify_loop
+        loop = get_notify_loop()
+        result = await loop.process(
+            event=req.event,
+            mode=req.mode,
+            thesis=req.thesis,
+            account_balance_usd=req.account_balance_usd,
+            portfolio_pct_in_chain=req.portfolio_pct_in_chain,
+            recent_trades_24h=req.recent_trades_24h,
+            position_mode="fixed_pct",
+            fixed_pct=req.fixed_pct,
+            dry_run=req.dry_run,
+        )
+        return {
+            "ok": result.ok, "verdict": result.verdict, "mode": result.mode,
+            "reason": result.reason,
+            "position_usd": result.position_usd,
+            "capped_by": result.capped_by,
+            "safety_block": result.safety_block,
+            "risk_block": result.risk_block,
+            "paper_trade": result.paper_trade,
+            "approval_id": result.approval_id,
+            "push_sent_count": result.push_sent_count,
+            "push_deep_link": result.push_deep_link,
+            "latency_ms": result.latency_ms,
+            "extra": result.extra,
+        }
+    except Exception as e:
+        log.warning("notify trigger failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
 class ReflectRunRequest(BaseModel):
     trigger: str = Field("daily", pattern="^(daily|count|emergency)$")
     lookback_days: int = Field(7, ge=1, le=90)

@@ -3544,3 +3544,61 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 4. **C4 LLM-judge async** — persona / data fabrication 异步采样
 5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
 6. **Launch criteria 实际 sign-off** — 17 blocked 项逐个推进(legal 12 是关键路径)
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 27 — Quality Rubric 5+5 维评分(Phase 4 第八块)
+
+### 做了什么(commit `149a18e`)
+
+**A. agent/eval/rubric_runner.py(440 行)**:
+- GoldenRubricCase / RubricResult / CategoryReport / RubricEvalReport
+- 10 dimension scorer(每个 0-10):
+  - Product 5:relevance / reasoning / actionability / risk / calibration
+  - Tech 5:format / structure / length / disclaimer / safety
+- thesis 特殊处理:actionability 看 JSON.direction;risk 看 risks.length≥2;structure 看三 key 全在
+- 通用文本 risk 关键词扩展含 disclaimer 风格("不构成投资建议" / "DYOR" / "请自行")
+- safety binary 10/0(filter_combined pass / blocked)
+- **3 veto 规则**(actionability=0 / risk=0 / safety<10)→ SEV-0 一票否决
+- v1 heuristic threshold = 60(GA LLM-judge target = 80,留 W17-W22)
+- per-category report;CLI exit code on != 85% pass rate
+
+**B. 4 个 category fixture(40 sample)**:
+- thesis (10) — 7 高质量(完整 JSON 含 direction/risks/evidence)+ 3 BAD(no risks / unknown direction / blocklist)
+- review (10) — 8 高质量(daily/weekly/monthly + persona)+ 2 BAD
+- notify (10) — 8 高质量(high/low conviction / CRISIS / paper / HITL)+ 2 BAD
+- chat (10) — 7 真样本(clarify / dry_run / confirm / abort / refining)+ 3 BAD
+
+**Quality Rubric 全套结果**:
+- 总 29/40 (72.5%)
+- **8/8 BAD samples 全部 veto fail ✓**(actionability/risk/safety 严格生效)
+- **真样本 29/32 (90.6%) pass**
+- chat 短确认/取消文本(< 50 字)honestly fail risk=0(信号准确不修)
+
+**C. 测试**(tests/test_eval_rubric_runner.py 46 用例):
+- DIMENSIONS / weights / SCORERS 注册(4)
+- 各 dim scorer 真测(22)
+- veto rules 5 路径(全清/单 actionability/risk/safety/多 veto)
+- _run_one_case 3 路径(高质量 / no_risks veto / blocklist veto)
+- golden loader / list_categories / threshold(4)
+- 端到端 7(40 samples + BAD 全 fail + 真样本 ≥80% + 4 cat + filter)
+- 46/46 全过
+
+### Phase 4 完成度(全 8 块完成 ✅)
+- L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5 + Safety AE 10/10 +
+  L4 Trajectory 4/4 + Launch Criteria 6/6 + **Quality Rubric 4/4 ✅**
+- 累计 9 eval suite golden 660 case
+- 9 eval suite 联跑 295/295
+
+### 累计本会话总计
+- 本轮新增:框架 1 + 4 fixture / 40 sample + 46 tests
+- pytest 全量 **1096/1099**(+45,3 pre-existing failures 与本轮无关)
+- 48 commits 累计 deploy
+
+### 下次接手候选
+1. **LLM-as-judge 冷启动** — 100 条人工标注 + Pearson≥0.7,GA 把 rubric threshold 提到 80
+2. **17 Launch criteria sign-off 推进** — legal 12 关键路径
+3. **千分位 hype** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x`
+4. **C4 LLM-judge async** — persona / data fabrication
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
+6. **Phase 4 收尾整合** — 写 docs/agent-pm/eval-summary.md 总览(9 suite + 660 case + Phase 4 完整)

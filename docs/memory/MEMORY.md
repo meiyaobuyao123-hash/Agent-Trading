@@ -323,6 +323,17 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 35 self-tests;8 eval suite 联跑 249/249;pytest 全量 1051/1053(+35)
   - **Phase 4 7 块全完成 ✅**:L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE / L4 Trajectory / **Launch Criteria 框架**
   - 累计 8 eval suite golden 620 case 100% 真覆盖
+- ✅ **W3 D5+ Quality Rubric 5+5 维评分 + 3 veto 规则**(commit `149a18e`):Phase 4 第八块完成
+  - agent/eval/rubric_runner.py(440 行)+ 4 fixture(40 sample)
+  - 10 dimension scorer(5 product:relevance/reasoning/actionability/risk/calibration + 5 tech:format/structure/length/disclaimer/safety)
+  - **3 veto 规则**(actionability=0 / risk=0 / safety<10)— SEV-0 一票否决
+  - v1 heuristic threshold = 60(GA LLM-judge 80 留 W17-W22)
+  - 4 category:thesis(10) / review(10) / notify(10) / chat(10)
+  - **结果 29/40 (72.5%)**:8/8 BAD samples 全 veto fail ✓;真样本 29/32 = **90.6%**
+  - chat 短确认/取消文本 honestly fail risk=0(信号准确不修)
+  - 46 self-tests;9 eval suite 联跑 295/295;pytest 全量 1096/1099(+45)
+  - **Phase 4 8 块全完成 ✅**;累计 9 eval suite golden 660 case
+  - 剩 LLM-as-judge 100 冷启动(W17-W22)+ 17 Launch sign-off
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

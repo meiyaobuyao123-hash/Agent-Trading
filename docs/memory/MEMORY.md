@@ -189,6 +189,15 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - _persist_thesis 写本地 PG agent_thesis;非 UUID device_id 跳过
   - 重构 routes_thesis 全部 4 endpoint(POST/GET/{id}/{id}feedback/list)
   - **33 单元测试全过**;服务器 L1 真接通(score=75 → bullish + 0 cost)
+- ✅ **W3 D5+ Reflect Loop 真实施**(commit `baf618a` deploy):反思→JSON-diff→5 硬晋升 闭环
+  - 新建 agent/loops/reflect_loop.py(260+ 行)ReflectLoop.run_cycle(trigger=daily/count/emergency)
+  - 复用 review_engine._load_trades + ReflectionEngine.run_reflection
+  - dedupe(JSON-diff < 20%)+ 5 条硬晋升 try_promote_strict + 14d Shadow Mode
+  - gate_blocked → 写 episodic 留底(propose_count++)
+  - 反思总结写 episodic(供下次反思参考)
+  - count trigger 重置 trade_counter
+  - 加 POST /api/agent/reflect/run 手动触发端点
+  - **13 单元测试全过**;服务器健康验证 OK
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

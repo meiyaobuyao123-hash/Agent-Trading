@@ -385,6 +385,16 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 加 verify.sh + eval-gate.yml(366 tests)
   - pytest 全量 1167/1170(+22)
   - **Stage 0 (initial),等准入 ✓ 后改 DEFAULT_ROLLOUT_PCT["agent_v1"] = 5 启动 Canary**
+- ✅ **W3 D5+ rollout_gate 接主流程**(commit `08ea325`):L3 + auto_mode 真灰度
+  - thesis_loop._select_level 加 device_id 参数 + L3 gate 检查;未命中 L3 → 降级 L2
+  - notify_loop.process mode=auto 时查 agent_v1_auto_mode gate;未命中 → 降级 notify
+  - fail-safe:gate 抛错 → 永远倾向更保守路径(L3→L2 / auto→notify)
+  - L1/L2 + paper/notify 主流程不限流(用户体验稳)
+  - 16 integration tests(thesis L3 10 + notify auto 6 含 fail-safe 路径)
+  - 修补 pre-existing tests(test_thesis_loop / test_notify_loop)patch is_in_rollout=True
+  - verify.sh + eval-gate.yml 加 test_rollout_gate_integration.py(382 tests)
+  - pytest 全量 1184/1186(+17)
+  - **Beta gate 真接通,改 DEFAULT_ROLLOUT_PCT 数字即生效**
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

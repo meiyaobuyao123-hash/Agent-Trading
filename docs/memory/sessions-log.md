@@ -3954,3 +3954,73 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 5. **剩余 4 Tool**(T01/T02/T03/T08)+ 外部 API
 6. **rollout_gate 接到主流程** — chat_loop / thesis_loop / notify_loop 加 is_in_rollout 分支
 7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 34 — rollout_gate 接主流程(L3 + auto_mode 真灰度)
+
+### 做了什么(commit `08ea325`)
+
+**A. agent/loops/thesis_loop.py**:
+- `_select_level(requested, position_usd, score, device_id="")` 加 device_id 参数
+- L3 选定后查 `is_in_rollout(device_id, "agent_v1_thesis_l3")`:
+  - 命中 → stay L3(完整 debate,贵 + 风险高)
+  - 未命中 → 降级 L2(P02 单 LLM 调用)
+  - rollout_gate 抛错 → 保守降 L2(fail-safe)
+- `generate()` 调用点同步 pass device_id
+
+**B. agent/loops/notify_loop.py**:
+- mode 验证后立即查 `is_in_rollout(device_id, "agent_v1_auto_mode")`:
+  - 命中 → stay auto(KMS 上线 + S14 red team drill 后才能 > 0)
+  - 未命中 → 降级 notify(只推送,不真金交易)
+  - rollout_gate 抛错 → 保守降 notify
+- device_id 取自 event["user_id"]
+
+**设计原则**:
+- L1/L2 + paper/notify 路径**不限流**(主流程不受灰度影响,用户体验稳定)
+- L3 + auto 是高成本(L3 多 4x token)/ 高风险(auto 真金)路径,才需要 gate
+- fail-safe:rollout_gate 故障时**永远倾向更保守**的降级路径,不允许误漏
+
+**C. 测试 16 用例**(tests/test_rollout_gate_integration.py):
+- TestThesisL3Gate(10):explicit L3/L2/L1 / auto 高分 / gate-open 保留 L3 /
+  partial rollout 50% 分布 / fail-safe / empty device_id / gate-open keeps L3
+- TestNotifyAutoModeGate(6):auto 降级 notify / gate-open 保留 auto /
+  paper/notify 不受影响 / fail-safe / empty user_id
+
+**D. 修补 pre-existing tests**:
+- test_thesis_loop.py:_select_level / generate L3 测试 patch is_in_rollout=True
+  (这些测试只验 level 选择/L3 行为本身,gate 行为另在 integration test 单独测)
+- test_notify_loop.py:auto_with_hitl / auto_no_hitl_fallback patch is_in_rollout=True
+- 共修 6 个 pre-existing 测试
+
+**E. CI 集成**:
+- verify.sh + eval-gate.yml 加 test_rollout_gate_integration.py
+- 实测:382 tests / 3.5s 全过 → ✅
+- pytest 全量 1184/1186(+17)
+
+### 累计本会话总计
+- 16 轮 autonomous-loop(续 19-34)
+- 55 commits
+- pytest 全量 1184/1186(2 pre-existing failures 与本工作无关)
+- **Beta gate 真接通,改 DEFAULT_ROLLOUT_PCT 数字即生效**
+
+### Phase 4 + Beta 准备完整交付清单
+1. 9 eval suite framework + 760 golden + 100 calibration sample
+2. ~382 self-tests
+3. input_filter v1.0(SEV-0 真覆盖)
+4. **rollout_gate v1.0** + **接主流程 L3 + auto_mode**
+5. run_all.py 一键聚合(< 1s)
+6. eval-summary.md(Phase 4 sign-off snapshot)
+7. eval-runbook.md(Ops 实操)
+8. **beta-rollout.md(三阶段灰度 + rollback)**
+9. CI eval-gate.yml + scripts/verify.sh(本地 mirror)
+
+### 下次接手候选
+1. **Stage 0 → 5% Canary** — 改 `DEFAULT_ROLLOUT_PCT["agent_v1"] = 5`(主门 + 同步评估子 gate)
+2. **17 Launch criteria sign-off 真推进** — legal 12 关键路径
+3. **KMS 实施** — 开 `agent_v1_auto_mode` 前置(W7-W12)
+4. **真 LLM judge 接通**(W17-W22)— anthropic + 100 人工标注
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ 外部 API
+6. **chat_loop 加共创 sub_skill_full gate** — 进一步细粒度
+7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana
+8. **Slack/email 告警** — nightly hard gate fail / launch progress 周报

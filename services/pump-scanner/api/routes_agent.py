@@ -1616,6 +1616,50 @@ class CocreationChatRequest(BaseModel):
     skill_name: str = Field("signal-strategy-builder")
 
 
+class ReflectRunRequest(BaseModel):
+    trigger: str = Field("daily", pattern="^(daily|count|emergency)$")
+    lookback_days: int = Field(7, ge=1, le=90)
+    emergency_pnl_pct: Optional[float] = None
+    emergency_amount_usd: Optional[float] = None
+
+
+@router.post("/reflect/run")
+async def reflect_run(
+    req: ReflectRunRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """手动触发反思 cycle(Admin / debug 用)。
+
+    cron 自动触发由 main.py 的 scheduler 注册(daily 20:00)。
+    """
+    try:
+        from agent.loops.reflect_loop import get_reflect_loop
+        loop = get_reflect_loop()
+        result = await loop.run_cycle(
+            device_id=user_id,
+            trigger=req.trigger,
+            lookback_days=req.lookback_days,
+            emergency_pnl_pct=req.emergency_pnl_pct,
+            emergency_amount_usd=req.emergency_amount_usd,
+        )
+        return {
+            "ok": result.ok,
+            "trigger": result.trigger,
+            "trades_analyzed": result.trades_analyzed,
+            "new_rules_proposed": result.new_rules_proposed,
+            "dedupe_skipped": result.dedupe_skipped,
+            "gate_blocked": result.gate_blocked,
+            "promoted": result.promoted,
+            "promoted_rule_ids": result.promoted_rule_ids,
+            "reflection_id": result.reflection_id,
+            "error": result.error,
+            "latency_ms": result.latency_ms,
+        }
+    except Exception as e:
+        log.warning("reflect run failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
 @router.post("/cocreation/chat")
 async def cocreation_chat(
     req: CocreationChatRequest,

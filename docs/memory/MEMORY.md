@@ -241,6 +241,14 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - debate_record 写 agent_thesis.debate_record JSONB 字段(migration 039 已建)
   - cost_guard EMERGENCY 时 debate 跳过(避免 4x token);失败 swallow 不阻断 P02 输出
   - **10 新测试全过**(累计 thesis_loop 43 测试);**Phase 2 thesis L1+L2+L3 完整路径 ✅**
+- ✅ **W3 D5+ Skill 层 SKILL.md 化**(commit `02ec8a9` deploy):**Phase 2 完整 ✅**
+  - agent/skills/loader.py 完整重写(占位 → 250 行真实施)
+  - SkillLoader.load_all + load_full + skills_for_loop + loop_system_prompt + estimated_tokens
+  - frontmatter parser:PyYAML 优先 / 降级支持 list / multiline / nested dict / 各类型
+  - Progressive Disclosure(LOOP_TO_SKILLS):scout/notify/L1=[];L2=[S08];L3=[S01,S02,S03,S08];reflect=[S07];chat=[S04,S05,S08]
+  - ALWAYS_LOADED(S01/S02/S03/S07/S08)预加载;LAZY(S04/S05)按需读
+  - 7 个完整 SKILL.md(Anthropic Skill 格式 + frontmatter + system prompt + tools_required + failure_fallback)
+  - **27 单元测试全过**;服务器实测 7 skill 加载 OK(thesis_l3 ~679 tokens / reflect ~172 tokens)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

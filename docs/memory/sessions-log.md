@@ -2825,3 +2825,109 @@ agent/loops/thesis_loop.py:
 4. **Eval golden 1660 条** L1-L4
 5. **KMS AwsKmsProvider** — 需 AWS 账号
 6. **Flutter Memory Management UI** — 把 SemanticRule shadow_mode_until 倒计时接真后端
+
+---
+
+## 会话 11 续 17(autonomous-loop:Skill 层 SKILL.md 化,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十四轮
+
+### 实际产出(commit `02ec8a9` deploy)
+
+**Phase 2 Skill 层完整实施 — 7 Skill SKILL.md + Loader + Progressive Disclosure**
+
+agent/skills/loader.py 重写(占位 → 250 行真实施):
+- SkillMeta dataclass:skill_id / name / description / when_to_use /
+  tools_required / sub_skills_allowed / model / version / failure_fallback /
+  full_content(ALWAYS 预加载;LAZY None)
+- frontmatter parser:PyYAML 优先 / 降级 simple parser
+  支持 basic / list `[a,b,c]` / multiline `|` / nested dict / int/float/bool
+- _parse_skill_md:切分 ---frontmatter--- + body markdown
+- SkillLoader.load_all():扫 agent/skills/Sxx_*/SKILL.md
+- SkillLoader.load_full(skill_id):lazy 按需读盘 + 缓存
+- SkillLoader.skills_for_loop(loop):Progressive Disclosure 按 LOOP_TO_SKILLS
+- SkillLoader.loop_system_prompt(loop):拼出 Loop 启动时 system prompt
+  Scout/Notify/L1 返空(0 LLM 节省 token)
+  其他 Loop 拼接 always-loaded skills 的 body
+- SkillLoader.estimated_tokens(loop):粗估 token(4 chars ≈ 1 token,Loop 预算检查)
+- SkillMeta.to_anthropic_skill_spec():导出 Anthropic 格式
+
+Progressive Disclosure(LOOP_TO_SKILLS):
+- scout / notify / thesis_l1:[](纯规则)
+- thesis_l2:[S08](单 Sonnet 写 thesis)
+- thesis_l3:[S01, S02, S03, S08](3 路分析 + thesis 合成)
+- reflect:[S07](复盘)
+- chat:[S04, S05, S08](共创 + 用户咨询;S04/S05 lazy)
+
+ALWAYS_LOADED(S01/S02/S03/S07/S08):预加载 full_content
+LAZY(S04/S05):仅 metadata,触发时才 load_full
+
+### 7 个完整 SKILL.md(Anthropic Skill 格式)
+- S01 technical-analysis(Haiku):RSI/MACD/MA 解读;只解读不计算(走 T14)
+- S02 sentiment-analysis(Haiku):KOL/Twitter/恐惧贪婪;不喊单
+- S03 onchain-analysis(Haiku):聪明钱/holder/流动性;链上数据是真相
+- S04 signal-strategy-builder(Sonnet,LAZY):chat 共创编 StrategySpec
+- S05 trade-strategy-builder(Sonnet,LAZY):paper→notify→auto 模式晋升
+- S07 review-engine(Haiku):日/周/月复盘 + 规则提议
+- S08 thesis-writer(Sonnet):3 路合成 thesis(direction/conviction/risks)
+
+每个 SKILL.md frontmatter:
+```yaml
+skill_id / name / description / when_to_use(多行)
+tools_required(数组) / sub_skills_allowed
+model / version
+failure_fallback:
+  on_load_fail / on_tool_fail
+```
+
+### 测试 (tests/test_skill_loader.py — 27 cases)
+- frontmatter parser:basic / list / multiline / nested dict (4)
+- _parse_skill_md split / no frontmatter (2)
+- load_all 真目录 7 skill / metadata 完整 / ALWAYS full / LAZY None (4)
+- lazy load_full 缓存 (1)
+- skip non-S 前缀 / 缺 SKILL.md (2)
+- skills_for_loop:l1 空 / l2 [S08] / l3 [S01-S03+S08] / chat 含 lazy / unknown 空 (5)
+- loop_system_prompt:scout 空 / l2 含 S08 / l3 lazy 触发 / chat lazy /
+  estimated_tokens budget (5)
+- to_anthropic_spec / 集合 sanity / singleton (3)
+
+**27/27 PASSED**;**累计本会话 365+27=392 后端测试全过**
+
+### 服务器实测
+```
+$ python3 -c "from agent.skills.loader import get_skill_loader; ..."
+skills: ['S01', 'S02', 'S03', 'S04', 'S05', 'S07', 'S08']
+thesis_l3 prompt tokens ~ 679
+reflect prompt tokens ~ 172
+```
+7 skill 加载 OK,thesis_l3 system prompt 在 12K 预算内,reflect 在 6K 内。
+
+### 🎉 Phase 2 完整 ✅(对齐 17-tech-plan.md)
+- ✅ 5/5 Loop(Chat/Thesis/Reflect/Notify/Scout)
+- ✅ review_engine v2 LLM
+- ✅ 6/18 Prompt + Loader + A/B 灰度
+- ✅ 4 cron(reflect_daily/cocreation_cleanup/wal_flush/wal_retry)
+- ✅ L3 thesis 真 debate(Bull/Bear/Facilitator)
+- ✅ **7/8 Skill SKILL.md + Loader + Progressive Disclosure**(S06 无)
+
+### Phase 进度
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**100% ✅(5 Loop + Skill + Prompt + Cron + L3 debate)**
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4(Eval + Launch):⏸
+
+### 累计本会话总计
+- 后端 Python:**392 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 416 新测试,100% PASSED**
+- 37 commits 全部 deploy
+
+### 下次接手候选(Phase 4 + 4 Tool + KMS)
+1. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+2. **KMS AwsKmsProvider** — 需 AWS 账号
+3. **Eval golden 1660 条** L1-L4(Phase 4 关键)
+4. **L1 安全演练**(对齐 PRD 验收 — 端到端测试)
+5. **Flutter Memory Management UI 接真后端** — semantic_rules 真 API
+6. **chat_loop 接 Skill 层** — 用 skill_loader.loop_system_prompt('chat')

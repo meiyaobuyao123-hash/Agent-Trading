@@ -241,9 +241,12 @@ async def test_run_all_total_below_605_above_500():
 
 
 @pytest.mark.asyncio
-async def test_run_all_quick_under_5s():
-    """全部 9 suite 跑 < 5 秒(本机)。"""
+async def test_run_all_quick_under_30s():
+    """全部 9 suite 跑 < 30 秒。
+    R35 后 L1 Tool 含 T01/T02 真试 OKX/Helius (无 key 时超时),整体 ~13s,
+    门槛 30s 足够松,真挂了(>30s)才报警。
+    """
     report = await run_all()
-    assert report.total_duration_s < 5.0, (
-        f"全跑耗时 {report.total_duration_s:.2f}s > 5s,可能某 suite 卡住"
+    assert report.total_duration_s < 30.0, (
+        f"全跑耗时 {report.total_duration_s:.2f}s > 30s,可能某 suite 卡住"
     )

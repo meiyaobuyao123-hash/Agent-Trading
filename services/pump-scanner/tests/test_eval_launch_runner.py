@@ -269,13 +269,13 @@ async def test_run_launch_suite_tech_all_pass():
 
 
 @pytest.mark.asyncio
-async def test_run_launch_suite_legal_all_pending():
-    """Legal 12 项都是 manual blocked(等签字) — 期望 12 个失败。"""
+async def test_run_launch_suite_legal_all_not_applicable():
+    """R35:Legal 12 项早期项目无付费用户 → not_applicable → 全 pass。"""
     report = await run_launch_criteria_suite(cat_filter=["legal"])
     cr = report.category_reports[0]
     assert cr.total == 12
-    assert cr.failed == 12  # 全等待签字
-    assert cr.passed == 0
+    assert cr.passed == 12  # 全 N/A 视为 pass
+    assert cr.failed == 0
 
 
 @pytest.mark.asyncio

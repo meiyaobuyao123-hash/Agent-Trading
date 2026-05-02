@@ -1,0 +1,89 @@
+{
+  "tool": "execute_swap",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "T08 真金交易 — non-idempotent;严格 schema 校验;safety BLOCK / dex fail 正确分流",
+  "cases": [
+    {
+      "name": "missing_chain_invalid",
+      "input": {"token_address": "0xabc", "action": "buy", "amount_usd": 50,
+                "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_token_invalid",
+      "input": {"chain": "solana", "action": "buy", "amount_usd": 50,
+                "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_action_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "amount_usd": 50,
+                "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_amount_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_wallet_address_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50, "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_private_key_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50, "wallet_address": "w"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "amount_too_small_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 0.5, "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "amount_too_large_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50000, "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "unknown_action_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "swap",
+                "amount_usd": 50, "wallet_address": "w", "private_key": "k"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "slippage_too_large_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50, "wallet_address": "w", "private_key": "k",
+                "slippage_pct": 100},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_minimal_no_dex_returns_ok_false",
+      "description": "无真 wallet/key → DEX route 抛 → executor_exception → ok=true,output.ok=false",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50,
+                "wallet_address": "fake-wallet",
+                "private_key": "fake-key"},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_with_safety_ctx",
+      "input": {"chain": "solana", "token_address": "0xabc", "action": "buy",
+                "amount_usd": 50,
+                "wallet_address": "fake-wallet",
+                "private_key": "fake-key",
+                "safety_ctx": {"agent_global_state": "normal", "mode": "auto"}},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    }
+  ]
+}

@@ -20,7 +20,10 @@ Tools — 17 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
 
 from .base import Tool, ToolMetadata, ToolResult, Permission, SideEffect
 
-# W3 D5+: 已实施 13 个 Tool
+# R35: 17 Tool 全部实施(T01/T02/T03/T08 包装现有 OKX/Helius/trade_executor)
+from .t01_query_market import QueryMarketTool
+from .t02_query_holders import QueryHoldersTool
+from .t03_query_onchain_activity import QueryOnchainActivityTool
 from .t04_recall_memory import RecallMemoryTool
 from .t05_list_strategies import ListStrategiesTool
 from .t06_update_strategy_status import UpdateStrategyStatusTool
@@ -34,11 +37,16 @@ from .t14_calc_technical_indicators import CalcTechnicalIndicatorsTool
 from .t15_calc_risk_metrics import CalcRiskMetricsTool
 from .t16_run_backtest import RunBacktestTool
 from .t17_calc_position_size import CalcPositionSizeTool
+from .t08_execute_swap import ExecuteSwapTool
 
 
 def get_tool_registry() -> dict:
-    """返回 {tool_name: Tool 实例} 注册表(已实施的 Tool)。"""
+    """返回 {tool_name: Tool 实例} 注册表(R35 后:17/17 全实施)。"""
     return {
+        "query_market": QueryMarketTool(),
+        "query_holders": QueryHoldersTool(),
+        "query_onchain_activity": QueryOnchainActivityTool(),
+        "execute_swap": ExecuteSwapTool(),
         "recall_memory": RecallMemoryTool(),
         "list_strategies": ListStrategiesTool(),
         "update_strategy_status": UpdateStrategyStatusTool(),
@@ -57,6 +65,10 @@ def get_tool_registry() -> dict:
 
 __all__ = [
     "Tool", "ToolMetadata", "ToolResult", "Permission", "SideEffect",
+    "QueryMarketTool",
+    "QueryHoldersTool",
+    "QueryOnchainActivityTool",
+    "ExecuteSwapTool",
     "RecallMemoryTool",
     "ListStrategiesTool",
     "UpdateStrategyStatusTool",

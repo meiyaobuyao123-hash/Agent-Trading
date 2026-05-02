@@ -29,9 +29,9 @@ def test_default_rollout_pct_has_main_gate():
     assert "agent_v1" in DEFAULT_ROLLOUT_PCT
 
 
-def test_default_rollout_pct_main_starts_at_0():
-    """初始 0(未发流量),W3 阶段不应已经开 5/25/100。"""
-    assert DEFAULT_ROLLOUT_PCT["agent_v1"] == 0
+def test_default_rollout_pct_main_open():
+    """R35:主门 100%,内部团队试用全开。"""
+    assert DEFAULT_ROLLOUT_PCT["agent_v1"] == 100
 
 
 def test_default_rollout_pct_safety_full_open():
@@ -40,10 +40,18 @@ def test_default_rollout_pct_safety_full_open():
     assert DEFAULT_ROLLOUT_PCT.get("agent_v1_safety_engine") == 100
 
 
-def test_default_rollout_pct_kms_dependent_zero():
-    """KMS / auto_mode / real_llm_judge 还没实施,必须 0(防止误开)。"""
-    assert DEFAULT_ROLLOUT_PCT["agent_v1_kms_signing"] == 0
+def test_default_rollout_pct_thesis_l3_open():
+    """R35:L3 thesis debate 全开(自己 + 团队都用真 debate)。"""
+    assert DEFAULT_ROLLOUT_PCT["agent_v1_thesis_l3"] == 100
+
+
+def test_default_rollout_pct_auto_mode_blocked():
+    """⚠️ auto 模式真金交易**保持 0**(内测期防误触发)。"""
     assert DEFAULT_ROLLOUT_PCT["agent_v1_auto_mode"] == 0
+
+
+def test_default_rollout_pct_real_llm_judge_blocked():
+    """真 LLM judge 留 W17-W22。"""
     assert DEFAULT_ROLLOUT_PCT["agent_v1_real_llm_judge"] == 0
 
 
@@ -107,10 +115,11 @@ def test_is_in_rollout_pct_100_always_hits():
 
 
 def test_is_in_rollout_uses_default_when_pct_neg1():
-    """rollout_pct=-1 → 从 DEFAULT 取。安全 feature 100% 应命中。"""
+    """rollout_pct=-1 → 从 DEFAULT 取。R35:安全 feature 100% 应命中,
+    主门 100% 也应命中,auto_mode 0% 不命中。"""
     assert is_in_rollout("dev-1", "agent_v1_input_filter") is True
-    # 主门 0% → 不命中
-    assert is_in_rollout("dev-1", "agent_v1") is False
+    assert is_in_rollout("dev-1", "agent_v1") is True
+    assert is_in_rollout("dev-1", "agent_v1_auto_mode") is False
 
 
 def test_is_in_rollout_unknown_feature_treated_as_0():
@@ -179,8 +188,10 @@ def test_decide_pct_0_in_rollout_false():
 
 
 def test_get_rollout_pct_known():
-    assert get_rollout_pct("agent_v1") == 0
+    """R35:agent_v1 主门 100,input_filter 100,auto_mode 0。"""
+    assert get_rollout_pct("agent_v1") == 100
     assert get_rollout_pct("agent_v1_input_filter") == 100
+    assert get_rollout_pct("agent_v1_auto_mode") == 0
 
 
 def test_get_rollout_pct_unknown_default_0():
@@ -190,6 +201,7 @@ def test_get_rollout_pct_unknown_default_0():
 def test_list_features_returns_copy():
     features = list_features()
     assert "agent_v1" in features
+    original = get_rollout_pct("agent_v1")
     # mutation 不应影响内部状态
     features["agent_v1"] = 999
-    assert get_rollout_pct("agent_v1") == 0
+    assert get_rollout_pct("agent_v1") == original

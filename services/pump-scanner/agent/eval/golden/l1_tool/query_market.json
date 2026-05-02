@@ -1,0 +1,61 @@
+{
+  "tool": "query_market",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_action_invalid",
+      "input": {"chain": "solana"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_chain_invalid",
+      "input": {"action": "price"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "unknown_action_invalid",
+      "input": {"action": "weird", "chain": "solana"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "unknown_chain_invalid",
+      "input": {"action": "price", "chain": "polygon"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "limit_too_large_invalid",
+      "input": {"action": "candles", "chain": "solana",
+                "token_address": "0xabc", "limit": 1000},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "bar_unknown_invalid",
+      "input": {"action": "candles", "chain": "solana",
+                "token_address": "0xabc", "bar": "2H"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "price_no_token_returns_ok_false",
+      "input": {"action": "price", "chain": "solana"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "basic_no_token_returns_ok_false",
+      "input": {"action": "basic", "chain": "solana"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "candles_no_token_returns_ok_false",
+      "input": {"action": "candles", "chain": "solana"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "toplist_default_no_api_returns_ok_false",
+      "description": "无 OKX key 时 toplist 调用空,返 ok=true + output.ok=False",
+      "input": {"action": "toplist", "chain": "solana"},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    }
+  ]
+}

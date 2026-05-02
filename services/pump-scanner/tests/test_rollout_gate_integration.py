@@ -29,13 +29,14 @@ class TestThesisL3Gate:
         self.loop = ThesisLoop()
 
     def test_explicit_L3_downgrades_to_L2_when_gate_off(self):
-        """default agent_v1_thesis_l3=0 → 任何 device 都不命中 → L3 → L2。"""
-        assert self.loop._select_level("L3", 100, 80, device_id="any-dev") == "L2"
+        """patch gate 为 0 → L3 → L2 降级路径 verify。"""
+        with patch("agent.rollout_gate.is_in_rollout", return_value=False):
+            assert self.loop._select_level("L3", 100, 80, device_id="any-dev") == "L2"
 
     def test_auto_high_score_downgrades_to_L2(self):
-        """auto level + score 高(原本应选 L3)→ gate 0% → 走 L2。"""
-        # score=80 > L2_max_score=70 → 原本会选 L3
-        result = self.loop._select_level("auto", 100, 80, device_id="dev-1")
+        """auto level + score 高 + patch gate 0% → 走 L2。"""
+        with patch("agent.rollout_gate.is_in_rollout", return_value=False):
+            result = self.loop._select_level("auto", 100, 80, device_id="dev-1")
         assert result == "L2"
 
     def test_explicit_L1_unaffected_by_gate(self):
@@ -75,9 +76,9 @@ class TestThesisL3Gate:
             assert self.loop._select_level("L3", 100, 80, device_id="dev-1") == "L2"
 
     def test_L3_empty_device_id_downgrades(self):
-        """无 device_id → bucket=99,任何 < 99% rollout 都不命中 → L2。"""
-        # default 0% → 0 命中
-        assert self.loop._select_level("L3", 100, 80, device_id="") == "L2"
+        """无 device_id → bucket=99,patch gate < 99% → 不命中 → L2。"""
+        with patch("agent.rollout_gate.is_in_rollout", return_value=False):
+            assert self.loop._select_level("L3", 100, 80, device_id="") == "L2"
 
     def test_L3_gate_keeps_explicit_L3_when_in_rollout(self):
         """显式 requested=L3 + gate 命中 → L3 不降级。"""

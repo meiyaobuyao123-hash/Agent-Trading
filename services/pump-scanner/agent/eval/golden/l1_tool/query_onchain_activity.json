@@ -1,0 +1,62 @@
+{
+  "tool": "query_onchain_activity",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_chain_invalid",
+      "input": {"token_address": "0xabc"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_token_address_invalid",
+      "input": {"chain": "solana"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "token_empty_invalid",
+      "input": {"chain": "solana", "token_address": ""},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "unknown_chain_invalid",
+      "input": {"chain": "polygon", "token_address": "0xabc"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "window_hours_too_small_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "window_hours": 0},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "window_hours_too_large_invalid",
+      "input": {"chain": "solana", "token_address": "0xabc", "window_hours": 200},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_no_signal_in_db_returns_ok_false",
+      "description": "DB 不通 / token 不在 smart_money_signals 表 → ok=true,output.ok=false",
+      "input": {"chain": "solana", "token_address": "Bonk1111fake"},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_eth_chain",
+      "input": {"chain": "eth", "token_address": "0xabcdef0123"},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_with_window_24h",
+      "input": {"chain": "bsc", "token_address": "0xabcdef0123", "window_hours": 24},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_base_chain",
+      "input": {"chain": "base", "token_address": "0xabcdef0123"},
+      "expected_outcome": "ok",
+      "skip_idempotent_check": true
+    }
+  ]
+}

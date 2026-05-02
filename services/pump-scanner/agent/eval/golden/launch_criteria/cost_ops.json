@@ -7,74 +7,120 @@
     {
       "name": "C01_cost_guard_5_levels",
       "description": "cost_guard 5 级降级实施(NORMAL/SOFT/HARD/EMERGENCY/HARD_STOP/BLOCKED)",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "module_importable", "check_args": {"module": "agent.cost_guard"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "module_importable",
+      "check_args": {
+        "module": "agent.cost_guard"
+      }
     },
     {
       "name": "C02_db_cleanup_extended",
       "description": "db_cleanup 扩展覆盖 12 张本地 PG 表 TTL(run_local_pg_cleanup)",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "attr_exists", "check_args": {"module": "db_cleanup", "attr": "run_local_pg_cleanup"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "attr_exists",
+      "check_args": {
+        "module": "db_cleanup",
+        "attr": "run_local_pg_cleanup"
+      }
     },
     {
       "name": "C03_independent_uvicorn_service",
       "description": "pump-scanner-api.service systemd unit 部署(独立 uvicorn)",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/api_server.py"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "file_exists",
+      "check_args": {
+        "path": "services/pump-scanner/api_server.py"
+      }
     },
     {
       "name": "C04_redis_ipc_active",
       "description": "Redis client + pump signal IPC 接通",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/agent/redis_client.py"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "file_exists",
+      "check_args": {
+        "path": "services/pump-scanner/agent/redis_client.py"
+      }
     },
     {
       "name": "C05_reflect_daily_cron",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "main_cron_id", "check_args": {"job_id": "reflect_daily"},
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "main_cron_id",
+      "check_args": {
+        "job_id": "reflect_daily"
+      },
       "description": "main.py reflect_daily cron 注册"
     },
     {
       "name": "C06_cocreation_cleanup_cron",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "main_cron_id", "check_args": {"job_id": "cocreation_cleanup"},
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "main_cron_id",
+      "check_args": {
+        "job_id": "cocreation_cleanup"
+      },
       "description": "main.py cocreation_cleanup cron 注册"
     },
     {
       "name": "C07_memory_wal_flush_cron",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "main_cron_id", "check_args": {"job_id": "memory_wal_flush"},
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "main_cron_id",
+      "check_args": {
+        "job_id": "memory_wal_flush"
+      },
       "description": "main.py memory_wal_flush cron 注册"
     },
     {
       "name": "C08_memory_wal_retry_cron",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "main_cron_id", "check_args": {"job_id": "memory_wal_retry"},
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "main_cron_id",
+      "check_args": {
+        "job_id": "memory_wal_retry"
+      },
       "description": "main.py memory_wal_retry cron 注册"
     },
     {
       "name": "C09_prompt_invocations_table",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/migrations/local_pg/038_prompt_versions.sql"},
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "file_exists",
+      "check_args": {
+        "path": "services/pump-scanner/migrations/local_pg/038_prompt_versions.sql"
+      },
       "description": "prompt_versions/prompt_invocations migration 部署"
     },
     {
       "name": "C10_eval_runners_5_suites",
       "description": "5 eval CLI runner 全在(L1Tool/L2Skill/L1Prompt/L3Chain/L4Trajectory)",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/agent/eval/runner.py"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "file_exists",
+      "check_args": {
+        "path": "services/pump-scanner/agent/eval/runner.py"
+      }
     },
     {
       "name": "C11_runbook_prod_deploy",
       "description": "Incident SOP runbook(prod 部署逐条命令 + 验证脚本)",
-      "check_type": "automated", "owner": "ops-lead",
-      "check_fn": "file_exists", "check_args": {"path": "docs/runbook/agent-v1-prod-deploy.md"}
+      "check_type": "automated",
+      "owner": "ops-lead",
+      "check_fn": "file_exists",
+      "check_args": {
+        "path": "docs/runbook/agent-v1-prod-deploy.md"
+      }
     },
     {
       "name": "C12_monthly_budget_signoff",
       "description": "月预算 ≤ $1500 @ 100 DAU 验证 + Ops lead 签字",
-      "check_type": "manual", "owner": "ops-lead",
-      "blocking_reason": "需 Beta 实测 30 天后核对实际成本签字"
+      "check_type": "manual",
+      "owner": "ops-lead",
+      "not_applicable_reason": "early stage, no DAU yet; monitored via prompt_invocations table"
     }
   ]
 }

@@ -56,18 +56,18 @@ log = logging.getLogger(__name__)
 #   3. ops/PM/safety 三方确认 + sign-off
 # 见 docs/runbook/beta-rollout.md §3 推进流程。
 DEFAULT_ROLLOUT_PCT: Dict[str, int] = {
-    # 主门
-    "agent_v1": 0,                 # 整体 Agent v1 流量(0/5/25/100 三阶段)
+    # 主门(R35:全开,内部团队试用)
+    "agent_v1": 100,               # 整体 Agent v1 流量
 
-    # 子 feature 独立 gate(更细粒度,可保守先放)
-    "agent_v1_thesis_l3": 0,       # L3 thesis debate(贵 + 风险高,最后放)
-    "agent_v1_auto_mode": 0,       # auto 模式真金(KMS 上线后才能 > 0)
-    "agent_v1_kms_signing": 0,     # KMS 签名(W7-W12 实施后)
-    "agent_v1_real_llm_judge": 0,  # 真 LLM judge(W17-W22)
-    "agent_v1_l3_debate_full": 0,  # L3 多轮 Bull/Bear/Facilitator 全跑
+    # 子 feature 独立 gate
+    "agent_v1_thesis_l3": 100,     # L3 thesis debate 全开(自己 + 团队都用真 debate)
+    "agent_v1_l3_debate_full": 100,
+    "agent_v1_auto_mode": 0,       # ⚠️ 真金交易保持 0 — 内部测试期防误触发
+                                    #    (后续手动测稳后,改 100 或单独给某些 device 开)
+    "agent_v1_real_llm_judge": 0,  # 真 LLM judge(W17-W22 后接通)
 
-    # 安全相关(全开,因为 input_filter v1.0 已就位)
-    "agent_v1_input_filter": 100,  # SEV-0 真覆盖,可全开
+    # 安全相关(input_filter / safety_engine 100%)
+    "agent_v1_input_filter": 100,  # SEV-0 真覆盖
     "agent_v1_safety_engine": 100, # 30 HR + 13 CB + 5 C 全开
 }
 

@@ -4100,3 +4100,55 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 4. **Stage 0 → 5% Canary** — 真用户(团队外)流量
 5. **Android APK 打包**(装 ANDROID_HOME 后)
 6. **真 LLM judge 接通**(anthropic API 已有)
+
+---
+
+## 会话 R36(2026-05-03)— E2E 真验证 + 代码 vs 设计文档审计
+
+### 用户要求(2 件事)
+1. 端到端完整验证(真模拟器跑完整 App 流程)
+2. 代码 vs 设计文档比对(`docs/agent-pm/00-17` 18 篇 vs 实际代码,确保设计与实施一致)
+
+### 执行 + 产出
+
+**任务 A — E2E 真验证**:
+- iOS Simulator(iPhone 17 Pro Max DBC925B5...)`flutter run` 跑通
+- 发现 P0 bug 1:HTTP 451 GEO_BLOCKED — 用户在中国 IP 走 nginx 命中中间件;**修**:`api/app.py` 加 `DISABLE_GEO_BLOCK` env 开关(commit `efff571`),服务器 .env 设 true + restart
+- 发现 P0 bug 2:`type 'Null' is not a subtype of type 'String' in type cast` — Flutter `EvidenceItem` 用旧 schema `source/value`,后端按 04-agent-spec S08 + P02 spec 返 `layer/text/weight`;**修**:`apps/app/lib/models/thesis.dart` 改 EvidenceItem 字段为 `layer/text/weight`(保留 source/value getter 兼容旧 callsites)+ `agent_screen.dart` + `thesis_card_test.dart` 跟着改(commit `8dd235f`)
+- 修后实测:ThesisCard 渲染真后端 L1 thesis(SOLANA / 看跌 / 信心 40% / `evidence: [{layer:"rule_engine",text:"score=0.0",weight:0.5}]` / latency 3867ms),截图 `/tmp/r36-thesis-fixed.png`
+- `flutter test test/thesis_card_test.dart`:**18/18 widget tests 全过** ✅
+- `flutter analyze`:无新增 error(只有 1 pre-existing `recentSignalReview`,与本次修复无关)
+
+**任务 B — 实施 vs 设计审计**:
+- 4 个 Explore subagent 并行(避免污染主 context):
+  - Agent A:Loops + PRD(03-prd.md / 04-agent-spec.md)→ 45% 对齐(5/5 Loops + 7/7 Skills 在;paper→auto 门槛 / HITL state 机器 / Thesis 3 字段缺)
+  - Agent B:Tools + Memory(05-tool-catalog.md / 06-memory-spec.md)→ Tools 95% / Memory 70%(17/17 Tools + episodic 公式对齐;Semantic 5-gate stub / WAL 未接通)
+  - Agent C:Prompts + Safety(07-prompt-library.md / 08-safety-policy.md)→ 71% 对齐(18/18 Prompts + 30 HR + 13 CB + 5 C 全在;Constitutional 未注入 + LLM judge 未跑)
+  - Agent D:Launch + Cost + TechPlan(11/13/17.md)→ 68% 对齐(62/62 documented + Cost Guard 5 tier;Kill Switch 501 stub / Legal 0)
+- **产出 `docs/agent-pm/IMPLEMENTATION-AUDIT.md`**(~480 行):TL;DR 总对齐率 ~70% / 模块对齐总览表 / 偏差 + 缺失 punch list / Phase 0-4 进度 / P0/P1/P2 优先级 / R35 决策性偏差合规性确认
+- **关键发现**:R35 决策性偏差(KMS / Legal 12 / Beta 灰度 / Red Team / NPS / Biometric)已被 launch_criteria/*.json 改为 not_applicable,**不计入缺陷**;真正 P0 punch list 5 项:
+  1. paper→auto 晋升门槛(strategy_manager.go_live)
+  2. HITL 5/15/60min 超时升级
+  3. Kill Switch 实施(routes_admin 501 → 真 Redis pub/sub)
+  4. Semantic 5-gate `try_promote_strict()` 实施
+  5. Incident Response Runbook 补完
+
+**收尾**:
+- 撤回临时 E2E 改动(`app.dart _currentIndex` 0 / 删 `_autoDemoTriggered` 自动触发)
+- `git push origin agent-v1`(commit `8dd235f`)
+- 双份记忆三件套(MEMORY.md + sessions-log.md)同步
+
+### 关键 commit
+- `efff571` fix(R36): GEO middleware 加 env 开关 + Flutter E2E auto demo trigger
+- `8dd235f` fix(R36): EvidenceItem schema layer/text + 撤回临时 E2E 钩子 + 写实施审计
+
+### 累计测试
+flutter widget test 18/18 + 后端 pytest 1200+ ✅
+
+### 下次接手候选
+1. **P0 punch list 5 项**:paper→auto 门槛 / HITL 超时升级 / Kill Switch / Semantic 5-gate / Runbook(估 1 sprint)
+2. **真 LLM judge calibration**(100 pair Pearson≥0.7)
+3. **L3 真 Debate 实施**(Bull/Bear/Facilitator + RiskReviewer)
+4. **WAL 接通 Episodic**(关键 category 走 wal.write)
+5. **Mode 命名对齐**(paper/live → paper/notify_only/auto)
+6. **Thesis schema 补 3 字段**(regime_at_generation / disclaimer / used_tools)

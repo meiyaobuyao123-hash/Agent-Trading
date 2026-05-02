@@ -416,6 +416,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - **docs/runbook/team-test.md** 团队内测指南(7 功能 / bug P0-P3 / 已知不完美 / Kill Switch)
   - **agent_v1_auto_mode 保 0**:防真金误触发,Flutter App 即便点 auto 也不会真买
   - 给团队成员发 IPA + 指引 → 装上即可试 paper / notify / thesis / 共创 / 复盘 / 记忆管理
+- ✅ **R36 E2E 真验证 + 实施审计**(2026-05-03 / commits `efff571` + `8dd235f`):
+  - **Bug 修**:GEO middleware 加 `DISABLE_GEO_BLOCK` env 开关(团队内测期用,GA 务必关回);Flutter `EvidenceItem` schema source/value → **layer/text/weight**(对齐 04-agent-spec S08 + P02 后端 schema)— 修复"type 'Null' is not a subtype of String"崩溃
+  - **E2E 真模拟器验证**:iOS Simulator(iPhone 17 Pro Max)启动 + ThesisCard 渲染真后端 L1 thesis(SOLANA / 看跌 / 信心 40% / latency 3867ms / `evidence: [{layer:"rule_engine",text:"score=0.0",weight:0.5}]`);截图 `/tmp/r36-thesis-fixed.png`;**18/18 widget tests 全过**;flutter analyze 无新增 error(只有 1 pre-existing `recentSignalReview`)
+  - **代码 vs 设计文档审计**:`docs/agent-pm/IMPLEMENTATION-AUDIT.md` 4 个并行 Explore agent 独立审计 + 主上下文交叉核验。**总对齐率 ~70%**:结构对齐 95%(17/17 Tools / 18/18 Prompts / 5/5 Loops / 7/7 Skills / 30 HR + 13 CB + 5 C / 62/62 Launch),深度对齐 ~50%。**P0 punch list 5 项**:paper→auto 晋升门槛 / HITL 5/15/60min 超时 / Kill Switch 实施 / Semantic 5-gate / Incident Runbook
+  - **R35 决策性偏差**已确认不计入缺陷:KMS / 法务 / Beta 灰度 / Red Team / NPS / Biometric drill 全 not_applicable(早期项目无付费用户)
+  - 撤回临时 E2E 改动:`app.dart _currentIndex` 0 / `agent_screen.dart` 删 _autoDemoTriggered 自动触发
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

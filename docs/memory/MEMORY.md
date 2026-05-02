@@ -1,5 +1,20 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-03 R36 audit 后)
+
+| 维度 | 状态 |
+|---|---|
+| 团队内测推送 | ✅ 可以(IPA 已打包 + 服务器 agent-v1 跑 + auto_mode=0 真金硬锁) |
+| 真付费用户上线 | ❌ 不能 — P0 punch list 5 项必修 |
+| 总对齐设计 | ~70%(结构 95% + 深度 50%,见 `docs/agent-pm/IMPLEMENTATION-AUDIT.md`) |
+
+**P0 punch list(必修才能推真用户)**:
+1. paper→auto 晋升门槛(`strategy_manager.go_live()`)
+2. HITL 5/15/60min 超时升级 handler
+3. Kill Switch 真实施(`routes_admin.py` 现 501 stub)
+4. Semantic 5-gate `try_promote_strict()`
+5. Incident Response Runbook top 10 failure mode
+
 ## 🔴 每次会话开始必须执行（强制）
 立即读取以下所有 topic 文件，不得跳过：
 - [credentials.md](./credentials.md) — API Key、URL、服务器密码

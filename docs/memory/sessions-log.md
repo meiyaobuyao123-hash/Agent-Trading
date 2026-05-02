@@ -4152,3 +4152,32 @@ flutter widget test 18/18 + 后端 pytest 1200+ ✅
 4. **WAL 接通 Episodic**(关键 category 走 wal.write)
 5. **Mode 命名对齐**(paper/live → paper/notify_only/auto)
 6. **Thesis schema 补 3 字段**(regime_at_generation / disclaimer / used_tools)
+
+### R36 收尾 — 用户问"上线了吗"诚实回答(2026-05-03)
+
+**用户问**:都开发完了，上线了？能推给用户了吗？
+
+**诚实回答**:**团队内测 ✅,真付费用户 ❌**
+
+| 维度 | 状态 |
+|---|---|
+| 后端 agent-v1 服务器 | ✅ 跑(R35 commit `95c0acb` deploy + 8000 LISTEN + 17/17 Tool 注册) |
+| iOS IPA 给团队装 | ✅ 已打包(R35 阶段)|
+| Flutter App 主流程 | ✅ ThesisCard 真后端数据(R36 修完 schema bug 后)|
+| auto_mode 真金硬锁 | ✅ rollout_gate `agent_v1_auto_mode = 0` |
+| **paper→auto 晋升门槛** | ❌ `go_live()` 无检查,理论可绕开 — 当前靠 auto_mode=0 兜底 |
+| **HITL 5/15/60min 超时升级** | ❌ 表已建,handler 未接 |
+| **Kill Switch < 10s** | ❌ routes_admin 返 501 stub |
+| **Semantic 5-gate 自动晋升** | ❌ 5 常数定义,`try_promote_strict()` stub |
+| **Incident Runbook** | ❌ 部分写,top 10 failure mode 缺 |
+
+**结论**:
+- 团队内测可推(auto_mode=0 兜底,真金不会误触发)
+- 真付费用户不能推 — P0 5 项必修(估 1-2 sprint)
+- R36 没补 P0,主要做了 E2E 验证 + 4 并行 audit + 修 2 个真验证发现的 bug(GEO 451 / EvidenceItem schema)
+
+**记忆三件套同步**:
+- MEMORY.md 顶部加"上线状态"段 + P0 punch list
+- sessions-log.md 末尾追加本段
+- pitfalls.md 不变(无新坑)
+- 双份 cp + 切 main 提交 + push

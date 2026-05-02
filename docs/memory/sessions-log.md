@@ -3754,3 +3754,72 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 4. **AE06/AE08 LLM-judge 异步采样** — persona_mismatch / data_fabrication 真覆盖
 5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS
 6. **Beta 灰度 5% 启动** — Phase 4 框架就位,可灰度发放
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 31 — run_all 一键聚合 + Ops eval runbook
+
+### 做了什么(commit `47da6ee`)
+
+**A. agent/eval/run_all.py(270 行)**:
+- SUITES 9 个 suite + hard_gate 标记
+  - hard:l1_tool / l2_skill / l1_prompt / l3_chain / safety_ae / l4_trajectory / judge_calibration
+  - soft:launch_criteria(milestone-gated)/ quality_rubric(LLM-judge target W17-W22)
+- SuiteResult.hard_gate_passed 各 suite 自定判定:
+  - L1/L2/L3 → 严格 100%
+  - Safety AE → all_severities_meet_threshold(SEV-0/1/2 各自门槛)
+  - L4 Trajectory → ≥85%
+  - Judge → passes flag(non-safety Pearson ≥ 0.7 + safety 100%)
+- _run_suite 统一拍平各 suite report shape
+- _print_text 一行汇总每 suite + sev/passes notes
+- --json 输出给 CI parse;--skip 开发期跳 launch milestone
+- exit code:任一 hard gate 失败 → 1
+
+**实测**:
+- 全 9 suite < 1 秒(本机 0.97s)
+- TOTAL 576/604 / all_hard_gates=✓
+- l1_tool 140/140 / l2_skill 44/44 / l1_prompt 110/110 / l3_chain 46/46 /
+  safety_ae 132/132 (SEV-0/1/2 全 100%)/ l4_trajectory 20/20 /
+  launch_criteria 45/62 (72.6% milestone-gated)/
+  quality_rubric 29/40 (72.5%)/ judge_calibration 10/10 dims passes
+
+**B. docs/runbook/eval-runbook.md(200 行 Ops 实操)**:
+- TL;DR + 何时跑(PR/CI/nightly/pre-deploy 矩阵)
+- 各 suite 单独跑 CLI + 9 suite filter 参数
+- Pass/Fail 判定(hard / soft gates 表)
+- 失败 triage 流程(L1/Safety/L3/Quality 4 类典型问题修法)
+- CI 集成 GitHub Actions 完整 yaml
+- JSON schema(给 dashboard parse)
+- 故障案例(Py3.9 PEP 604 / asyncio nesting / Tool count)
+- 上线前 checklist(给 release manager 7 项 check)
+
+**C. 测试**(tests/test_eval_run_all.py 22 用例):
+- SUITES 配置(4):9 个 + names + 各项必填 + hard/soft 分布
+- SuiteResult.hard_gate_passed 8 路径(L1 100% / safety severity / L4 85% / judge flag / soft pass)
+- RunAllReport 聚合 4(all_passed true/false / total_cases / to_json)
+- 端到端 5(real all hard pass / skip works / safety severity breakdown / count range / < 5s)
+- 22/22 全过
+
+### Phase 4 完整收尾 ✅
+- 9 块完整 + run_all 一键聚合 + Ops runbook + AE05 最后 gap 闭合
+- 累计 10 eval suite golden 760+132 case + 100 calibration sample
+- 11 eval suite 联跑(test_eval_*.py + test_input_filter)~341 self-tests
+- pytest 全量 **1145/1147**(+22,2 pre-existing failures 与本轮无关)
+- 52 commits 累计 deploy
+
+### 关键交付清单(autonomous-loop 续 19-31 全部产出)
+1. 9 eval suite framework(L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE / L4 Trajectory / Launch Criteria / Quality Rubric / Judge Calibration)
+2. 760+ golden case + 100 judge sample
+3. ~341 self-tests
+4. input_filter v1.0 5 attack class regex(SEV-0 真覆盖)
+5. run_all.py 一键聚合(< 1s)
+6. docs/agent-pm/eval-summary.md(Phase 4 sign-off snapshot)
+7. docs/runbook/eval-runbook.md(Ops 实操)
+
+### 下次接手候选
+1. **Beta 灰度 5% 启动** — 框架就位,可灰度发放收集真实指标
+2. **17 Launch criteria sign-off 真推进** — legal 12 关键路径(找法务团队)
+3. **真 LLM judge 接通**(W17-W22)— anthropic + 真人工 100 标注
+4. **AE06/AE08 LLM-judge 异步采样** — persona_mismatch / data_fabrication 真覆盖
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 外部 API + AWS 账号
+6. **CI 接通** — eval-runbook §5 yaml 接入 GitHub Actions / Linear gate

@@ -357,6 +357,14 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - AE05 fixture +3 真 catch case + 1 false-positive guard;next_pepe 从 known gap → blocked
   - **Safety AE 132/132 (100%)**(从 129 → 132)/ SEV-1 65/65 ≥ 99% ✓
   - +2 input_filter 测试(千分位 catch + 无 x guard);pytest 全量 1123/1125
+- ✅ **W3 D5+ run_all 一键聚合 + Ops eval runbook**(commit `47da6ee`):Phase 4 收尾
+  - agent/eval/run_all.py(270 行)9 suite 一键聚合,< 1 秒全跑
+  - SuiteResult.hard_gate_passed 各 suite 自定判定(L1/2/3/L4/Safety/Judge hard;Launch/Rubric soft)
+  - --json / --skip 参数;exit code on hard gate fail
+  - 实测:TOTAL 576/604 / all_hard_gates=✓ / 0.97s
+  - docs/runbook/eval-runbook.md(200 行 Ops 实操)— 何时跑 / triage / CI yaml / 上线 checklist
+  - 22 self-tests(SUITES 配置 + hard_gate 8 路径 + 端到端 5);pytest 全量 1145/1147(+22)
+  - **任何 PR 跑 `python3 -m agent.eval.run_all` 看 ✓ 即可放心合**
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

@@ -2576,3 +2576,95 @@ cocreation_cleanup 5 分钟后)。
 4. **Eval golden 1660 条** L1-L4
 5. **L3 thesis 真 debate** — debate.py 已存
 6. **KMS AwsKmsProvider** — 需 AWS 账号
+
+---
+
+## 会话 11 续 14(autonomous-loop:WAL 真实施,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十一轮
+
+### 实际产出(commit `30da49c` deploy)
+
+**Memory WAL 真实施 — Memory 写入可靠性闭环**
+
+agent/memory/wal.py(260 行,从占位 → 完整真实施):
+- MemoryWAL.write(device_id, memory_type, payload, event_id):
+  * INSERT memory_write_wal ON CONFLICT(idempotency_key) DO NOTHING
+  * idempotency_key = sha256(device + event + minute_trunc)[:32]
+  * 同 minute 内同 (device, event) 返已存在 wal_id(幂等)
+  * 非 UUID device_id 跳过(避免表 NOT NULL UUID 报错)
+  * disable() 测试用
+- MemoryWAL.flush_once(batch=50):
+  * SELECT unflushed → _write_to_main_db(agent_memory Supabase)
+  * 成功:UPDATE flushed=true, flushed_at=now()
+  * 失败:_enqueue_retry → INSERT retry_queue(next_retry_at = now+60s)
+- MemoryWAL.retry_once(batch=50):
+  * JOIN retry_queue + wal,WHERE next_retry_at <= now() AND resolved=false
+  * 重试主表
+  * 成功:UPDATE retry resolved=true + WAL flushed=true
+  * 失败:累 attempt_count;
+    - attempt 0→1:next_retry = +60s
+    - attempt 1→2:next_retry = +5min
+    - attempt 2→3:next_retry = +30min
+    - attempt >= 3:标 failed_p1_alerted=false 留 alert cron 处理
+
+agent/memory/semantic_memory.py:
+- try_promote_strict 写主表前先 fire-and-forget 调 wal.write
+- 失败 swallow 不阻断 promotion(WAL 表不存在/PG down 都不阻断)
+- 主表 insert 失败 → 返 db_write_failed_wal_pending(retry cron 兜底)
+
+main.py 加 2 cron:
+- memory_wal_flush(每 10s):wal.flush_once
+- memory_wal_retry(每 30s):wal.retry_once
+都 swallow 错误不阻断 main loop
+
+### 测试 (tests/test_memory_wal.py — 20 cases)
+- _idempotency_key 同 minute 同 key + 不同 event 不同 (2)
+- write:invalid type / non-UUID skip / disabled / 成功返 wal_id /
+  ON CONFLICT 返已存在 / DB 失败返 None (6)
+- flush_once:无 unflushed 返零 / 成功 mark flushed /
+  主表失败 enqueue retry / SELECT 失败返零 (4)
+- retry_once:成功 recovered / 失败累 attempt /
+  attempt=2 第 3 次失败标 P1 / 无 pending 返零 (4)
+- _write_to_main_db 成功 / 失败带 error (2)
+- singleton + BACKOFF_SCHEDULE 常量 (2)
+
+**20/20 PASSED**;**累计本会话 307+20=327 后端测试全过**
+
+### 服务器实测
+```
+$ journalctl -u pump-scanner | grep "Added job.*WAL"
+... "Memory WAL Flush (10s)" to job store "default"
+... "Memory WAL Retry (30s)" to job store "default"
+```
+两个 cron 注册成功,在线上 PG 上等待 try_promote_strict 触发的 WAL 条目。
+
+### Phase 1 Memory 升级 100% 完成
+- ✅ evaluator 评分公式(trigger+3/chain+2/token_type+2/mcap+1/regime_distance/freshness/match_count + score>=3.0)
+- ✅ semantic 5 条硬晋升(reflections>=3 / samples>=20 / Wilson>=0.55 / Welch t-test p<0.05 / 2 regimes)+ 14d Shadow Mode
+- ✅ reflection JSON-diff dedupe(threshold=0.20 + case-normalize)
+- ✅ WAL 真接入(write/flush/retry + try_promote_strict 接入 + 2 cron)
+
+### Phase 进度
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅** /
+  剩 T01 query_market / T02 query_holders / T03 query_onchain_activity / T08 execute_swap(都需外部 API + KMS)
+- Phase 2:**5/5 Loop ✅** / **review_engine v2 LLM ✅** /
+  **6/18 Prompt + Loader ✅** / **4 cron 接入 ✅** / Skill SKILL.md ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话总计
+- 后端 Python:**327 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 351 新测试,100% PASSED**
+- 31 commits 全部 deploy
+
+### 下次接手候选
+1. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+2. **剩余 12 Prompt** + Skill SKILL.md 化(S01-S08)
+3. **L3 thesis 真 debate** — debate.py 已存,接 thesis_loop
+4. **Eval golden 1660 条** L1-L4
+5. **KMS AwsKmsProvider** — 需 AWS 账号
+6. **Cost guard 真触发** — cost_guard.py 已存,接 ChatLoop / ThesisLoop

@@ -220,6 +220,15 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - main.py 加 reflect_daily cron(UTC 12:00 = 北京 20:00)真触发 ReflectLoop.run_cycle
   - main.py 加 cocreation_cleanup cron(每 5min)清理过期共创会话
   - **13 T16 测试全过**;服务器 deploy 后两个 cron 都成功 Added job ✅
+- ✅ **W3 D5+ Memory WAL 真实施**(commit `30da49c` deploy):Memory 写入可靠性闭环
+  - agent/memory/wal.py 完整重写(占位 → 260 行真实施)
+  - MemoryWAL.write:同步 INSERT memory_write_wal + ON CONFLICT 幂等
+  - MemoryWAL.flush_once:扫 unflushed → 写主表 agent_memory → 失败 enqueue retry
+  - MemoryWAL.retry_once:60s/5min/30min 退避;3 次失败 → P1 标记
+  - try_promote_strict 接 WAL(异步 fire-and-forget,失败不阻断主路径)
+  - main.py 加 memory_wal_flush(10s)+ memory_wal_retry(30s)2 cron
+  - **20 单元测试全过**;服务器 2 cron 注册 OK
+  - **Phase 1 Memory 4 层升级完成度:评分公式 ✅ + 5 条硬晋升 ✅ + JSON-diff dedupe ✅ + WAL 真接入 ✅**
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

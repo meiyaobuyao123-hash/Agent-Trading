@@ -2213,3 +2213,82 @@ L1 真接通(0 LLM 成本 + 规则化 thesis)。
 4. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
 5. **剩余 12 Prompt** + Skill SKILL.md 化
 6. **WAL 真接入** + Eval golden 1660 / KMS
+
+---
+
+## 会话 11 续 10(autonomous-loop:Reflect Loop,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第七轮
+
+### 实际产出(commit `baf618a` deploy)
+
+**Agent v1 第三个 Loop — Reflect Loop:Memory 学习闭环打通**
+
+新建 agent/loops/reflect_loop.py(260+ 行):
+- ReflectLoop.run_cycle(device_id, trigger=daily/count/emergency, lookback_days)
+- emergency 触发先验证 should_emergency_reflect + daily limit
+- _gather_recent_trades:复用 review_engine._load_trades 配对 trades
+  + 转 reflection prompt 期望格式(pnl_pct/amount_usd/regime)
+- _gather_active_rules:semantic.get_all_active
+- ReflectionEngine.run_reflection → Claude Sonnet → {new_rules: [...]}
+- ReflectionEngine.deduplicate_proposed_rules(threshold=0.20)
+  JSON-diff < 20% 视为重复跳过
+- 对每条 kept_rule:
+  * _aggregate_compliance_samples(v0:chain 字符串 heuristic)
+    收集 comply/violate pnls + regimes
+  * SemanticMemory.try_promote_strict(5 条硬门槛 + 14d Shadow Mode):
+    - reflections >= 3 / samples >= 20 / Wilson >= 0.55 /
+      Welch t-test p < 0.05 / 至少 2 regime
+    - 全过 → 写 agent_memory + 累 promoted
+    - 任一不过 → 写 episodic 留底(propose_count++)
+- 反思总结写 episodic_memory(供下次反思 freshness 评分用)
+- count trigger 重置 _trade_counter
+
+routes_agent.py:
+- POST /api/agent/reflect/run 手动触发(Admin/debug)
+  cron 自动触发由 main.py scheduler 注册(daily 20:00,留 W7-W12)
+
+### 测试 (tests/test_reflect_loop.py — 13 cases)
+- _aggregate_compliance_samples (3):chain 匹配 / None pnl 跳 / 无 chain 全 violate
+- emergency (2):阈值不过 ok=False / 阈值过 proceeds
+- no trades 返 ok with message (1)
+- LLM 返 None 标 failed / LLM 抛错 标 failed (2)
+- full flow promotes when gates pass (1)
+- dedupe 跳重复 + 累计 dedupe_skipped (1)
+- gate_blocked 写 episodic 留底 (1)
+- count trigger 重置 trade_counter (1)
+- singleton (1)
+
+**13/13 PASSED**;**累计本会话 251+13=264 后端测试全过**
+
+### Phase 2 Loop 进度
+- ✅ Chat Loop(P01+P11+T12 端到端)
+- ✅ Thesis Loop(L1 规则化 + L2 P02+Sonnet)
+- ✅ Reflect Loop(反思 + dedupe + 硬晋升闭环)← 本次新增!
+- ⏸ Scout Loop(EventBus + 规则引擎触发策略)
+- ⏸ Notify Loop(strategy_triggered → RiskManager + 仓位 + push)
+
+### 累计本会话总计(W3 D5 + 续 1-10)
+- 后端 Python:**264 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 288 新测试,100% PASSED**
+- 23 commits 全部 deploy
+
+### Memory 学习闭环关键路径
+现在闭环可以这样跑:
+1. 用户 paper trade 跑 → agent_executions 累积
+2. 每天 cron 20:00 / 每 10 笔 / 紧急触发 → ReflectLoop.run_cycle
+3. Claude 输出 new_rules → JSON-diff dedupe(避免相同规则重复)
+4. 5 条硬门槛 → try_promote_strict 写入 14d Shadow Mode
+5. Shadow Mode 期间只观察不影响决策(对齐 17-tech-plan.md)
+6. 14 天后 Shadow 解除 → 真正 active rule 影响 Agent 决策
+   (这步真转换的 cron 留 W7-W12)
+7. 用户在 Flutter 记忆管理页可看到 active/shadow/dormant 规则状态
+
+### 下次接手候选
+1. **Scout Loop** — EventBus 订阅 + 规则引擎触发策略(从 event_listener 重构)
+2. **Notify Loop** — strategy_triggered → RiskManager + T17 仓位 + paper/notify/auto 分支 + T13 push
+3. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
+4. **剩余 12 Prompt** + Skill SKILL.md 化
+5. **WAL 真接入** + Eval golden 1660 / KMS

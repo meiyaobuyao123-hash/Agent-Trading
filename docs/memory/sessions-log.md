@@ -2292,3 +2292,90 @@ routes_agent.py:
 3. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
 4. **剩余 12 Prompt** + Skill SKILL.md 化
 5. **WAL 真接入** + Eval golden 1660 / KMS
+
+---
+
+## 会话 11 续 11(autonomous-loop:Notify Loop,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第八轮
+
+### 用户中途澄清问"按文档开发吗"
+- 答:对齐 17-tech-plan / 03-prd / 05-tool-catalog / 06-memory-spec /
+  07-prompt-library;每个 commit message 引文档具体章节;留 W7-W12 的事项
+  全部明示在 sessions-log "下次接手候选";无偷偷改设计/绕过文档
+
+### 实际产出(commit `5f95fe2` deploy)
+
+**Agent v1 第四个 Loop — Notify Loop:strategy_triggered → 真金/paper/通知 完整路径**
+
+新建 agent/loops/notify_loop.py(460+ 行):
+- NotifyLoop.process(event, mode, thesis, balance, ..., dry_run)
+- 流程:
+  1. _safety_pre_check:SafetyEngine 全局 CB 检查;blocked → 推送拦截通知 +
+     verdict=blocked_safety
+  2. _risk_check:RiskManager 16 项(PRD-005 完整);blocked → push +
+     verdict=blocked_risk
+  3. _calc_position:T17 calc_position_size;返 capped_by + reasoning
+  4. mode 分支:
+     * paper:T07 run_paper_trade buy + T13 push strategy_triggered
+     * notify:不交易,只 T13 push 提示用户手动决定
+     * auto + HITL 触发(_needs_hitl 4 条):
+       T09 create_approval_request(强幂等 idem_key) + T13 push hitl_approval
+     * auto 无 HITL:**v0 fallback to notify-only**(KMS 真接 W7-W12)
+  5. T13 push 时按 category 自动构造 deep_link(strategy/hitl/...)
+- dry_run=true:不真执行 trade / push,只算 verdict 给 caller
+- safety/risk 失败永远不静默:仍然推送拦截通知
+
+HITL 4 条触发(对齐 17-tech-plan.md):
+- HITL_AMOUNT_USD = 200
+- HITL_PORTFOLIO_PCT = 0.30
+- HITL_24H_TRADES = 5
+- HITL_LOW_CONVICTION = 0.6
+
+routes_agent.py:
+- POST /api/agent/notify/trigger 手动触发 + dry_run 测试
+
+### 测试 (tests/test_notify_loop.py — 18 cases)
+- _needs_hitl (6):无触发 / 高金额 / 高集中 / 高频 / 低置信度 / 多重命中
+- _safety_pre_check (3):globally_blocked / normal / engine 不可用 fail-open
+- process invalid mode (1)
+- paper 完整路径 T07+T13 (1)
+- safety blocked 推送拦截通知 (1)
+- risk blocked (1)
+- notify mode 不调 T07 (1)
+- auto + HITL 触发 → T09 创建 approval + idempotency_key (1)
+- auto 无 HITL → fallback notify-only (1)
+- dry_run 不调 T07/T13 (1)
+- singleton (1)
+
+**18/18 PASSED**;**累计本会话 264+18=282 后端测试全过**
+
+### 服务器实测(dry_run paper)
+```
+POST /api/agent/notify/trigger {event:..., mode:paper, dry_run:true}
+→ {ok:true, verdict:"dry_run", mode:"paper", position_usd:50.0,
+   capped_by:[], push_sent_count:0, latency_ms:710}
+```
+不真发 trade/push,但走完了 safety + risk + T17 + 路由 + verdict 计算流程。
+
+### Phase 2 Loop 进度大跃进
+- ✅ Chat Loop(P01+P11+T12 端到端)
+- ✅ Thesis Loop(L1 规则化 + L2 P02+Sonnet)
+- ✅ Reflect Loop(反思 + dedupe + 硬晋升闭环)
+- ✅ Notify Loop(safety+risk+T17+mode 分支+push)← 本次新增!
+- ⏸ Scout Loop(EventBus + 规则引擎触发策略,从 event_listener 重构)
+
+**4/5 Loop 已实施。Scout Loop 是 Notify 的"上游"(EventBus 信号 → 规则引擎打分 → 触发 strategy → 进 NotifyLoop)。**
+
+### 累计本会话总计
+- 后端 Python:**282 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 306 新测试,100% PASSED**
+- 25 commits 全部 deploy
+
+### 下次接手候选
+1. **Scout Loop** — EventBus 订阅(已存)+ 规则引擎打分(rule_engine.py 已存)+ 触发 NotifyLoop 端到端(从 event_listener.py 重构)
+2. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
+3. **剩余 12 Prompt** + Skill SKILL.md 化
+4. **WAL 真接入** + Eval golden 1660 / KMS

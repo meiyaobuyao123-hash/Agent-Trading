@@ -198,6 +198,14 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - count trigger 重置 trade_counter
   - 加 POST /api/agent/reflect/run 手动触发端点
   - **13 单元测试全过**;服务器健康验证 OK
+- ✅ **W3 D5+ Notify Loop 真实施**(commit `5f95fe2` deploy):strategy_triggered 完整路径
+  - 新建 agent/loops/notify_loop.py(460+ 行)NotifyLoop.process(event, mode, dry_run)
+  - 流程:safety pre-check → RiskManager 16 项 → T17 仓位 → mode 分支 → T13 push
+  - 4 mode 分支:paper(T07)/ notify(只 push)/ auto+HITL(T09 创建 approval)/ auto-direct(v0 fallback notify-only,KMS 真接 W7-W12)
+  - HITL 4 条触发(amount≥$200 / portfolio≥30% / 24h≥5笔 / conviction<0.6)
+  - blocked 路径仍发拦截通知(对齐"safety/risk 任一 BLOCK 不静默")
+  - 加 POST /api/agent/notify/trigger 手动触发(支持 dry_run)
+  - **18 单元测试全过**;服务器 dry_run 真接通(verdict=dry_run + position_usd=50 + latency 710ms)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

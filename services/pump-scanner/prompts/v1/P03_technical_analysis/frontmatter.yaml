@@ -1,0 +1,13 @@
+prompt_id: P03
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.2
+max_input_tokens: 6000
+max_output_tokens: 600
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  S01 technical-analysis 主 prompt:解读 calc_technical_indicators 返回的 RSI/MACD/MA/BB/ATR
+  关键词:技术指标 / RSI / MACD / 趋势 / 突破 / 支撑 / 阻力 / signal

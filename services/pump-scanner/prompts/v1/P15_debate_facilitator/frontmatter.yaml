@@ -1,0 +1,13 @@
+prompt_id: P15
+version: v1.0
+model: claude-sonnet-4-6
+temperature: 0.2
+max_input_tokens: 10000
+max_output_tokens: 800
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  L3 thesis debate Facilitator:听完 Bull/Bear 多轮辩论后裁决,输出最终调整方向。
+  关键词:debate / facilitator / 裁决 / 总结 / conviction adjust

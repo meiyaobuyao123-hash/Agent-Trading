@@ -1,0 +1,31 @@
+{
+  "prompt": "P09_review_engine_weekly",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P09", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P09",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "week_metrics_json": "{\"trades\":18,\"win_rate\":0.61}",
+        "prev_week_metrics_json": "{\"trades\":15,\"win_rate\":0.53}",
+        "week_insights_json": "[\"SOL 聪明钱稳\"]",
+        "regime_today": "NORMAL",
+        "regime_avg_week": "NORMAL",
+        "persona": "intermediate"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P09",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"persona": "newbie"},
+      "expected_unrendered": ["{{week_metrics_json}}", "{{regime_today}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P09", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P09", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P09", "expected_outcome": "version_select", "device_id": "dev-weekly-1", "expected_status": "draft"}
+  ]
+}

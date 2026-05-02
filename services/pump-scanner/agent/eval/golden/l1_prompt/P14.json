@@ -1,0 +1,31 @@
+{
+  "prompt": "P14_debate_bear",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P14", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P14",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "token_symbol": "NEW", "chain": "BSC",
+        "thesis_draft_json": "{\"direction\":\"bullish\",\"conviction\":0.55}",
+        "bull_arguments_json": "[\"a\",\"b\"]",
+        "evidence_json": "{\"onchain\":\"top10=72%\"}",
+        "regime": "NORMAL",
+        "debate_round": "1"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P14",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"chain": "BSC"},
+      "expected_unrendered": ["{{thesis_draft_json}}", "{{bull_arguments_json}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P14", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P14", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P14", "expected_outcome": "version_select", "device_id": "dev-bear-1", "expected_status": "draft"}
+  ]
+}

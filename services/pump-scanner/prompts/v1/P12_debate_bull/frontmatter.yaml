@@ -1,0 +1,13 @@
+prompt_id: P12
+version: v1.0
+model: claude-sonnet-4-6
+temperature: 0.4
+max_input_tokens: 8000
+max_output_tokens: 800
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  L3 thesis debate Bull 角色:从看多角度强化 thesis 的支持论据。
+  关键词:debate / bull / 看多 / L3 / thesis 强化

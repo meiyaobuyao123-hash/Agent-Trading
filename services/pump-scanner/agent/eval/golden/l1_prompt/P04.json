@@ -1,0 +1,31 @@
+{
+  "prompt": "P04_sentiment_analysis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P04", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P04",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "token_symbol": "TRUMP", "token_address": "0xabc",
+        "kol_signals_json": "[{\"kol\":\"@a\",\"sent\":0.85}]",
+        "twitter_mentions_24h": "4200",
+        "twitter_mentions_growth_pct": "120",
+        "discord_heat": "high",
+        "regime": "NORMAL"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P04",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"token_symbol": "TRUMP"},
+      "expected_unrendered": ["{{kol_signals_json}}", "{{discord_heat}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P04", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P04", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P04", "expected_outcome": "version_select", "device_id": "dev-sent-1", "expected_status": "draft"}
+  ]
+}

@@ -1,0 +1,13 @@
+prompt_id: P08
+version: v1.0
+model: claude-sonnet-4-6
+temperature: 0.2
+max_input_tokens: 6000
+max_output_tokens: 800
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: pm-lead
+description: |
+  S05 trade-strategy-builder:把现成 paper 策略升级成 notify/auto 模式。
+  关键词:模式晋升 / paper to notify / paper to auto / 真金 / 一键交易

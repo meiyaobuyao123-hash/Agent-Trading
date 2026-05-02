@@ -1,0 +1,13 @@
+prompt_id: P16
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.3
+max_input_tokens: 3000
+max_output_tokens: 200
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: pm-lead
+description: |
+  Notify Loop 推送文案合成:把 thesis + 触发条件 + 风险卡片浓缩成 80 字推送 body。
+  关键词:notify / 推送 / 文案 / push compose / strategy_triggered

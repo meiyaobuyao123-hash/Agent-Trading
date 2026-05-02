@@ -1,0 +1,13 @@
+prompt_id: P17
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.0
+max_input_tokens: 4000
+max_output_tokens: 400
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: safety-lead
+description: |
+  Output filter LLM-judge:对 LLM 输出做 C4 复杂违规检测(blocklist regex 漏掉的语义级违规)。
+  关键词:abuse / safety / 滥用检测 / C4 / LLM judge / output filter

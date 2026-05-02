@@ -1,0 +1,31 @@
+{
+  "prompt": "P16_notify_compose",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P16", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P16",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "token_symbol": "TRUMP", "chain": "SOL",
+        "thesis_json": "{\"direction\":\"bullish\",\"conviction\":0.72}",
+        "trigger_summary": "smart_money 净流 +$80k",
+        "amount_usd": "100",
+        "regime": "NORMAL",
+        "persona": "intermediate"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P16",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"chain": "SOL"},
+      "expected_unrendered": ["{{thesis_json}}", "{{persona}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P16", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P16", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P16", "expected_outcome": "version_select", "device_id": "dev-notify-1", "expected_status": "draft"}
+  ]
+}

@@ -1,0 +1,13 @@
+prompt_id: P14
+version: v1.0
+model: claude-sonnet-4-6
+temperature: 0.4
+max_input_tokens: 8000
+max_output_tokens: 800
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  L3 thesis debate Bear 角色:挑战 thesis,从看空角度找漏洞和反例。
+  关键词:debate / bear / 看空 / L3 / thesis 反驳 / red team

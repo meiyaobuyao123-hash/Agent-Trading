@@ -1,0 +1,32 @@
+{
+  "prompt": "P05_onchain_analysis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P05", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P05",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "token_symbol": "TRUMP", "token_address": "0xabc", "chain": "SOL",
+        "top10_holder_pct": "45",
+        "smart_money_net_usd_24h": "82000",
+        "elite_wallets_24h": "5",
+        "liquidity_usd": "120000",
+        "volume_24h_usd": "850000",
+        "regime": "NORMAL"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P05",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"chain": "SOL"},
+      "expected_unrendered": ["{{liquidity_usd}}", "{{top10_holder_pct}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P05", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P05", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P05", "expected_outcome": "version_select", "device_id": "dev-onchain-1", "expected_status": "draft"}
+  ]
+}

@@ -1,0 +1,13 @@
+prompt_id: P07
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.2
+max_input_tokens: 3000
+max_output_tokens: 300
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: pm-lead
+description: |
+  共创第 6 阶段:confirming — 用户已看完 dry_run,你只确认意图并准备保存。
+  关键词:confirming / 保存 / save_strategy / 共创最后一步

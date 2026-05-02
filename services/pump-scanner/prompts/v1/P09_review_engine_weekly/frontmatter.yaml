@@ -1,0 +1,13 @@
+prompt_id: P09
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.3
+max_input_tokens: 10000
+max_output_tokens: 1500
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  S07 review-engine 周报版:7 天 metrics + 趋势对比 + 规则化提议聚合。
+  关键词:review / 复盘 / weekly / trend / 周报

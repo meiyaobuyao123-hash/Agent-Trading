@@ -1,0 +1,30 @@
+{
+  "prompt": "P08_trade_strategy_builder",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P08", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P08",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "strategy_id": "s-1",
+        "current_mode": "paper",
+        "target_mode": "notify",
+        "paper_perf_json": "{\"closed_trades\":42,\"win_rate\":0.59}",
+        "user_message": "升级"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P08",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"strategy_id": "s-1"},
+      "expected_unrendered": ["{{paper_perf_json}}", "{{user_message}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P08", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P08", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P08", "expected_outcome": "version_select", "device_id": "dev-trade-1", "expected_status": "draft"}
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "prompt": "P12_debate_bull",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {"name": "metadata_ok", "prompt_id": "P12", "expected_outcome": "metadata_ok"},
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P12",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "token_symbol": "TRUMP", "chain": "SOL",
+        "thesis_draft_json": "{\"direction\":\"bullish\",\"conviction\":0.6}",
+        "evidence_json": "{\"tech\":\"...\"}",
+        "regime": "NORMAL",
+        "debate_round": "1"
+      }
+    },
+    {
+      "name": "render_missing_vars",
+      "prompt_id": "P12",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"token_symbol": "TRUMP"},
+      "expected_unrendered": ["{{thesis_draft_json}}", "{{evidence_json}}"]
+    },
+    {"name": "examples_safe", "prompt_id": "P12", "expected_outcome": "examples_safe"},
+    {"name": "examples_at_least_3", "prompt_id": "P12", "expected_outcome": "examples_count_min", "min_examples": 3},
+    {"name": "version_select_draft", "prompt_id": "P12", "expected_outcome": "version_select", "device_id": "dev-bull-1", "expected_status": "draft"}
+  ]
+}

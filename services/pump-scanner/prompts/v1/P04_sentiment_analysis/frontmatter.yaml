@@ -1,0 +1,13 @@
+prompt_id: P04
+version: v1.0
+model: claude-haiku-4-5-20251001
+temperature: 0.3
+max_input_tokens: 5000
+max_output_tokens: 500
+cache_at_end: true
+status: draft
+rollout_pct: 0
+owner: agent-team
+description: |
+  S02 sentiment-analysis 主 prompt:解读 KOL 推文/Twitter/Discord 情绪信号。
+  关键词:KOL / 情绪 / Twitter / 社群 / sentiment / hype

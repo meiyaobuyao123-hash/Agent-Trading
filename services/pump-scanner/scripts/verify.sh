@@ -73,6 +73,7 @@ if [ "$RUN_TESTS" = true ]; then
       tests/test_eval_judge_runner.py \
       tests/test_eval_run_all.py \
       tests/test_input_filter.py \
+      tests/test_rollout_gate.py \
       -q --tb=line; then
     echo "❌ self-tests failed"
     EXIT_CODE=1

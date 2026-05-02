@@ -374,6 +374,17 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - services/pump-scanner/scripts/verify.sh — 本地 mirror,Usage:`./scripts/verify.sh [--full | --tests-only | --eval-only]`
   - 实测 verify.sh:9 suite < 1s + 343 tests / 3.5s 全过 → ✅
   - **CI gate 接通,任何 PR 自动 verify;本地 verify.sh 等同 CI**
+- ✅ **W3 D5+ rollout_gate + Beta 灰度 runbook**(commit `6e13550`):Beta 准备
+  - agent/rollout_gate.py(120 行)— is_in_rollout(device, feature, pct) deterministic 分桶
+  - 算法:bucket = sha1(device_id + ":" + feature) % 100;命中 bucket < pct
+  - 关键不变量:rollout_pct 升 → 旧用户不掉线(no flip-flop)
+  - 7 feature gate:agent_v1 主门 + 5 子(thesis_l3/auto/kms/llm_judge/debate)+ 2 安全 100%
+  - empty device → bucket=99(防 anonymous 进 canary);unknown feature → 0(fail-safe)
+  - docs/runbook/beta-rollout.md(250 行)— 三阶段 5%→25%→GA + 准入门槛 + rollback trigger P0/1/2/3 SLA + dashboard 必看 10 项 + checklist
+  - 23 self-tests(配置健全 + bucket determinism + is_in_rollout 7 路径 + 升 pct no-flip-flop)
+  - 加 verify.sh + eval-gate.yml(366 tests)
+  - pytest 全量 1167/1170(+22)
+  - **Stage 0 (initial),等准入 ✓ 后改 DEFAULT_ROLLOUT_PCT["agent_v1"] = 5 启动 Canary**
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

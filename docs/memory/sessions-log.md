@@ -3888,3 +3888,69 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 6. **GitHub repo secrets 配置** — 给 CI 注入 anthropic key 等(真 LLM eval 启用时)
 7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana
 8. **Slack/email 告警** — nightly hard gate fail 时 ping
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 33 — rollout_gate + Beta 灰度 runbook(Beta 准备)
+
+### 做了什么(commit `6e13550`)
+
+**A. agent/rollout_gate.py(120 行)**:
+- is_in_rollout(device_id, feature, rollout_pct) → bool 快速判定
+- decide(...) → RolloutDecision(含 bucket 数,便于 audit log)
+- get_rollout_pct / list_features
+- _bucket = sha1(device_id + ":" + feature) % 100 — deterministic
+- **关键不变量**:rollout_pct 升 → 旧用户不掉线(no flip-flop)
+- **DEFAULT_ROLLOUT_PCT 7 个 feature gate**:
+  - agent_v1 = 0(主门待 sign-off)
+  - 5 子 feature(thesis_l3 / auto_mode / kms_signing / real_llm_judge / l3_debate_full)= 0
+  - input_filter / safety_engine = 100(已 v1.0 全开)
+- empty device_id → bucket=99(防 anonymous 进 canary)
+- unknown feature → 默认 0(fail-safe)
+
+**B. docs/runbook/beta-rollout.md(250 行)**:
+- TL;DR + 三阶段(Canary 5% 1w / Beta 25% 2w / GA)
+- §1 怎么改 rollout_pct(编辑 + PR 流程 + 紧急 rollback)
+- §2 三阶段详细(每阶段准入 + 观察期 + 红线 rollback trigger 表)
+- §3 Rollback trigger 优先级 P0/P1/P2/P3 SLA
+- §4 监控 dashboard 必看 10 项
+- §5 上线前 checklist(给 release manager)
+- §6 历史 rollout 记录表(每次推进追加一行)
+- §7 故障案例 / §8 相关文档
+
+**C. 测试 23 用例**(tests/test_rollout_gate.py):
+- DEFAULT_ROLLOUT_PCT 配置健全 5
+- _bucket determinism 5(同输入永相同 / 不同 device 散布 / feature 独立 / empty=99)
+- is_in_rollout 7(0 / 100 / -1 用 default / unknown / 50% 分布 / 5% 分布 / 升 pct no-flip-flop)
+- decide / get_rollout_pct / list_features 6
+- 23/23 全过
+
+**D. 加入 verify.sh + eval-gate.yml**:
+- verify.sh + CI 都加 test_rollout_gate.py
+- 366 tests / 3.3s 全过(从 343)
+
+### Phase 4 真闭环 + Beta 准备 ✅
+
+15 轮 autonomous-loop(续 19-33)总产出:
+1. 9 eval suite framework(L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE /
+   L4 Trajectory / Launch Criteria / Quality Rubric / Judge Calibration)
+2. 760+132 golden case + 100 calibration sample
+3. ~366 self-tests
+4. input_filter v1.0(SEV-0 真覆盖,5 attack class regex)
+5. **rollout_gate v1.0**(deterministic 分桶,no-flip-flop,7 feature gate)
+6. run_all.py 一键聚合(< 1s)
+7. eval-summary.md(Phase 4 sign-off snapshot)
+8. eval-runbook.md(Ops 实操)
+9. **beta-rollout.md(三阶段灰度 + rollback)**
+10. .github/workflows/eval-gate.yml(CI gate)
+11. scripts/verify.sh(本地 mirror)
+12. 54 commits / pytest 1167/1170
+
+### 下次接手候选
+1. **改 DEFAULT_ROLLOUT_PCT["agent_v1"] = 5 启动 Canary** — 等准入门槛 ✓
+2. **17 Launch criteria sign-off 真推进** — legal 12 关键路径
+3. **真 LLM judge 接通**(W17-W22)— anthropic + 100 人工标注
+4. **KMS 实施** — 开 auto_mode 前置(W7-W12)
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ 外部 API
+6. **rollout_gate 接到主流程** — chat_loop / thesis_loop / notify_loop 加 is_in_rollout 分支
+7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana

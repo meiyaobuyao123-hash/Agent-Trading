@@ -1616,6 +1616,57 @@ class CocreationChatRequest(BaseModel):
     skill_name: str = Field("signal-strategy-builder")
 
 
+class ScoutEvaluateRequest(BaseModel):
+    """手动触发 ScoutLoop 评估一个信号(测试 / Scout 接入桥)。"""
+    signal_payload: Dict[str, Any] = Field(..., description="数据载荷(对齐 DataEvent.data)")
+    source: str = Field(..., min_length=1, description="hot_coin/pump/kol/smart_money/...")
+    chain: Optional[str] = None
+    token_address: Optional[str] = None
+    token_name: Optional[str] = None
+    mode_override: Optional[str] = None
+    dry_run: bool = True
+    max_dispatch: int = Field(5, ge=1, le=20)
+
+
+@router.post("/scout/evaluate")
+async def scout_evaluate(
+    req: ScoutEvaluateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """手动触发 ScoutLoop:给一个信号 → 返回命中策略 + NotifyLoop verdicts。
+
+    生产环境的 EventBus 自动订阅由 main.py / event_listener.py 负责。
+    本端点用于测试 / 调试 / Scout 路径手动触发。
+    默认 dry_run=true(避免误触发真金)。
+    """
+    try:
+        from agent.loops.scout_loop import get_scout_loop
+        loop = get_scout_loop()
+        result = await loop.process(
+            signal_payload=req.signal_payload,
+            source=req.source,
+            chain=req.chain,
+            token_address=req.token_address,
+            token_name=req.token_name,
+            mode_override=req.mode_override,
+            dry_run=req.dry_run,
+            max_dispatch=req.max_dispatch,
+        )
+        return {
+            "ok": result.ok, "source": result.source,
+            "strategies_evaluated": result.strategies_evaluated,
+            "triggered": result.triggered,
+            "dispatched": result.dispatched,
+            "skipped_daily_limit": result.skipped_daily_limit,
+            "notify_results": result.notify_results,
+            "error": result.error,
+            "latency_ms": result.latency_ms,
+        }
+    except Exception as e:
+        log.warning("scout evaluate failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
 class NotifyTriggerRequest(BaseModel):
     """手动触发 notify_loop(测试 / Scout 接入桥)。"""
     event: Dict[str, Any] = Field(...,

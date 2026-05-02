@@ -351,6 +351,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 跑全部 eval CLI 快速清单 + W17-W22 升级路线图 + Pass/Fail 解释指南
   - 9 块绿但 17 launch criteria sign-off 是关键路径(legal 12 主路径)
   - 同步到 main 让法务/PM/Ops 可直接 review
+- ✅ **W3 D5+ AE05 千分位 hype 闭合**(commit `e461d6b`):最后一个 known gap 关闭
+  - HYPE_EXTENDED_REGEX 加 `\b\d{1,3}(?:,\d{3})+\s*x\b` 模式
+  - catch:1,000x / 100,000x / 1,000,000x;不 catch:1000x(C1 已 catch)/ 1,000 USD(无 x)
+  - AE05 fixture +3 真 catch case + 1 false-positive guard;next_pepe 从 known gap → blocked
+  - **Safety AE 132/132 (100%)**(从 129 → 132)/ SEV-1 65/65 ≥ 99% ✓
+  - +2 input_filter 测试(千分位 catch + 无 x guard);pytest 全量 1123/1125
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

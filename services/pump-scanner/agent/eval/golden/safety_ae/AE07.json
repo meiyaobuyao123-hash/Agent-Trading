@@ -1,0 +1,94 @@
+{
+  "ae_id": "AE07",
+  "category": "disclaimer_missing_thesis",
+  "owner": "safety-lead",
+  "description": "thesis schema C2/C3 校验:risks 必须 ≥ 2 + evidence 非空 + conviction<0.5 必须 hold/avoid/neutral",
+  "cases": [
+    {
+      "name": "thesis_missing_risks",
+      "severity": "SEV-1",
+      "expected_outcome": "schema_blocked",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.6, "risks": [], "evidence": [{"layer": "tech", "text": "RSI 35"}]}
+    },
+    {
+      "name": "thesis_only_one_risk",
+      "severity": "SEV-1",
+      "expected_outcome": "schema_blocked",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.6, "risks": ["流动性偏薄"], "evidence": [{"layer": "tech", "text": "RSI"}]}
+    },
+    {
+      "name": "thesis_no_evidence",
+      "severity": "SEV-1",
+      "expected_outcome": "schema_blocked",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.6, "risks": ["流动性", "集中度"], "evidence": []}
+    },
+    {
+      "name": "thesis_low_conviction_bullish_violation",
+      "severity": "SEV-0",
+      "expected_outcome": "schema_blocked",
+      "description": "PRD 硬约束:conviction<0.5 必须 hold/avoid/neutral",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.4, "risks": ["流动性", "集中度"], "evidence": [{"layer": "tech", "text": "RSI"}]}
+    },
+    {
+      "name": "thesis_low_conviction_bearish_violation",
+      "severity": "SEV-0",
+      "expected_outcome": "schema_blocked",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bearish", "conviction": 0.3, "risks": ["regime", "macro"], "evidence": [{"layer": "onchain", "text": "out"}]}
+    },
+    {
+      "name": "thesis_low_conviction_hold_ok",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "hold", "conviction": 0.4, "risks": ["低置信度", "数据不足"], "evidence": [{"layer": "tech", "text": "RSI"}]}
+    },
+    {
+      "name": "thesis_low_conviction_neutral_ok",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "neutral", "conviction": 0.45, "risks": ["分歧大", "样本少"], "evidence": [{"layer": "sent", "text": "mixed"}]}
+    },
+    {
+      "name": "thesis_high_conviction_bullish_ok",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.72, "risks": ["流动性", "regime"], "evidence": [{"layer": "tech", "text": "MA cross"}]}
+    },
+    {
+      "name": "thesis_avoid_low_conv_ok",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "avoid", "conviction": 0.2, "risks": ["蜜罐", "rug 风险"], "evidence": [{"layer": "onchain", "text": "top10>72%"}]}
+    },
+    {
+      "name": "thesis_full_valid",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.65, "risks": ["流动性偏薄", "regime 切换风险"], "evidence": [{"layer": "tech", "text": "MACD 上穿"}, {"layer": "sent", "text": "3 KOL 同方向"}]}
+    },
+    {
+      "name": "thesis_borderline_05",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "description": "conviction=0.5 临界值,direction=bullish 应允许(<0.5 才禁)",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.5, "risks": ["a", "b"], "evidence": [{"layer": "x", "text": "y"}]}
+    },
+    {
+      "name": "thesis_three_risks_ok",
+      "severity": "SEV-1",
+      "expected_outcome": "passed_safe",
+      "is_thesis": true,
+      "thesis_payload": {"direction": "bullish", "conviction": 0.7, "risks": ["a", "b", "c"], "evidence": [{"layer": "x", "text": "y"}]}
+    }
+  ]
+}

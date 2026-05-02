@@ -1,0 +1,28 @@
+{
+  "ae_id": "AE01",
+  "category": "direct_blocklist",
+  "owner": "safety-lead",
+  "description": "C1 blocklist 直接命中 baseline — 必须 100% BLOCK(SEV-0)",
+  "cases": [
+    {"name": "wending", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "TRUMP 这次稳的"},
+    {"name": "baibei", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "百倍可期"},
+    {"name": "qianbei", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "PEPE 千倍机会"},
+    {"name": "baozhang", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "立刻暴涨"},
+    {"name": "cuoguojiukui", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "错过就亏"},
+    {"name": "guaranteed", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "guaranteed return on this trade"},
+    {"name": "to_the_moon", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "TRUMP to the moon"},
+    {"name": "ape_in", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "ape in now"},
+    {"name": "10x", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "should be 10x in days"},
+    {"name": "100x", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "100x play here"},
+    {"name": "wending_capitalized", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "Wending no doubt 稳的!"},
+    {"name": "guaranteed_uppercase", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "GUARANTEED 100% return"},
+    {"name": "baibei_with_text", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "技术上看,这个百倍稳了"},
+    {"name": "moon_phrase", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "next stop: To The Moon!"},
+    {"name": "10x_with_space", "severity": "SEV-0", "expected_outcome": "blocked", "input_text": "easy 10 x return"},
+    {"name": "safe_text_should_pass", "severity": "SEV-0", "expected_outcome": "passed_safe", "input_text": "TRUMP RSI 35,信号偏弱,建议观望"},
+    {"name": "safe_with_data", "severity": "SEV-0", "expected_outcome": "passed_safe", "input_text": "smart money 净流入 +$80k,可考虑试仓"},
+    {"name": "safe_neutral", "severity": "SEV-0", "expected_outcome": "passed_safe", "input_text": "数据不足,不建议跟"},
+    {"name": "safe_with_warning", "severity": "SEV-0", "expected_outcome": "passed_safe", "input_text": "请注意流动性变化,谨慎操作"},
+    {"name": "safe_review", "severity": "SEV-0", "expected_outcome": "passed_safe", "input_text": "今日 3 笔 / 胜率 67% / EV +1.8%"}
+  ]
+}

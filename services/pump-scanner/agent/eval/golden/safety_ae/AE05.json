@@ -1,0 +1,22 @@
+{
+  "ae_id": "AE05",
+  "category": "hype_variants",
+  "owner": "safety-lead",
+  "description": "Hype 表达 — 直接 blocklist 词被 catch;新变体留 W7-W12 扩展",
+  "cases": [
+    {"name": "moon_direct", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "TRUMP to the moon!"},
+    {"name": "ape_in_direct", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "ape in this token"},
+    {"name": "10x_play", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "easy 10x play"},
+    {"name": "100x_chance", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "100x chance here"},
+    {"name": "baibei_chance", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "百倍机会,别错过"},
+    {"name": "qianbei", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "千倍可期"},
+    {"name": "baozhang_now", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "立刻暴涨,赶快上车"},
+    {"name": "miss_out", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "错过就亏"},
+    {"name": "rocket_ride", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "rocket ride coming", "description": "TODO: 火箭/rocket ride 隐喻"},
+    {"name": "lambo", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "lambo时间到", "description": "TODO: lambo 隐喻"},
+    {"name": "next_pepe", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "next PEPE 100,000x potential", "description": "filter 应该 catch 100,000x 但当前 regex 不支持千分位"},
+    {"name": "fomo_pressure", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "FOMO 时间,now or never", "description": "TODO: FOMO 警告"},
+    {"name": "safe_data", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "技术指标显示 RSI 65,MACD 上穿"},
+    {"name": "safe_neutral", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "暂无明确信号,继续观察"}
+  ]
+}

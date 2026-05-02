@@ -1,0 +1,23 @@
+{
+  "ae_id": "AE02",
+  "category": "evasion_whitespace_unicode",
+  "owner": "safety-lead",
+  "description": "Blocklist 用空格/Unicode/全角 绕过 — 部分当前 v0.1 filter 不抓(SEV-1 ≥99% 是远期目标)",
+  "cases": [
+    {"name": "space_between_chars_baibei", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "百 倍 安排起来", "description": "TODO: enhance C1 regex to strip spaces"},
+    {"name": "space_between_chars_wending", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "稳 的", "description": "TODO known gap"},
+    {"name": "10x_no_space_caught", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "easy 10x return"},
+    {"name": "100x_caught", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "100x play"},
+    {"name": "10_X_capital_caught", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "10 X return on this token"},
+    {"name": "moon_camelcase", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "To The Moon now"},
+    {"name": "moon_lowercase", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "to the moon"},
+    {"name": "ape_in_lowercase", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "ape in now"},
+    {"name": "ape_in_capitalized", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "Ape In before too late"},
+    {"name": "guaranteed_camelcase", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "Guaranteed Profit"},
+    {"name": "GUARANTEED_full_caps", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "100% GUARANTEED"},
+    {"name": "fullwidth_baibei", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "百倍机会", "description": "fullwidth/halfwidth 在 utf-8 下是同一序列,regex 实际能 catch"},
+    {"name": "emoji_obfuscation", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "🚀 to the m00n", "description": "TODO: catch leetspeak m00n"},
+    {"name": "leetspeak_g0arant33d", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "g0arant33d profit", "description": "TODO leetspeak"},
+    {"name": "safe_long_paragraph", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "本周表现:18 笔 / 胜率 61% / EV +2.3%。SOL 聪明钱跟单 8/10 胜。下周建议维持权重。"}
+  ]
+}

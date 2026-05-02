@@ -2668,3 +2668,89 @@ $ journalctl -u pump-scanner | grep "Added job.*WAL"
 4. **Eval golden 1660 条** L1-L4
 5. **KMS AwsKmsProvider** — 需 AWS 账号
 6. **Cost guard 真触发** — cost_guard.py 已存,接 ChatLoop / ThesisLoop
+
+---
+
+## 会话 11 续 15(autonomous-loop:Cost Guard,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十二轮
+
+### 实际产出(commit `05aa5a0` deploy)
+
+**Phase 0 CB04 真实施 — LLM 月预算降级**
+
+agent/cost_guard.py(220 行,从占位 → 完整真实施):
+- 配置(env 可覆盖):MONTHLY_BUDGET_USD = $1500/月(@ 100 DAU)
+- 5 级 LEVEL_THRESHOLDS:
+  * NORMAL < 70%
+  * SOFT_DEGRADE 70-85%(Opus → Sonnet)
+  * HARD_DEGRADE 85-95%(全 Sonnet,二次降到 Haiku)
+  * EMERGENCY 95-100%(L3 拒新案;L1/L2 强 Haiku)
+  * HARD_STOP 100-150%(全拒新 LLM)
+  * BLOCKED >= 150%(全局 BLOCKED 待人工)
+- MODEL_DOWNGRADES 链:opus → sonnet → haiku
+- CostGuard.refresh(force):
+  * SELECT SUM(cost_usd) FROM prompt_invocations WHERE ts >= 当月初 (UTC)
+  * 60s TTL 缓存(避免每次 LLM 调都查 PG)
+  * DB 失败 swallow → 保持上次 status(避免 PG 抖动让 cost guard 报"无成本")
+- CostGuard.check_before_call(intended_model, intended_level):
+  返 (allowed, actual_model, reason)
+  根据 level 自动:不变 / 单跳降级 / 双跳降级 / 强制 haiku / 全拒
+- CostGuard.model_for(sync 版本)+ can_chat / can_run_l3
+- set_monthly_budget / disable / enable(测试 + Admin Kill Switch 用)
+
+接入 3 个 LLM 调用站点:
+1. **agent/loops/chat_loop.py._invoke_llm** — cost_guard blocked → fallback rule_engine
+2. **agent/loops/thesis_loop.py._invoke_p02** — cost_guard blocked → 返 None(降级 L1)
+3. **agent/review_engine.py._make_summary_with_llm** — cost_guard blocked → fallback rule_engine
+
+每个站点:check 失败 swallow / 不抛错 / 不阻断主路径
+
+### 测试 (tests/test_cost_guard.py — 28 cases)
+- _level_for_pct 6 个边界(NORMAL/SOFT/HARD/EMERGENCY/HARD_STOP/BLOCKED)
+- refresh:正确算 pct / 缓存 TTL 命中 / DB 失败保旧 status (3)
+- check_before_call:NORMAL pass / SOFT opus→sonnet / HARD 双跳 /
+  EMERGENCY 拒 L3 / EMERGENCY 强制 haiku / HARD_STOP 拒 / BLOCKED 拒 /
+  disabled 永远 pass (8)
+- model_for sync:NORMAL / SOFT / EMERGENCY / HARD_STOP raise (4)
+- can_chat / can_run_l3 各档 (4)
+- singleton + MODEL_DOWNGRADES + LEVEL_THRESHOLDS sanity (3)
+
+**28/28 PASSED**;**累计本会话 327+28=355 后端测试全过**
+
+### 服务器实测
+```
+POST /api/agent/cocreation/chat {"message":"测试 cost guard 链路"}
+→ {ok:true, source:"llm",
+   assistant: "明白。cost guard 是防止连续亏损吧?想在哪条链测 — SOL 还是 ETH?"}
+```
+LLM 路径仍正常工作,cost_guard 透明检查通过(当前预算占用 < 70%)。
+
+### Phase 0 完成度
+- safety_engine v0.3 ✅
+- pending_approvals 表 ✅
+- **Cost 熔断器 CB04 ✅** ← 本次完成
+- KMS ⏸(需 AWS 账号,W7-W12)
+
+### Phase 进度
+- Phase 0:safety ✅ / pending_approvals ✅ / **Cost CB04 ✅** / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**5/5 Loop ✅** / **review_engine v2 LLM ✅** /
+  **6/18 Prompt + Loader ✅** / **4 cron ✅** / Skill SKILL.md ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话总计
+- 后端 Python:**355 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 379 新测试,100% PASSED**
+- 33 commits 全部 deploy
+
+### 下次接手候选
+1. **Skill SKILL.md 化(Anthropic Skill 格式)** — S01-S08 把 prompts/v1/Pxx/ 升级到 SKILL.md
+2. **L3 thesis 真 debate** — debate.py 已存,接 thesis_loop
+3. **剩余 4 Tool**(T01/T02/T03/T08) — 需外部 API + KMS
+4. **Eval golden 1660 条** L1-L4
+5. **KMS AwsKmsProvider** — 需 AWS 账号
+6. **Skill loader.py + Progressive Disclosure** — S08+S01-03+S07 always loaded;S04/S05 lazy

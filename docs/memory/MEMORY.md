@@ -229,6 +229,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - main.py 加 memory_wal_flush(10s)+ memory_wal_retry(30s)2 cron
   - **20 单元测试全过**;服务器 2 cron 注册 OK
   - **Phase 1 Memory 4 层升级完成度:评分公式 ✅ + 5 条硬晋升 ✅ + JSON-diff dedupe ✅ + WAL 真接入 ✅**
+- ✅ **W3 D5+ Cost Guard 真实施**(commit `05aa5a0` deploy):Phase 0 CB04 完成 — LLM 月预算降级
+  - agent/cost_guard.py 完整重写(占位 → 220 行真实施)
+  - 5 级降级:NORMAL(<70%) / SOFT(opus→sonnet) / HARD(双跳到 haiku) / EMERGENCY(L3 拒+L2 强 haiku) / HARD_STOP(全拒) / BLOCKED(>=150%)
+  - check_before_call:LLM 调用前查 prompt_invocations 当月 SUM(60s 缓存),返 (allowed, actual_model, reason)
+  - 接入 chat_loop / thesis_loop / review_engine 三个 LLM 调用站,blocked → fallback rule_engine
+  - **28 单元测试全过**;服务器实测 chat 走 LLM(预算 <70%)正常 source=llm + Claude 真澄清
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

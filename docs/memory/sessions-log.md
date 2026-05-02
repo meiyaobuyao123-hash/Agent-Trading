@@ -3471,3 +3471,76 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 4. **千分位 hype 扩展** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x` 模式
 5. **C4 LLM-judge async** — persona / data fabrication 用 LLM 异步采样判
 6. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 26 — Launch Criteria 62 项分类清单(Phase 4 第七块)
+
+### 做了什么(commit `98f0072`)
+
+**A. agent/eval/launch_runner.py(~390 行)**:
+- CriterionItem / CriterionResult / CategoryReport / LaunchEvalReport
+- 6 status enum:
+  - PASS:automated_pass / signed_off / not_applicable
+  - FAIL:automated_fail / pending_signoff / blocked
+- 12 个 check_fn:
+  - file_exists / module_importable / attr_exists(基础)
+  - tool_count / skill_count / prompt_count(数量)
+  - safety_engine_loaded(30 HR + 13 CB + 5 C 全在)
+  - main_cron_id / route_registered(infra)
+  - safety_ae_severity / l4_trajectory_threshold(交叉 eval)
+  - input_filter_classes(5 attack class regex 全在)
+- safety_ae / l4_trajectory 检查改同步遍历 fixture(避免 asyncio 嵌套)
+- per-category report;all_categories_100 判定;CLI exit code on != 100%
+
+**B. 6 category fixture(62 criteria)**:
+- tech (12)     — safety_engine 30/13/5 / Tool ≥13 / 5 Loop loadable / 7 Skill /
+  18 Prompt / 独立 uvicorn / Redis / input_filter
+- product (7)   — 6 Flutter 文件(thesis_card / hitl_page / cocreation_stepper /
+  review_page / memory_page / deep_link_router)+ NPS signoff
+- safety (14)   — safety_engine + input_filter + output_filter + 4 migration +
+  Kill Switch route + cb_monitor + global_state + 3 SEV 门槛 + KMS/red team manual
+- legal (12)    — 全 manual sign-off(CN/US/EU disclaimer / ToS / Privacy / KYC/AML /
+  third party / Anthropic / OSS / App Store / data retention / 法务最终签字)
+- cost_ops (12) — cost_guard / db_cleanup.run_local_pg_cleanup / api_server / Redis /
+  4 cron / migration / eval runners / runbook / monthly budget(Beta blocked)
+- hitl (5)      — T09 + 3 routes + Flutter page + biometric drill(Beta blocked)
+
+**Launch Criteria 当前快照**:
+- **45/62 ready (72.6%)**
+- Tech 12/12 (100%) ✅
+- Safety 12/14 (85.7%) — 2 blocked(KMS / red team drill)
+- Cost/Ops 11/12 (91.7%) — 1 blocked(monthly budget Beta)
+- Product 6/7 (85.7%) — 1 blocked(NPS Beta)
+- HITL 4/5 (80%) — 1 blocked(biometric drill)
+- Legal 0/12 (0%) — 12 manual 全等签字(GA 前最后一闸)
+- 17 blocked 全是显式 milestone-gated;**框架职责是显示 punch list**
+
+**C. 测试**(tests/test_eval_launch_runner.py 35 用例):
+- status enum partition(3)/ Report dataclass 含 all_categories_100(6)/
+  6 check_fn 真测(file/import/attr/tool/skill/safety_engine/input_filter)/
+  _run_one_criterion 7 status 路径(automated pass/fail/manual pending/signed_off/blocked/N/A/unknown)/
+  golden loader(2)/ list_categories(1)/
+  端到端 5(loads 62 + tech all pass + legal all pending + filter + breakdown)/
+  CHECK_FN_REGISTRY 完整性(1)
+- 35/35 全过
+
+### Phase 4 完成度(全 7 块完成)
+- L1 Tool 13/13 ✅ + L2 Skill 7/7 ✅ + L1 Prompt 18/18 ✅ + L3 Chain 5/5 ✅ +
+  Safety AE 10/10 ✅ + L4 Trajectory 4/4 ✅ + **Launch Criteria 框架 6/6 cat ✅**
+- 累计 8 eval suite golden **620 case 100% 真覆盖**
+- 8 eval suite 联跑 249/249
+
+### 累计本会话总计
+- 本轮新增:框架 1 + 6 fixture / 62 criteria + 35 tests
+- pytest 全量 **1051/1053**(+35,2 pre-existing failures 无关)
+- 47 commits 累计 deploy
+
+### 下次接手候选(GA 收尾)
+1. **Quality Rubric 5 维评分骨架** — Relevance / Reasoning / Actionability / Risk / Calibration
+   (rubric_runner 静态契约 + 5 维 weights;真 LLM-judge 留 W17-W22)
+2. **LLM-as-judge 冷启动** — 100 条人工标注 + Pearson≥0.7
+3. **千分位 hype 扩展** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x` 模式
+4. **C4 LLM-judge async** — persona / data fabrication 异步采样
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
+6. **Launch criteria 实际 sign-off** — 17 blocked 项逐个推进(legal 12 是关键路径)

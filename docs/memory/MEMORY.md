@@ -311,6 +311,18 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - **Phase 4 6 块全 100% 真覆盖**:L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5 + Safety AE 10/10 + **L4 Trajectory 4/4 ✅**
   - 累计 7 eval suite golden **558 case 全 100% 真覆盖**
   - 剩 Quality Rubric 5 维评分 / LLM-as-judge 100 冷启动 / 62 Launch Criteria
+- ✅ **W3 D5+ Launch Criteria 框架 + 62 项分类清单**(commit `98f0072`):Phase 4 第七块完成
+  - agent/eval/launch_runner.py(390 行)+ 6 category fixture(62 criteria)
+  - 6 status enum:automated_pass/signed_off/not_applicable=PASS;automated_fail/pending_signoff/blocked=FAIL
+  - 12 个 check_fn(file_exists/module_importable/attr_exists/tool_count/safety_engine_loaded/skill_count/prompt_count/main_cron_id/route_registered/safety_ae_severity/l4_trajectory_threshold/input_filter_classes)
+  - safety/l4 检查改同步遍历 fixture(避免 asyncio 嵌套)
+  - 6 category:tech(12)/ product(7)/ safety(14)/ legal(12)/ cost_ops(12)/ hitl(5) = 62
+  - **当前快照 45/62 (72.6%)**:Tech 12/12 100% ✅ / Safety 12/14 / Cost-Ops 11/12 / Product 6/7 / HITL 4/5 / Legal 0/12
+  - 17 blocked 全是显式 milestone-gated(12 legal signoff / 2 safety KMS+red team / 1 product Beta NPS / 1 cost monthly budget / 1 hitl biometric drill)
+  - **框架职责是显示 punch list**(不是粉饰),GA 时 100% 是目标,今日 72.6% 是真实 baseline
+  - 35 self-tests;8 eval suite 联跑 249/249;pytest 全量 1051/1053(+35)
+  - **Phase 4 7 块全完成 ✅**:L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE / L4 Trajectory / **Launch Criteria 框架**
+  - 累计 8 eval suite golden 620 case 100% 真覆盖
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

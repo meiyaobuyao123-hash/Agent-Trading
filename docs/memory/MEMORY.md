@@ -346,6 +346,11 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 24 self-tests;**10 eval suite 联跑 319/319**;pytest 全量 1121/1123(+25)
   - **诚实标注**:这是启发式 baseline(human ≈ judge + 小噪声),W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pearson 真值会下降(LLM vs 人主观本就有差异),0.7 门槛是真实考验
   - **Phase 4 9 块全完成 ✅**;累计 10 eval suite golden 760 case + 100 calibration sample
+- ✅ **W3 D5+ Phase 4 sign-off ready snapshot doc**(commit `0e80961`):docs/agent-pm/eval-summary.md
+  - TL;DR + 10 suite 分布表 + 各 suite 详细 + 上线门槛快照(17 punch list)
+  - 跑全部 eval CLI 快速清单 + W17-W22 升级路线图 + Pass/Fail 解释指南
+  - 9 块绿但 17 launch criteria sign-off 是关键路径(legal 12 主路径)
+  - 同步到 main 让法务/PM/Ops 可直接 review
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

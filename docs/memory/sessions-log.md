@@ -3656,3 +3656,59 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 4. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
 5. **真 LLM judge 接通** — W17-W22 anthropic API + 真 100 人工标注 calibration
 6. **Phase 4 收尾文档** — docs/agent-pm/eval-summary.md 总览(10 suite + 9 块完成)
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 29 — Phase 4 sign-off ready snapshot doc
+
+### 做了什么(commit `0e80961`)
+
+**A. docs/agent-pm/eval-summary.md(225 行)**:
+- TL;DR:Phase 4 9 块全完成 / 10 suite 760 case + 100 sample / 319 self-tests
+- §1 10 eval suite 分布表(name / 块 / cases / pass / CLI / status)
+- §2 各 suite 详细(规模 / 覆盖 / known gap):
+  - L1 Tool 13/140 / L2 Skill 7/44 / L1 Prompt 18/110 / L3 Chain 5/46 /
+    Safety AE 10/129 / L4 Trajectory 4/88 step / Launch 6/62 / Quality Rubric 4/40 /
+    Judge 100 sample
+- §3 上线门槛快照 + 17 Launch sign-off punch list:
+  - 12 Legal(L01-L12)关键路径 / S13 KMS / S14 red team / C12 budget /
+    P07 NPS / H05 biometric
+- §4 跑全部 eval CLI 快速清单
+- §5 W17-W22 升级路线图(baseline → GA target):
+  - Quality Rubric 60 → 80(LLM-judge)
+  - Judge Calibration 启发式 → 真 LLM judge + 100 人工标注
+  - Safety AE + LLM-judge C4 异步采样
+  - L2 Skill 静态契约 → 真执行 LLM cassette
+  - Launch 17 blocked → 0
+  - L4 Trajectory 静态 → 真多轮 cassette
+- §6 Pass/Fail 解释指南 — 框架层 100% 完整,可进入 Beta 流量发放
+- §7 Changelog / §8 相关文档交叉引用
+
+**B. 设计决策**:不修 launch_criteria fixture 加 eval-summary 引用条目
+(会破 62 spec 数量契约 + test_run_launch_suite_categories_breakdown 期望 tech=12)
+→ 文档独立存在,通过 §8 与其他 docs/agent-pm/* 交叉引用
+
+**C. 全部 9 eval suite 跑通 verification**:
+- l1_tool 140/140 / l2_skill 44/44 / l1_prompt 110/110 / l3_chain 46/46 /
+  safety_ae 129/129 / l4_trajectory 20/20+88/88 / launch 45/62(72.6% milestone-gated)/
+  quality_rubric 29/40(BAD 全 veto) / judge_calibration 10/10 dims passes
+
+### 累计本会话总计
+- 本轮新增:1 文档(225 行)
+- 50 commits 累计 deploy
+- pytest 全量保持 1121/1123(无新代码改动)
+
+### Phase 4 完整状态 ✅
+- L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5 +
+  Safety AE 10/10 + L4 Trajectory 4/4 + Launch Criteria 6/6 +
+  Quality Rubric 4/4 + Judge Calibration 100/100 +
+  **eval-summary.md sign-off ready ✅**
+- **可进入 Beta 流量发放(需 17 launch sign-off 推进 GA)**
+
+### 下次接手候选
+1. **17 Launch criteria sign-off 真推进** — legal 12 关键路径(找法务团队)
+2. **真 LLM judge 接通** — W17-W22 anthropic + 真 100 人工标注
+3. **千分位 hype 扩展** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x`
+4. **C4 LLM-judge async** — persona / data fabrication
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 外部 API + AWS 账号
+6. **Beta 灰度 5% 启动** — Phase 4 框架就位,可灰度发放收集真实指标

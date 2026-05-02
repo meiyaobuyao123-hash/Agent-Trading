@@ -132,11 +132,7 @@ class ThesisLoop:
                 latency_ms=int((time.monotonic() - t0) * 1000),
             )
 
-        # L2 / L3 → 调 P02
-        # L3 真实施(辩论)留 W7-W12,目前 fallback 到 L2
-        if chosen_level == "L3":
-            log.info("[thesis_loop] L3 fallback to L2 (debate impl pending W7-W12)")
-            chosen_level = "L2"
+        # L2 / L3 → 调 P02(W3 D5+ 续 16:L3 真实施 — debate)
         target_level = chosen_level
 
         thesis_json, llm_err, cost_usd, llm_tokens = await self._invoke_p02(
@@ -170,19 +166,37 @@ class ThesisLoop:
             token_symbol=token_symbol, level=target_level,
         )
 
+        # ── L3 真实施:Bull/Bear/Facilitator 辩论 ──────────────
+        debate_record: Optional[Dict[str, Any]] = None
+        debate_cost = 0.0
+        if target_level == "L3":
+            debate_result = await self._run_debate(
+                tech=tech, sent=sent, onc=onc, similar=similar,
+            )
+            if debate_result is not None:
+                debate_record = debate_result
+                cost_usd += debate_result.get("cost_usd", 0.0)
+                debate_cost = debate_result.get("cost_usd", 0.0)
+                # 用 facilitator 结论微调 conviction
+                normalized = self._adjust_with_debate(normalized, debate_result)
+
         latency_ms = int((time.monotonic() - t0) * 1000)
         tid = await self._persist_thesis(
             device_id, normalized, target_level,
             tech, sent, onc, similar,
             cost_usd=cost_usd, latency_ms=latency_ms,
-            tokens_used=llm_tokens,
+            tokens_used=llm_tokens, debate_record=debate_record,
         )
 
-        return ThesisResult(
+        result = ThesisResult(
             ok=True, thesis=normalized, thesis_id=tid,
             level=target_level, source="llm",
             cost_usd=cost_usd, latency_ms=latency_ms,
         )
+        if debate_record is not None:
+            result.extra["debate_record"] = debate_record
+            result.extra["debate_cost_usd"] = debate_cost
+        return result
 
     # ── helpers ──────────────────────────────────────────────
 
@@ -420,12 +434,127 @@ class ThesisLoop:
 
         return out
 
+    # ── L3 debate(W3 D5+ 续 16 真实施)───────────────────
+
+    async def _run_debate(
+        self, tech: Dict, sent: Dict, onc: Dict, similar: List[Dict],
+    ) -> Optional[Dict[str, Any]]:
+        """跑 Bull/Bear 5 轮辩论(R1 Bull → R1 Bear → R2 Bull → R2 Bear → Facilitator)。
+
+        cost_guard 检查通过才跑(L3 debate 比 P02 还贵 ~3-4 轮 sonnet)。
+        失败返 None(主路径继续用纯 P02 输出,不阻断)。
+        """
+        if not self._api_key:
+            return None
+
+        # cost_guard:L3 debate 比 P02 多 4 倍 token,EMERGENCY 时拒
+        try:
+            from agent.cost_guard import get_cost_guard
+            allowed, _, reason = await get_cost_guard().check_before_call(
+                intended_model=SONNET_MODEL_ID, intended_level="L3",
+            )
+            if not allowed:
+                log.info("[thesis_loop] L3 debate skipped by cost_guard: %s", reason)
+                return None
+        except Exception as e:
+            log.debug("[thesis_loop] cost_guard skipped for debate: %s", e)
+
+        try:
+            from agent.debate import DebateEngine
+            engine = DebateEngine(api_key=self._api_key)
+            reports = {
+                "technical": tech or {},
+                "sentiment": sent or {},
+                "onchain": onc or {},
+            }
+            memory_context = _summarize_similar_cases(similar)
+            debate = await engine.run_debate(reports=reports, memory_context=memory_context)
+        except Exception as e:
+            log.warning("[thesis_loop] debate run failed: %s", e)
+            return None
+
+        # 估算 cost:用 sonnet 价(debate 全 sonnet)
+        tokens = int(debate.get("tokens_used", 0) or 0)
+        cost = _estimate_cost_usd(SONNET_MODEL_ID, tokens // 2, tokens // 2)
+        debate["cost_usd"] = cost
+        return debate
+
+    def _adjust_with_debate(
+        self, thesis: Dict[str, Any], debate: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """用 facilitator 结论微调 thesis。
+
+        - winner=bull + confidence>0.7 → 保持 thesis(可微调 +0.05)
+        - winner=bear + confidence>0.7 + thesis.direction=bullish → 强制 neutral
+        - draw / confidence<0.5 → conviction × 0.85
+        - facilitator.action='hold' 强约束 → 强制 neutral
+
+        始终在 thesis.evidence 加一条 "debate_facilitator" 证据
+        始终在 thesis.risks 加一条来自 facilitator 的 risk(若有)
+        """
+        if not isinstance(debate, dict):
+            return thesis
+        conclusion = debate.get("conclusion") or {}
+        if not isinstance(conclusion, dict) or not conclusion:
+            # 无 conclusion(空 dict / 不是 dict)→ thesis 不动
+            return thesis
+
+        out = dict(thesis)
+        winner = (conclusion.get("winner") or "").lower()
+        confidence = float(conclusion.get("confidence") or 0.5)
+        action = (conclusion.get("action") or "").lower()
+        risk_text = conclusion.get("risk") or ""
+        reasoning = conclusion.get("reasoning") or ""
+
+        cur_dir = (out.get("direction") or "neutral").lower()
+        cur_conv = float(out.get("conviction") or 0)
+
+        # bull 强势 → 微调 conviction +0.05(clamp 1.0)
+        if winner == "bull" and confidence >= 0.7:
+            out["conviction"] = min(1.0, cur_conv + 0.05)
+        # bear 强势但 thesis 是 bullish → 强反转
+        elif winner == "bear" and confidence >= 0.7 and cur_dir == "bullish":
+            out["direction"] = "neutral"
+            out["conviction"] = max(0.0, cur_conv * 0.7)
+            if "辩论反转" not in (out.get("summary_30w") or ""):
+                out["summary_30w"] = ("辩论反转 — " + (out.get("summary_30w") or ""))[:60]
+        # draw / 低置信度 → 削弱 conviction
+        elif winner in ("draw", "") or confidence < 0.5:
+            out["conviction"] = max(0.0, cur_conv * 0.85)
+
+        # facilitator action='hold' 强约束
+        if action == "hold" and cur_dir not in ("hold", "neutral"):
+            out["direction"] = "neutral"
+
+        # 加 debate evidence
+        evidence = list(out.get("evidence") or [])
+        evidence.append({
+            "layer": "debate_facilitator",
+            "text": (reasoning or f"{winner} 辩论结论(conf {confidence:.2f})")[:200],
+            "weight": confidence,
+        })
+        out["evidence"] = evidence
+
+        # 加 debate risk(若有且不重复)
+        if risk_text:
+            risks = list(out.get("risks") or [])
+            if risk_text not in risks:
+                risks.append(f"辩论 risk:{risk_text}"[:160])
+            out["risks"] = risks
+
+        # PRD 硬约束二次验证:conviction < 0.5 必须 hold/avoid/neutral
+        if out["conviction"] < 0.5 and out["direction"] not in ("hold", "avoid", "neutral"):
+            out["direction"] = "neutral"
+
+        return out
+
     async def _persist_thesis(
         self, device_id: str, thesis: Dict[str, Any], level: str,
         tech: Dict, sent: Dict, onc: Dict,
         similar: List[Dict],
         cost_usd: float = 0.0, latency_ms: int = 0,
         tokens_used: int = 0,
+        debate_record: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         """写本地 PG agent_thesis 表。失败返 None,不阻断。"""
         try:
@@ -463,6 +592,7 @@ class ThesisLoop:
                        risks, summary_30w, evidence,
                        similar_past_cases,
                        technical_report, sentiment_report, onchain_report,
+                       debate_record,
                        cost_usd, latency_ms, prompt_version_used)
                     VALUES (%s, %s, %s, %s, %s,
                             %s, %s, %s,
@@ -470,6 +600,7 @@ class ThesisLoop:
                             %s, %s, %s::jsonb,
                             %s::jsonb,
                             %s::jsonb, %s::jsonb, %s::jsonb,
+                            %s::jsonb,
                             %s, %s, %s)
                     RETURNING thesis_id
                     """,
@@ -488,6 +619,7 @@ class ThesisLoop:
                         json.dumps(tech, default=str),
                         json.dumps(sent, default=str),
                         json.dumps(onc, default=str),
+                        json.dumps(debate_record, default=str) if debate_record else None,
                         cost_usd, latency_ms,
                         "P02-v1.0",
                     ),

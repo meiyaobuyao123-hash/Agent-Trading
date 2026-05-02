@@ -1,0 +1,80 @@
+{
+  "category": "tech",
+  "owner": "engineering",
+  "version": "v1.0",
+  "description": "12 项工程上线门槛(对齐 17-tech-plan.md Phase 4 Tech sign-off)",
+  "criteria": [
+    {
+      "name": "T01_safety_engine_loaded",
+      "description": "30 HR + 13 CB + 5 C 全部加载 + 启动恢复",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "safety_engine_loaded"
+    },
+    {
+      "name": "T02_tools_registry_min13",
+      "description": "Tool registry ≥ 13(13/17 done,T01/T02/T03/T08 留 W7-W12)",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "tool_count", "check_args": {"min": 13}
+    },
+    {
+      "name": "T03_chat_loop_loadable",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.chat_loop"},
+      "description": "ChatLoop class 可 import"
+    },
+    {
+      "name": "T04_thesis_loop_loadable",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.thesis_loop"},
+      "description": "ThesisLoop class 可 import"
+    },
+    {
+      "name": "T05_notify_loop_loadable",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.notify_loop"},
+      "description": "NotifyLoop class 可 import"
+    },
+    {
+      "name": "T06_reflect_loop_loadable",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.reflect_loop"},
+      "description": "ReflectLoop class 可 import"
+    },
+    {
+      "name": "T07_scout_loop_loadable",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.scout_loop"},
+      "description": "ScoutLoop class 可 import"
+    },
+    {
+      "name": "T08_skills_min7",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "skill_count", "check_args": {"min": 7},
+      "description": "7 Skill SKILL.md 全在(S01/S02/S03/S04/S05/S07/S08)"
+    },
+    {
+      "name": "T09_prompts_18",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "prompt_count", "check_args": {"min": 18},
+      "description": "18 Prompt frontmatter 全在"
+    },
+    {
+      "name": "T10_independent_uvicorn",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/api_server.py"},
+      "description": "独立 uvicorn 服务文件存在(W3 D5+ 治本)"
+    },
+    {
+      "name": "T11_redis_client",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "file_exists", "check_args": {"path": "services/pump-scanner/agent/redis_client.py"},
+      "description": "Redis IPC client 文件存在"
+    },
+    {
+      "name": "T12_input_filter_5_classes",
+      "check_type": "automated", "owner": "engineering",
+      "check_fn": "input_filter_classes",
+      "description": "input_filter 5 attack class regex(prompt_injection / hitl_bypass / regulation_skirt / implicit_promise / hype_extended)"
+    }
+  ]
+}

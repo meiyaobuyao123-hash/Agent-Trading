@@ -1,0 +1,43 @@
+{
+  "category": "hitl",
+  "owner": "safety-lead",
+  "version": "v1.0",
+  "description": "5 项 HITL 上线门槛(对齐 17-tech-plan.md HITL signoff)",
+  "criteria": [
+    {
+      "name": "H01_create_approval_tool",
+      "description": "T09 create_approval_request tool 在 registry",
+      "check_type": "automated", "owner": "safety-lead",
+      "check_fn": "tool_count", "check_args": {"min": 13}
+    },
+    {
+      "name": "H02_pending_approvals_routes",
+      "description": "HITL list / approve / reject 三个 endpoint 已注册",
+      "check_type": "automated", "owner": "safety-lead",
+      "check_fn": "route_registered", "check_args": {
+        "path": "/api/agent/pending-approvals", "method": "GET",
+        "module": "api.routes_agent"
+      }
+    },
+    {
+      "name": "H03_hitl_approval_page_flutter",
+      "description": "Flutter HitlApprovalPage 含 thesis 卡片 + 倒计时 + Face ID",
+      "check_type": "automated", "owner": "safety-lead",
+      "check_fn": "file_exists", "check_args": {
+        "path": "apps/app/lib/screens/agent/hitl_approval_page.dart"
+      }
+    },
+    {
+      "name": "H04_notify_loop_hitl_triggers",
+      "description": "NotifyLoop 4 条 HITL 触发(amount≥$200 / portfolio≥30% / 24h≥5笔 / conviction<0.6)",
+      "check_type": "automated", "owner": "safety-lead",
+      "check_fn": "module_importable", "check_args": {"module": "agent.loops.notify_loop"}
+    },
+    {
+      "name": "H05_biometric_signoff",
+      "description": "Face ID / Touch ID + wallet sig 流程演练通过 + 用户体验签字",
+      "check_type": "manual", "owner": "safety-lead",
+      "blocking_reason": "需真机演练 + PM/safety 双签 — 留 Beta 阶段"
+    }
+  ]
+}

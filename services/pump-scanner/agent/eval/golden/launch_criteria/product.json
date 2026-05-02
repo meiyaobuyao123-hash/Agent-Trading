@@ -1,0 +1,50 @@
+{
+  "category": "product",
+  "owner": "pm-lead",
+  "version": "v1.0",
+  "description": "7 项产品上线门槛(对齐 17-tech-plan.md PM signoff)",
+  "criteria": [
+    {
+      "name": "P01_thesis_card_widget",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/widgets/agent/thesis_card.dart"},
+      "description": "Flutter ThesisCard widget 存在"
+    },
+    {
+      "name": "P02_hitl_approval_page",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/screens/agent/hitl_approval_page.dart"},
+      "description": "Flutter HITL 详情页存在"
+    },
+    {
+      "name": "P03_cocreation_stepper",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/widgets/agent/cocreation_stepper.dart"},
+      "description": "Flutter 共创 7 阶段 stepper"
+    },
+    {
+      "name": "P04_review_page",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/screens/agent/review_page.dart"},
+      "description": "Flutter 复盘报告页"
+    },
+    {
+      "name": "P05_memory_management_page",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/screens/agent/memory_management_page.dart"},
+      "description": "Flutter 记忆管理页"
+    },
+    {
+      "name": "P06_deep_link_router",
+      "check_type": "automated", "owner": "pm-lead",
+      "check_fn": "file_exists", "check_args": {"path": "apps/app/lib/services/deep_link_router.dart"},
+      "description": "推送 deep_link router 存在"
+    },
+    {
+      "name": "P07_seed_users_NPS_signoff",
+      "description": "种子用户 20 人 NPS ≥ 30 sign-off(留 Beta 阶段真测)",
+      "check_type": "manual", "owner": "pm-lead",
+      "blocking_reason": "需 Beta 25% 流量后才能收集 NPS,留 Phase 4 闸门 5"
+    }
+  ]
+}

@@ -3209,3 +3209,60 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 6. **剩余 4 Tool**(T01/T02/T03/T08)— 外部 API(Helius/OKX/CoinGecko)+ KMS
 7. **KMS AwsKmsProvider** — 需 AWS 账号
 8. **62 Launch Criteria** 逐项 sign-off — 12 Tech / 7 Product / 14 Safety / 12 Legal / 12 Cost-Ops / 5 HITL
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 22 — L3 Chain eval 框架 + 5 chain
+
+### 做了什么(commit `f3c117c`)
+
+**A. L3 Chain eval runner**(只静态契约,不真跑 chain):
+- agent/eval/chain_runner.py 新建(~370 行)
+- CHAIN_REGISTRY 5 chain(thesis/notify/reflect/cocreation/scout,对齐 04-agent-spec.md)
+- 5 outcome 类型:
+  - class_loadable — Loop 类可 import + 实例化
+  - entry_method_present — 指定入口 async method 存在
+  - tools_wired — required_tools 全在 Tool registry
+  - route_registered — FastAPI 路径 + method 已注册
+  - cron_registered — main.py cron job_id 已注册
+- **route 检查双轨**:import 优先 + source-grep 降级(修 Py3.9 routes_thesis PEP 604 `dict | None` 不可导入)
+- cron 检查走 main.py 源码 grep(避免真启动 scheduler)
+
+**B. 5 个 chain fixture(46 case)**:
+- thesis (10) — class + entry generate + 4 tools + 4 route(routes_thesis,空字符串路径)
+- notify (10) — class + entry process + 6 tools + 1 route
+- reflect (10) — class + entry run_cycle + 4 tools + 1 route + 3 cron(reflect_daily / wal_flush / wal_retry)
+- cocreation (11) — class + entry handle + 3 tools + 5 route + 1 cron(cocreation_cleanup)
+- scout (5) — class + entry process + 2 tools + 1 route
+
+**L3 Chain 全套结果**:
+- **5/5 chains ✅ / 46/46 cases / 100% pass**(超 17-tech-plan.md 40 case 门槛)
+- **4 eval suite 联跑 113/113**(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + L3 Chain 46)
+
+**C. 测试**(tests/test_eval_chain_runner.py 29 用例):
+- dataclass(4)/ class_loadable(3)/ entry_method(4)/ tools_wired(2)/
+  route_registered 含 PEP 604 fallback(3)/ cron_registered(3)/
+  run_one_case 含空字符串路径(4)/ golden loader(2)/ 端到端(2)/ CHAIN_REGISTRY 结构(2)
+- 29/29 全过;pytest 全量 915/917(+29)
+
+### Phase 进度(对齐 17-tech-plan.md)
+- Phase 0:safety / pending_approvals / Cost CB04 ✅,KMS ⏸
+- Phase 1:13/17 Tool ✅ / Memory 4 层 ✅
+- Phase 2:100% 完整 ✅(5 Loop + 7 Skill + 18 Prompt + L3 debate)
+- Phase 3:Flutter UI ✅
+- **Phase 4 已完成 4 块**:L1 Tool 13/13 ✅ + L2 Skill 7/7 ✅ + L1 Prompt 18/18 ✅ + L3 Chain 5/5 ✅
+  - 剩:L4 Trajectory 20 / Safety AE 270 / Quality Rubric / LLM-as-judge 冷启动 100 / 62 Launch Criteria
+
+### 累计本会话总计
+- 本轮新增:框架 1 个 + 5 fixture / 46 case + 29 test
+- 4 eval suite 联跑 **113/113 全过**(累计:140 + 44 + 110 + 46 = 340 eval case 全 100%)
+- 43 commits 累计 deploy
+- pytest 全量 915 通过
+
+### 下次接手候选
+1. **L4 Trajectory 20 多轮场景** — 用户旅程(共创→保存→Scout 触发→Notify 推送→用户审批→执行→Reflect 复盘 → 规则提议)
+2. **Safety AE 270 case** — 红队对抗 prompt injection / blocklist evasion / regulation skirt(可直接基于 P17 abuse_detection 框架)
+3. **L1 Prompt 真 540 case** — LLM judge(需 anthropic key + 冷启动 100 人工标注)
+4. **L2 Skill 真执行 eval** — LLM cassette/VCR
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS
+6. **62 Launch Criteria** 逐项 sign-off

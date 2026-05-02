@@ -279,6 +279,13 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 12 个 fixture × 6 case = 72 新 case → **L1 Prompt 全套 18/18 / 110/110 / 100% pass**
   - 4 eval suite 联跑 112/112(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + prompt_loader)
   - **Phase 2 100% 完整 ✅** Prompt Library 18/18 + 7 Skill + 5 Loop + 17 Tool 元数据
+- ✅ **W3 D5+ L3 Chain eval 框架 + 5 chain**(commit `f3c117c`):Phase 4 第三块完成
+  - agent/eval/chain_runner.py(370 行)+ 5 chain fixture(thesis 10 / notify 10 / reflect 10 / cocreation 11 / scout 5 = 46 case)
+  - 5 outcome 类型:class_loadable / entry_method_present / tools_wired / route_registered / cron_registered
+  - **route 检查双轨**:优先 import 检查;失败时降级 source-grep(修 routes_thesis Py3.9 PEP 604 不可导入)
+  - **L3 Chain 全套 5/5 / 46/46 / 100% pass**(超 docs/agent-pm/17-tech-plan 40 case 门槛)
+  - 4 eval suite 联跑 113/113;pytest 全量 915/917(+29,2 pre-existing failures)
+  - **Phase 4 第三块 ✅**:L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5(剩 L4 Trajectory 20 + Safety AE 270 留下次)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

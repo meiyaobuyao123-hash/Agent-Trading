@@ -436,6 +436,47 @@ async def main():
         max_instances=1,
     )
 
+    # ── W3 D5+ Memory WAL flush(每 10s)─────────────────────
+    # 引用 services/pump-scanner/migrations/local_pg/036_pending_approvals_wal.sql
+    # 引用 docs/agent-pm/06-memory-spec.md §3.5 Write Reliability
+    # 关键 memory 写入(approve_rule / try_promote_strict)先入 WAL,
+    # 此 cron 异步刷主表 agent_memory;失败 → retry queue
+    async def _run_wal_flush():
+        try:
+            from agent.memory.wal import get_wal
+            await get_wal().flush_once()
+        except Exception as e:
+            log.debug("[wal flush] skipped: %s", e)
+
+    scheduler.add_job(
+        _run_wal_flush,
+        trigger="interval",
+        seconds=10,
+        id="memory_wal_flush",
+        name="Memory WAL Flush (10s)",
+        misfire_grace_time=15,
+        max_instances=1,
+    )
+
+    # ── W3 D5+ Memory WAL retry(每 30s)────────────────────
+    # 退避重试 60s/5min/30min;3 次失败 → 标 P1
+    async def _run_wal_retry():
+        try:
+            from agent.memory.wal import get_wal
+            await get_wal().retry_once()
+        except Exception as e:
+            log.debug("[wal retry] skipped: %s", e)
+
+    scheduler.add_job(
+        _run_wal_retry,
+        trigger="interval",
+        seconds=30,
+        id="memory_wal_retry",
+        name="Memory WAL Retry (30s)",
+        misfire_grace_time=30,
+        max_instances=1,
+    )
+
     scheduler.start()
 
     # ── W3 D3: SafetyEngine 启动恢复 + DB 持久化挂载 ──────────────

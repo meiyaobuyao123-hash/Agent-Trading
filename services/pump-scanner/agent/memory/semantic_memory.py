@@ -438,6 +438,32 @@ class SemanticMemory:
             "match_count": 0,
             "propose_count_so_far": reflections_count,
         }
+        # W3 D5+:先写本地 PG WAL(可靠性兜底,主表失败时 retry cron 恢复)
+        # 引用 agent/memory/wal.py + migration 036 memory_write_wal
+        # 失败 swallow 不阻断主路径(WAL 表不存在/PG 不可达都不阻断)
+        try:
+            from agent.memory.wal import get_wal
+            import asyncio as _aio
+            device_id_for_wal = (
+                meta.get("user_id") or meta.get("device_id") or ""
+            )
+            if device_id_for_wal:
+                # try_promote_strict 是同步函数,用 asyncio.create_task 异步发起 WAL 写
+                # 失败 swallow,不影响 promotion 主路径
+                try:
+                    loop = _aio.get_event_loop()
+                    if loop.is_running():
+                        loop.create_task(get_wal().write(
+                            device_id=device_id_for_wal,
+                            memory_type="semantic",
+                            payload=row,
+                            event_id=f"promote::{condition}",
+                        ))
+                except Exception:
+                    pass  # 无 event loop 上下文(test 环境)直接跳
+        except Exception:
+            pass
+
         try:
             res = get_db().table("agent_memory").insert(row).execute()
             self._last_load = 0
@@ -455,8 +481,9 @@ class SemanticMemory:
             }
         except Exception as e:
             log.warning("Strict promote failed: %s", e)
+            # 主表 insert 失败,但 WAL 已写(若可)— retry cron 会兜底
             return {"ok": False, "gates": gate_result["gates"],
-                    "reason": f"db_write_failed: {e}"}
+                    "reason": f"db_write_failed_wal_pending: {e}"}
 
     def deprecate_stale(self) -> int:
         """

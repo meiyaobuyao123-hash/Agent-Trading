@@ -1,0 +1,52 @@
+{
+  "prompt": "P11_signal_strategy_builder",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "prompt_id": "P11",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P11",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "user_proposed_name": "聪明钱跟单 SOL",
+        "chain": "SOL",
+        "trigger": "smart_money",
+        "amount_usd": "100",
+        "stop_loss_pct": "-15",
+        "take_profit_pct": "30",
+        "cooldown_min": "30",
+        "persona": "intermediate"
+      }
+    },
+    {
+      "name": "render_partial_keeps_placeholders",
+      "prompt_id": "P11",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"chain": "SOL", "amount_usd": "100"},
+      "expected_unrendered": ["{{stop_loss_pct}}", "{{cooldown_min}}"]
+    },
+    {
+      "name": "examples_safe",
+      "prompt_id": "P11",
+      "expected_outcome": "examples_safe"
+    },
+    {
+      "name": "examples_at_least_3",
+      "prompt_id": "P11",
+      "expected_outcome": "examples_count_min",
+      "min_examples": 3
+    },
+    {
+      "name": "version_select_draft",
+      "prompt_id": "P11",
+      "expected_outcome": "version_select",
+      "device_id": "device-builder-1",
+      "expected_status": "draft"
+    }
+  ]
+}

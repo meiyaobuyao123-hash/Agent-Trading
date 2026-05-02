@@ -1,0 +1,52 @@
+{
+  "prompt": "P02_thesis_writer",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "prompt_id": "P02",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P02",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "chain": "SOL",
+        "token_address": "0xabc",
+        "token_symbol": "TRUMP",
+        "regime": "TRENDING_UP",
+        "technical_summary": "RSI 65, MACD 上穿",
+        "sentiment_summary": "KOL 看涨度 0.8",
+        "onchain_summary": "smart money 净流入 +$50k",
+        "similar_past_cases": "无"
+      }
+    },
+    {
+      "name": "render_missing_keeps_placeholders",
+      "prompt_id": "P02",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"chain": "SOL", "token_symbol": "TRUMP"},
+      "expected_unrendered": ["{{technical_summary}}", "{{onchain_summary}}"]
+    },
+    {
+      "name": "examples_safe",
+      "prompt_id": "P02",
+      "expected_outcome": "examples_safe"
+    },
+    {
+      "name": "examples_at_least_3",
+      "prompt_id": "P02",
+      "expected_outcome": "examples_count_min",
+      "min_examples": 3
+    },
+    {
+      "name": "version_select_draft",
+      "prompt_id": "P02",
+      "expected_outcome": "version_select",
+      "device_id": "user-thesis-1",
+      "expected_status": "draft"
+    }
+  ]
+}

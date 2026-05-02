@@ -1,0 +1,50 @@
+{
+  "prompt": "P10_risk_reviewer",
+  "version": "v1.0",
+  "owner": "safety-lead",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "prompt_id": "P10",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P10",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "regime": "NORMAL",
+        "thesis_json": "{\"direction\":\"bullish\",\"conviction\":0.7}",
+        "risk_score_features": "score=82",
+        "portfolio_pct_in_chain": "12%",
+        "recent_trades_24h_count": "3"
+      }
+    },
+    {
+      "name": "render_empty_keeps_placeholders",
+      "prompt_id": "P10",
+      "expected_outcome": "render_missing_vars",
+      "vars": {},
+      "expected_unrendered": ["{{thesis_json}}", "{{regime}}"]
+    },
+    {
+      "name": "examples_safe",
+      "description": "P10 是 risk-reviewer,examples 必须无任何夸张表达",
+      "prompt_id": "P10",
+      "expected_outcome": "examples_safe"
+    },
+    {
+      "name": "examples_at_least_3",
+      "prompt_id": "P10",
+      "expected_outcome": "examples_count_min",
+      "min_examples": 3
+    },
+    {
+      "name": "version_select_draft",
+      "prompt_id": "P10",
+      "expected_outcome": "version_select",
+      "device_id": "device-risk-1",
+      "expected_status": "draft"
+    }
+  ]
+}

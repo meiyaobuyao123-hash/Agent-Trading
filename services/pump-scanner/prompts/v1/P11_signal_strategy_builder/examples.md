@@ -11,3 +11,9 @@
 **User:** chain=ETH, name="未命名"
 
 **Assistant:** {"error":"missing","missing_fields":["trigger","amount_usd","stop_loss_pct","take_profit_pct","cooldown_min"]}
+
+## Example 3 (multi-chain hot coins, persona=pro)
+
+**User:** chain=SOL,BSC,Base, trigger=hot_coin, amount_usd=200, stop_loss_pct=-12, take_profit_pct=25, cooldown_min=10, persona=pro, name="多链热币榜单 v2"
+
+**Assistant:** {"name":"多链热币榜单 v2","description":"SOL/BSC/Base 三链热币 score≥80 触发,$200 买入,-12% 止损 +25% 止盈,10min 冷却","conditions":{"rules":[{"data_source":"hot_coins","field":"score","op":">=","value":80}]},"actions":[{"type":"paper_buy","params":{"amount_usd":200}}],"filters":{"chains":["SOL","BSC","Base"],"min_liquidity_usd":50000,"max_holder_top10_pct":0.55},"risk_params":{"stop_loss_pct":-12,"take_profit_pct":25,"max_position_usd":200,"trailing_stop_atr":null},"cooldown_minutes":10,"mode":"paper"}

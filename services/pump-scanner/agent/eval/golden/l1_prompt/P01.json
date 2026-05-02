@@ -1,0 +1,69 @@
+{
+  "prompt": "P01_chat_clarify",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "prompt_id": "P01",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P01",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "user_history": "我想做聪明钱跟单",
+        "collected": {
+          "chain": "SOL",
+          "trigger": "聪明钱",
+          "amount_usd": "100",
+          "stop_loss": "-15%",
+          "take_profit": "+30%",
+          "cooldown_min": "30"
+        },
+        "persona": "newbie"
+      }
+    },
+    {
+      "name": "render_missing_collected_keeps_placeholders",
+      "prompt_id": "P01",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"user_history": "想跟单", "persona": "intermediate"},
+      "expected_unrendered": ["{{collected.chain}}", "{{collected.amount_usd}}"]
+    },
+    {
+      "name": "render_empty_vars_keeps_all_placeholders",
+      "prompt_id": "P01",
+      "expected_outcome": "render_missing_vars",
+      "vars": {},
+      "expected_unrendered": ["{{user_history}}", "{{persona}}"]
+    },
+    {
+      "name": "examples_safe",
+      "prompt_id": "P01",
+      "expected_outcome": "examples_safe"
+    },
+    {
+      "name": "examples_at_least_3",
+      "prompt_id": "P01",
+      "expected_outcome": "examples_count_min",
+      "min_examples": 3
+    },
+    {
+      "name": "version_select_draft_fallback",
+      "description": "rollout_pct=0 时 fallback 到 draft",
+      "prompt_id": "P01",
+      "expected_outcome": "version_select",
+      "device_id": "device-eval-1",
+      "expected_status": "draft"
+    },
+    {
+      "name": "version_select_diff_device",
+      "prompt_id": "P01",
+      "expected_outcome": "version_select",
+      "device_id": "device-eval-2",
+      "expected_status": "draft"
+    }
+  ]
+}

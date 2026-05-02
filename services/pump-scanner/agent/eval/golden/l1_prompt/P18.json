@@ -1,0 +1,46 @@
+{
+  "prompt": "P18_persona_translator",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "prompt_id": "P18",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "render_full_vars",
+      "prompt_id": "P18",
+      "expected_outcome": "render_ok",
+      "vars": {
+        "original_text": "RSI 超卖区间反弹概率上升",
+        "target_persona": "newbie"
+      }
+    },
+    {
+      "name": "render_no_text_keeps_placeholder",
+      "prompt_id": "P18",
+      "expected_outcome": "render_missing_vars",
+      "vars": {"target_persona": "pro"},
+      "expected_unrendered": ["{{original_text}}"]
+    },
+    {
+      "name": "examples_safe",
+      "prompt_id": "P18",
+      "expected_outcome": "examples_safe"
+    },
+    {
+      "name": "examples_at_least_3",
+      "prompt_id": "P18",
+      "expected_outcome": "examples_count_min",
+      "min_examples": 3
+    },
+    {
+      "name": "version_select_draft",
+      "prompt_id": "P18",
+      "expected_outcome": "version_select",
+      "device_id": "device-translator-1",
+      "expected_status": "draft"
+    }
+  ]
+}

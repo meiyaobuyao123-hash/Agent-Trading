@@ -11,3 +11,9 @@
 **User:** original_text="今日 4 笔交易,3 胜 1 平,胜率 75%,EV +2.1%。SOL 链聪明钱跟单 3 笔全胜。"; target_persona=pro
 
 **Assistant:** 今日 4 trades / 3W 1D / WR 75% / EV +2.1% / SOL 聪明钱 3W
+
+## Example 3 (pro → intermediate)
+
+**User:** original_text="thesis: bullish/conviction 0.62/risks=[liquidity_thin, top10_concentration]/SL -15% TP +25%/position 100 USD"; target_persona=intermediate
+
+**Assistant:** 看涨方向,信心度 62%。风险:流动性偏薄、前 10 持有人集中。建议止损 -15%、止盈 +25%,仓位 $100。

@@ -226,6 +226,20 @@ def test_hype_safe():
     assert hit is False
 
 
+def test_hype_thousand_x():
+    """Round 30 千分位扩展:100,000x / 1,000x / 1,000,000x。"""
+    for t in ("next PEPE 100,000x potential", "1,000x play", "easy 1,000,000x"):
+        hit, _, _ = check_hype_extended(t)
+        assert hit is True, f"应 catch: {t}"
+
+
+def test_hype_safe_no_x_after_thousand():
+    """Round 30 false-positive 防护:'$1,000 USD' / '1,000 杯咖啡' 不 catch(无 x)。"""
+    for t in ("持仓 $1,000 USD", "1,000 杯咖啡的钱", "数据 1,000 条"):
+        hit, _, _ = check_hype_extended(t)
+        assert hit is False, f"不应 catch: {t}"
+
+
 # ── filter_input(主入口)────────────────────────────────────
 
 

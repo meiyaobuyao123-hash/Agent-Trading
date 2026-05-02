@@ -120,7 +120,8 @@ HYPE_EXTENDED_REGEX = re.compile(
     r"|don'?t\s+miss"
     r"|last\s+chance"
     r"|send\s+it"
-    r"|let'?s\s+(?:send\s+it|gooo+))",
+    r"|let'?s\s+(?:send\s+it|gooo+)"
+    r"|\b\d{1,3}(?:,\d{3})+\s*x\b)",  # 千分位倍数:1,000x / 100,000x / 1,000,000x
     re.IGNORECASE,
 )
 

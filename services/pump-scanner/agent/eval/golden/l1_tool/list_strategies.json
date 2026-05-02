@@ -1,0 +1,63 @@
+{
+  "tool": "list_strategies",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_user_id_invalid",
+      "input": {},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "user_id_empty_invalid",
+      "input": {"user_id": ""},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "status_unknown_invalid",
+      "input": {"user_id": "u-1", "status": "wrong_status"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "limit_zero_invalid",
+      "input": {"user_id": "u-1", "limit": 0},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "limit_too_high_invalid",
+      "input": {"user_id": "u-1", "limit": 500},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_default_status_active_no_db_returns_zero",
+      "description": "DB 返空时返 active_count=0,不抛错",
+      "input": {"user_id": "u-eval-1"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_status_all_no_db",
+      "input": {"user_id": "u-eval-2", "status": "all"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_status_paused_no_db",
+      "input": {"user_id": "u-eval-3", "status": "paused"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_status_archived_no_db",
+      "input": {"user_id": "u-eval-4", "status": "archived"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_status_draft_no_db",
+      "input": {"user_id": "u-eval-5", "status": "draft"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_with_limit_50_no_db",
+      "input": {"user_id": "u-eval-6", "limit": 50},
+      "expected_outcome": "ok"
+    }
+  ]
+}

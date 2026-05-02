@@ -1,0 +1,104 @@
+{
+  "tool": "calc_technical_indicators",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "rsi_30_candles",
+      "input": {
+        "candles": [
+          {"close": 1}, {"close": 2}, {"close": 3}, {"close": 4}, {"close": 5},
+          {"close": 6}, {"close": 7}, {"close": 8}, {"close": 9}, {"close": 10},
+          {"close": 11}, {"close": 12}, {"close": 13}, {"close": 14}, {"close": 15},
+          {"close": 16}, {"close": 17}, {"close": 18}, {"close": 19}, {"close": 20},
+          {"close": 21}, {"close": 22}, {"close": 23}, {"close": 24}, {"close": 25},
+          {"close": 26}, {"close": 27}, {"close": 28}, {"close": 29}, {"close": 30}
+        ],
+        "indicators": ["rsi"]
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "insufficient_candles_returns_null",
+      "input": {
+        "candles": [{"close": 100}, {"close": 101}],
+        "indicators": ["rsi", "macd"]
+      },
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"rsi": null, "macd": null}
+    },
+    {
+      "name": "ma_multi_periods_short_returns_null",
+      "input": {
+        "candles": [{"close": 100}, {"close": 101}, {"close": 102}],
+        "indicators": ["ma"],
+        "ma_periods": [10, 20, 30]
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "missing_candles_invalid",
+      "input": {"indicators": ["rsi"]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_indicators_invalid",
+      "input": {"candles": [{"close": 1}]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "empty_candles_invalid",
+      "input": {"candles": [], "indicators": ["rsi"]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "empty_indicators_invalid",
+      "input": {"candles": [{"close": 1}], "indicators": []},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "unknown_indicator_invalid",
+      "input": {"candles": [{"close": 1}], "indicators": ["foobar"]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "candle_no_close_invalid",
+      "input": {"candles": [{"open": 1}], "indicators": ["rsi"]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "rsi_period_too_high_invalid",
+      "input": {"candles": [{"close": 1}], "indicators": ["rsi"], "rsi_period": 200},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "atr_with_high_low",
+      "input": {
+        "candles": [
+          {"open": 100, "high": 102, "low": 98, "close": 100},
+          {"open": 100, "high": 103, "low": 97, "close": 101},
+          {"open": 101, "high": 105, "low": 99, "close": 103},
+          {"open": 103, "high": 106, "low": 101, "close": 104},
+          {"open": 104, "high": 107, "low": 102, "close": 105},
+          {"open": 105, "high": 108, "low": 103, "close": 106},
+          {"open": 106, "high": 109, "low": 104, "close": 107},
+          {"open": 107, "high": 110, "low": 105, "close": 108},
+          {"open": 108, "high": 111, "low": 106, "close": 109},
+          {"open": 109, "high": 112, "low": 107, "close": 110},
+          {"open": 110, "high": 113, "low": 108, "close": 111},
+          {"open": 111, "high": 114, "low": 109, "close": 112},
+          {"open": 112, "high": 115, "low": 110, "close": 113},
+          {"open": 113, "high": 116, "low": 111, "close": 114},
+          {"open": 114, "high": 117, "low": 112, "close": 115},
+          {"open": 115, "high": 118, "low": 113, "close": 116},
+          {"open": 116, "high": 119, "low": 114, "close": 117},
+          {"open": 117, "high": 120, "low": 115, "close": 118},
+          {"open": 118, "high": 121, "low": 116, "close": 119},
+          {"open": 119, "high": 122, "low": 117, "close": 120}
+        ],
+        "indicators": ["atr"]
+      },
+      "expected_outcome": "ok"
+    }
+  ]
+}

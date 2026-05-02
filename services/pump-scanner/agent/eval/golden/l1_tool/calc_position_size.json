@@ -1,0 +1,83 @@
+{
+  "tool": "calc_position_size",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "fixed_pct_basic",
+      "input": {"account_balance_usd": 1000, "mode": "fixed_pct", "fixed_pct": 0.05},
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"position_usd": 50.0}
+    },
+    {
+      "name": "fixed_pct_capped_by_hr01",
+      "input": {"account_balance_usd": 100000, "mode": "fixed_pct", "fixed_pct": 0.10},
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"position_usd": 500.0}
+    },
+    {
+      "name": "fixed_pct_capped_by_hr04",
+      "input": {"account_balance_usd": 1000, "mode": "fixed_pct", "fixed_pct": 0.50},
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"position_usd": 100.0}
+    },
+    {
+      "name": "kelly_60pct_winrate",
+      "input": {"account_balance_usd": 1000, "mode": "kelly",
+                "win_rate": 0.6, "win_loss_ratio": 2.0, "kelly_safety_factor": 0.5},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "kelly_negative_clipped_to_zero",
+      "input": {"account_balance_usd": 1000, "mode": "kelly",
+                "win_rate": 0.3, "win_loss_ratio": 1.0},
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"position_usd": 0.0}
+    },
+    {
+      "name": "atr_risk_basic",
+      "input": {"account_balance_usd": 1000, "mode": "atr_risk",
+                "entry_price": 100, "stop_loss_price": 98,
+                "risk_per_trade_usd": 20},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "user_max_position_overrides",
+      "input": {"account_balance_usd": 1000, "mode": "fixed_pct",
+                "fixed_pct": 0.05, "max_position_usd": 30},
+      "expected_outcome": "ok_with_check",
+      "expect_fields": {"position_usd": 30.0}
+    },
+    {
+      "name": "missing_account_balance_invalid",
+      "input": {"mode": "fixed_pct", "fixed_pct": 0.05},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "balance_zero_invalid",
+      "input": {"account_balance_usd": 0, "mode": "fixed_pct", "fixed_pct": 0.05},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "balance_negative_invalid",
+      "input": {"account_balance_usd": -100, "mode": "fixed_pct", "fixed_pct": 0.05},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "mode_unknown_invalid",
+      "input": {"account_balance_usd": 1000, "mode": "magic"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "fixed_pct_over_1_invalid",
+      "input": {"account_balance_usd": 1000, "mode": "fixed_pct", "fixed_pct": 1.5},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "kelly_missing_params_execute_error",
+      "input": {"account_balance_usd": 1000, "mode": "kelly"},
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR"
+    }
+  ]
+}

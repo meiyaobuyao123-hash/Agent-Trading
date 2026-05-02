@@ -1,0 +1,73 @@
+{
+  "tool": "run_backtest",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_spec_invalid",
+      "input": {"days": 7},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "spec_missing_conditions_invalid",
+      "input": {"spec": {"name": "x"}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "conditions_missing_rules_invalid",
+      "input": {"spec": {"conditions": {}}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "days_zero_invalid",
+      "input": {"spec": {"conditions": {"rules": []}}, "days": 0},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "days_above_90_invalid",
+      "input": {"spec": {"conditions": {"rules": []}}, "days": 200},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "days_negative_invalid",
+      "input": {"spec": {"conditions": {"rules": []}}, "days": -3},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_spec_no_db_execute_error",
+      "description": "DB 不通 → backtester 抛 → EXECUTE_ERROR",
+      "input": {
+        "spec": {
+          "name": "Eval Test",
+          "conditions": {"rules": [{"data_source": "hot_coins", "field": "score", "op": ">=", "value": 70}]},
+          "filters": {"chains": ["SOL"]}
+        },
+        "days": 7
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_spec_default_days_execute_error",
+      "input": {
+        "spec": {
+          "conditions": {"rules": [{"data_source": "x", "field": "y"}]}
+        }
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "spec_wrong_type_invalid",
+      "input": {"spec": "not a dict"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "days_string_invalid",
+      "input": {"spec": {"conditions": {"rules": []}}, "days": "seven"},
+      "expected_outcome": "input_invalid"
+    }
+  ]
+}

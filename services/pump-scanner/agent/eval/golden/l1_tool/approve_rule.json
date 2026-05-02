@@ -1,0 +1,105 @@
+{
+  "tool": "approve_rule",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_user_id_invalid",
+      "input": {
+        "proposal_id": "rp-1",
+        "human_readable": "valid rule text content",
+        "formal_condition": {"condition": "x>1", "action": "block"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_proposal_id_invalid",
+      "input": {
+        "user_id": "u-1",
+        "human_readable": "valid rule text content",
+        "formal_condition": {"condition": "x>1", "action": "block"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "human_readable_too_short_invalid",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "x",
+        "formal_condition": {"condition": "x>1", "action": "block"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "human_readable_too_long_invalid",
+      "description": "human_readable max 500 → 600 字符过长被拒",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy",
+        "formal_condition": {"condition": "x>1", "action": "block"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "formal_condition_missing_action_invalid",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "valid rule text",
+        "formal_condition": {"condition": "x>1"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "formal_condition_missing_condition_invalid",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "valid rule text",
+        "formal_condition": {"action": "block"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "user_id_empty_invalid",
+      "input": {
+        "user_id": "", "proposal_id": "rp-1",
+        "human_readable": "valid rule text",
+        "formal_condition": {"condition": "x", "action": "y"}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "active_regimes_wrong_type_invalid",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "valid rule text",
+        "formal_condition": {"condition": "x", "action": "y"},
+        "active_regimes": "should be array"
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "evidence_sample_size_negative_invalid",
+      "input": {
+        "user_id": "u-1", "proposal_id": "rp-1",
+        "human_readable": "valid rule text",
+        "formal_condition": {"condition": "x", "action": "y"},
+        "evidence": {"sample_size": -5}
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_input_db_not_available_execute_error",
+      "description": "无 DB 时 _execute 抛错 → EXECUTE_ERROR",
+      "input": {
+        "user_id": "u-test-eval", "proposal_id": "rp-eval-99",
+        "human_readable": "RANGING regime BC<8 禁开仓(eval)",
+        "formal_condition": {"condition": "regime=RANGING", "action": "block"},
+        "active_regimes": ["RANGING"],
+        "evidence": {"sample_size": 22, "win_rate_diff": 12.4}
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    }
+  ]
+}

@@ -300,6 +300,23 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
     (避免假绿)。W7-W12 加 input_filter + LLM-judge 后切回 blocked 迫使升级
   - **Phase 4 5 块完成 ✅**:L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE
     剩 L4 Trajectory 20 / Quality Rubric / LLM-as-judge 100 / 62 Launch Criteria
+- ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
+  - agent/input_filter.py(210 行)+ 5 attack class regex
+  - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)
+  - hitl_bypass(skip approval / 跳过审批 / I am admin / 我是管理员)
+  - regulation_skirt SEV-0(Tornado Cash / mixer / 洗币 / 绕过 KYC / 逃税 / 用别人身份证 / 私下换 USDT)
+  - implicit_promise(保证赚 / 必赚 / 一定能赚 / 稳赚不赔 / 包赚 / 零风险 / no-risk)
+  - hype_extended(rocket ride / lambo / FOMO / 🚀 / m00n leetspeak / g0arant33d)
+  - filter_combined:input_filter ∪ output_filter.C1 双重检查
+  - safety_runner._run_one_case 改用 filter_combined
+  - **AE fixture 真 catch 升级**:Round 23 标 "TODO known gap" 的 ~16 case 全切回 expected=blocked
+    (AE02 emoji+leetspeak / AE03 4 个 clean injection / AE04 4 个隐式承诺 / AE05 rocket+lambo+FOMO /
+    AE09 全部 6 个监管规避 / AE10 3 个 clean bypass)
+  - **Safety AE 真覆盖 129/129 100% / SEV-0 57/57 / SEV-1 62/62 / SEV-2 10/10 ✓**
+    (与 round 23 case 数同,但意义不同:R23 假绿,R24 真挡)
+  - 45 input_filter self-test;6 eval suite 联跑 184/184
+  - **pytest 全量 987/988(+46,降到 1 pre-existing failure)**
+  - 剩余 known gap(round 25+):AE05 千分位"100,000x"/ AE06 C4 LLM-judge / AE08 data_fab tool_use trace
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

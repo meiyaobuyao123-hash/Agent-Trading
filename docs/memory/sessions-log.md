@@ -2931,3 +2931,97 @@ reflect prompt tokens ~ 172
 4. **L1 安全演练**(对齐 PRD 验收 — 端到端测试)
 5. **Flutter Memory Management UI 接真后端** — semantic_rules 真 API
 6. **chat_loop 接 Skill 层** — 用 skill_loader.loop_system_prompt('chat')
+
+---
+
+## 会话 11 续 18(autonomous-loop:Eval Phase 4 起步,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十五轮
+
+### 用户中途追问 2 个文档对齐问题
+- 第二次问"按文档开发吗?"
+- 第三次问"技术文档和需求设计文档能对得上吗?"
+- 我给了 4 组可点开验证的对应(05/06/13/03 → 代码文件 + 测试)+ 列出 9 项"对不上 / 留 W7-W12"的偏离项 + 主要"超出文档" 决策(8 张表迁本地 PG / L3 提前实施)
+
+### 实际产出(commit `76f0e4c` deploy)
+
+**Phase 4 起步 — L1 Tool eval 框架 + 6 核心 Tool fixture**
+
+agent/eval/runner.py(280 行新建):
+- GoldenCase / CaseResult / ToolReport / EvalReport dataclasses
+- _validate_metadata(每 Tool 必填字段 + 合理性):
+  * name 匹配 registry key
+  * description ≥ 30 字符
+  * idempotent / idempotency_key_fields 类型一致
+  * cost_usd ≥ 0 / p95_latency_ms 合理
+  * failure_modes 非空
+  * to_anthropic_tool_spec 含 name + input_schema(用 'in' 不用 truthy 避免 {} 误判)
+- _run_one_case 4 种 outcome:ok / input_invalid / execute_error / ok_with_check
+  * expect_fields:dict subset 校验
+  * expected_failure_mode:execute_error 时验失败原因
+- _check_idempotent:跑两次 + 输出 deterministic
+  * 排除浮动字段(latency_ms / ts / thesis_id / approval_id 等)
+  * skip_idempotent_check 标记 case 时跳
+- _load_golden_cases 从 golden/{suite}/{tool}.json 加载
+
+CLI:`python -m agent.eval.runner --suite=l1_tool [--tool=a,b,c]`
+exit code:有失败 → 1(L1 Tool 严格 100%)
+
+agent/eval/golden/l1_tool/(6 个 JSON fixture):
+- calc_risk_metrics.json (11 case):空/全胜/混合/开仓 D3/...
+- calc_position_size.json (13 case):fixed_pct/HR01/HR04/kelly/atr/cap...
+- calc_technical_indicators.json (11 case):rsi/insufficient/atr/ma...
+- approve_rule.json (10 case):missing fields/length/condition/regime...
+- list_strategies.json (11 case):invalid status/limit/各 status...
+- run_backtest.json (10 case):missing spec/days 边界/execute_error
+
+### 测试(tests/test_eval_runner.py — 27 cases)
+- EvalReport / ToolReport pass_rate (4)
+- _validate_metadata ok / 短描述 / name 不匹配 / 无 failure_modes /
+  latency 不合理 / spec 缺 input_schema (6)
+- _run_one_case 7 个分支
+- _check_idempotent 5 个分支
+- _load_golden_cases 真目录 / missing / invalid JSON (3)
+- run_l1_tool_suite 集成 (2)
+
+**27/27 PASSED**;**累计本会话 392+27=419 后端测试全过**
+
+### Eval 跑批结果
+```
+$ python3 -m agent.eval.runner --suite=l1_tool --tool=calc_risk_metrics,...
+=== l1_tool Eval Report ===
+  approve_rule                          10/ 10 (100.0%)   metadata: ✓
+  calc_position_size                    13/ 13 (100.0%)   metadata: ✓
+  calc_risk_metrics                     11/ 11 (100.0%)   metadata: ✓
+  calc_technical_indicators             11/ 11 (100.0%)   metadata: ✓
+  list_strategies                       11/ 11 (100.0%)   metadata: ✓
+  run_backtest                          10/ 10 (100.0%)   metadata: ✓
+[Eval l1_tool] 66/66 passed (100.0%) in 0.37s
+```
+
+L1 Tool 严格 100% pass(对齐 17-tech-plan.md Phase 4 验收门槛)。
+
+### Phase 进度(对齐 17-tech-plan.md)
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**100% ✅(5 Loop + 7 Skill + 6 Prompt + L3 debate + 4 cron)**
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- **Phase 4:起步 — L1 Tool runner ✅ + 6/13 Tool fixture(剩 7 + L2/L3/L4 留下次)**
+
+### 累计本会话总计
+- 后端 Python:**419 后端新测试**(含 eval runner 27)
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 443 新测试,100% PASSED**
+- 39 commits 全部 deploy
+- L1 Tool eval:6 Tool / 66 case / 100% pass
+
+### 下次接手候选
+1. **剩余 7 Tool fixture**(T04/T06/T07/T09/T10/T12/T13)— 写 JSON 即可
+2. **L1 Prompt eval 540 cases** — 18 P × ≥ 30
+3. **L2 Skill eval 350 cases** — 7 Skill × ≥ 50(+ Anthropic Skill spec 校验)
+4. **L3 Chain eval 40 cases** — 4 chain(thesis/notify/reflect/cocreation)× ≥ 10
+5. **L4 Trajectory 20 多轮场景**
+6. **Safety AE 270 cases** — 红队对抗
+7. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+8. **KMS AwsKmsProvider** — 需 AWS 账号

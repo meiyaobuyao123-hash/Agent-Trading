@@ -3823,3 +3823,68 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 4. **AE06/AE08 LLM-judge 异步采样** — persona_mismatch / data_fabrication 真覆盖
 5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 外部 API + AWS 账号
 6. **CI 接通** — eval-runbook §5 yaml 接入 GitHub Actions / Linear gate
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 32 — CI eval-gate + 本地 verify.sh(Phase 4 真闭环)
+
+### 做了什么(commit `9740c28`)
+
+**A. .github/workflows/eval-gate.yml(GitHub Actions)**:
+- 触发:
+  - pull_request(main / agent-v1)+ path filter(避免 doc-only PR 跑 CI)
+  - push / schedule(UTC 16:00 nightly)/ workflow_dispatch
+- mode:
+  - PR/手动 → `--skip launch_criteria`(避免 17 milestone-gated 噪声)
+  - push/nightly → 跑全 9(含 launch,跟踪推进)
+- 步骤:
+  1. checkout + Python 3.11 + pip cache
+  2. 装最小 eval deps(pytest pytest-asyncio PyYAML jsonschema pydantic)
+     不装全 requirements.txt 避免无 key import 报错
+  3. python -m agent.eval.run_all $skip_arg(< 1s)+ JSON snapshot
+  4. pytest 11 文件全跑(test_eval_*.py + test_input_filter.py)
+  5. upload eval-snapshot.json artifact(30 天保留)
+  6. PR 评论 markdown 表(每 suite pass/rate/gate/notes)
+  7. exit 1 on hard gate fail
+- permissions:contents:read + pull-requests:write
+- timeout:10 min
+
+**B. services/pump-scanner/scripts/verify.sh(本地 mirror)**:
+- chmod +x;Usage:./scripts/verify.sh [--full | --tests-only | --eval-only]
+- 默认 mode = 跳 launch(开发期,等同 PR CI)
+- --full = 跑全 9(模拟 nightly)
+- 顺序:run_all → pytest 11 文件 → 总结 ✅/❌
+- 任一失败 → exit 1 + 指向 docs/runbook/eval-runbook.md §4 triage
+
+**实测**:
+- ./scripts/verify.sh:9 suite < 1s + 343 tests / 3.5s 全过 → ✅
+- yaml syntax check:python yaml.safe_load OK
+
+### Phase 4 真闭环 ✅(autonomous-loop 续 19-32 全部产出)
+
+**核心交付清单**:
+1. **9 eval suite framework**(L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE / L4 Trajectory / Launch Criteria / Quality Rubric / Judge Calibration)
+2. **760+132 golden case + 100 calibration sample**
+3. **~341 self-tests**
+4. **input_filter v1.0**(SEV-0 真覆盖,5 attack class regex)
+5. **run_all.py 一键聚合**(< 1s)
+6. **docs/agent-pm/eval-summary.md**(Phase 4 sign-off snapshot)
+7. **docs/runbook/eval-runbook.md**(Ops 实操 + triage)
+8. **.github/workflows/eval-gate.yml**(CI gate)
+9. **scripts/verify.sh**(本地 mirror)
+
+### 累计本会话总计
+- 14 轮 autonomous-loop(续 19-32)
+- 53 commits
+- pytest 全量 1145/1147(2 pre-existing failures 与本工作无关)
+- Phase 4 9 块 + 收尾 + CI gate 全部完成 ✅
+
+### 下次接手候选(Phase 4 后)
+1. **Beta 灰度 5% 启动** — 框架就位,可发流量
+2. **17 Launch criteria sign-off 真推进** — legal 12 关键路径
+3. **真 LLM judge 接通**(W17-W22)— anthropic + 100 人工标注
+4. **AE06/AE08 LLM-judge 异步采样**
+5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS
+6. **GitHub repo secrets 配置** — 给 CI 注入 anthropic key 等(真 LLM eval 启用时)
+7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana
+8. **Slack/email 告警** — nightly hard gate fail 时 ping

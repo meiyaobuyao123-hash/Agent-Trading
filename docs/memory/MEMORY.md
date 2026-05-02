@@ -365,6 +365,15 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - docs/runbook/eval-runbook.md(200 行 Ops 实操)— 何时跑 / triage / CI yaml / 上线 checklist
   - 22 self-tests(SUITES 配置 + hard_gate 8 路径 + 端到端 5);pytest 全量 1145/1147(+22)
   - **任何 PR 跑 `python3 -m agent.eval.run_all` 看 ✓ 即可放心合**
+- ✅ **W3 D5+ CI eval-gate + 本地 verify.sh**(commit `9740c28`):Phase 4 闭环
+  - .github/workflows/eval-gate.yml — PR/push/nightly cron(UTC 16:00)/ workflow_dispatch
+  - path filter:仅 agent/api/prompts/migrations/main.py/requirements/tests 改动才跑
+  - mode:PR=skip launch / push+nightly=full;最小 deps(pytest+pytest-asyncio+PyYAML+jsonschema+pydantic)
+  - 步骤:run_all + JSON snapshot artifact + pytest 11 文件 + PR 评论 markdown 表
+  - exit 1 on hard gate fail;timeout 10min;permissions write PR comment
+  - services/pump-scanner/scripts/verify.sh — 本地 mirror,Usage:`./scripts/verify.sh [--full | --tests-only | --eval-only]`
+  - 实测 verify.sh:9 suite < 1s + 343 tests / 3.5s 全过 → ✅
+  - **CI gate 接通,任何 PR 自动 verify;本地 verify.sh 等同 CI**
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

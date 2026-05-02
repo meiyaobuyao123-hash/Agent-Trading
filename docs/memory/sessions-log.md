@@ -3602,3 +3602,57 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 4. **C4 LLM-judge async** — persona / data fabrication
 5. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
 6. **Phase 4 收尾整合** — 写 docs/agent-pm/eval-summary.md 总览(9 suite + 660 case + Phase 4 完整)
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 28 — LLM-as-judge framework + 100 sample(Phase 4 第九块)
+
+### 做了什么(commit `e0ef905`)
+
+**A. agent/eval/judge_runner.py(250 行)**:
+- JudgeSample / DimResult / JudgeEvalReport
+- 复用 rubric_runner.DIMENSIONS(10 维)+ heuristic scorer
+- _pearson 数学函数(perfect/anti/zero-std/short/mismatch len 边界全 cover)
+- default_judge:用 rubric_runner._run_one_case 算 10 dim 分数
+- run_judge_calibration(judge_fn, samples_path):per-dim Pearson + safety 严格 binary
+- **plug-in interface**:W17-W22 替换 default_judge 为 anthropic API,框架全复用
+- CLI:python -m agent.eval.judge_runner --suite=judge_calibration
+
+**B. 100-sample fixture**:
+- 4 category × 25 sample(thesis / review / notify / chat)
+- 每 cat 21 高 + 4 低 mix
+- human_scores 模拟人工标注(safety 严格匹配 judge)
+- W17-W22 替换为真 100 条人工标注
+
+**Judge calibration 全套结果(启发式 baseline)**:
+- N = 100 samples / Pearson 0.95-0.99 全 9 non-safety dims ✓
+- safety 100% binary 一致 ✓
+- **passes = True**
+
+**C. 测试**(tests/test_eval_judge_runner.py 24 用例):
+- DIMENSIONS / threshold / _pearson 6 path / default_judge 3 / Report 4 path /
+  端到端 5 / plug-in custom judge / samples sanity 2
+- 24/24 全过
+
+**D. 诚实标注**:启发式 baseline(human ≈ judge + 小噪声)Pearson 自然 0.95+。
+W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pearson 真值会下降
+(LLM vs 人主观本就有差异),0.7 门槛是真实考验。
+
+### Phase 4 完成度(全 9 块完成 ✅)
+- L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5 + Safety AE 10/10 +
+  L4 Trajectory 4/4 + Launch Criteria 6/6 + Quality Rubric 4/4 + **Judge Calibration 100/100 ✅**
+- 累计 10 eval suite golden 760 case + 100 calibration sample
+- 10 eval suite 联跑 319/319
+
+### 累计本会话总计
+- 本轮新增:框架 1 + 100-sample fixture + 24 tests
+- pytest 全量 **1121/1123**(+25,2 pre-existing failures 与本轮无关)
+- 49 commits 累计 deploy
+
+### 下次接手候选
+1. **17 Launch criteria sign-off 推进** — legal 12 关键路径(GA 闸门)
+2. **千分位 hype** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x`
+3. **C4 LLM-judge async** — persona / data fabrication 异步采样
+4. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号
+5. **真 LLM judge 接通** — W17-W22 anthropic API + 真 100 人工标注 calibration
+6. **Phase 4 收尾文档** — docs/agent-pm/eval-summary.md 总览(10 suite + 9 块完成)

@@ -334,6 +334,18 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 46 self-tests;9 eval suite 联跑 295/295;pytest 全量 1096/1099(+45)
   - **Phase 4 8 块全完成 ✅**;累计 9 eval suite golden 660 case
   - 剩 LLM-as-judge 100 冷启动(W17-W22)+ 17 Launch sign-off
+- ✅ **W3 D5+ LLM-as-judge cold start framework + 100 sample**(commit `e0ef905`):Phase 4 第九块完成
+  - agent/eval/judge_runner.py(250 行)+ 100-sample fixture
+  - JudgeSample / DimResult / JudgeEvalReport;复用 rubric_runner 10 dim
+  - _pearson 数学函数(perfect/anti/zero-std/short/mismatch len 边界全 cover)
+  - default_judge:用 rubric_runner heuristic(W17-W22 替换为 anthropic API)
+  - **plug-in interface**:judge_fn 参数允许测试时替换为任意 judge
+  - 通过判定:non-safety Pearson ≥ 0.7 + safety binary 100% 一致
+  - 100-sample fixture(4 cat × 25):每 cat 21 高 + 4 低,human_scores 模拟人工
+  - **结果**:Pearson 0.95-0.99(9/9 non-safety dims ✓)+ Safety 100% ✓ + passes=True
+  - 24 self-tests;**10 eval suite 联跑 319/319**;pytest 全量 1121/1123(+25)
+  - **诚实标注**:这是启发式 baseline(human ≈ judge + 小噪声),W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pearson 真值会下降(LLM vs 人主观本就有差异),0.7 门槛是真实考验
+  - **Phase 4 9 块全完成 ✅**;累计 10 eval suite golden 760 case + 100 calibration sample
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

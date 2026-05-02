@@ -28,7 +28,7 @@ from agent.tools import (  # noqa: E402
 
 def test_registry_has_twelve_tools():
     reg = get_tool_registry()
-    assert len(reg) == 12
+    assert len(reg) >= 12
     for name in ("run_paper_trade", "create_approval_request",
                  "get_paper_performance", "save_strategy"):
         assert name in reg

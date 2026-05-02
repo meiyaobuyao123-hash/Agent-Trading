@@ -388,6 +388,54 @@ async def main():
         max_instances=1,
     )
 
+    # ── W3 D5+ Reflect Loop daily cron(UTC 12:00 = 北京时间 20:00)──
+    # 引用 docs/agent-pm/17-tech-plan.md Phase 2 Reflect Loop trigger
+    # 跨用户聚合反思(device_id=None);失败 swallow 不阻断 main loop
+    async def _run_daily_reflect():
+        try:
+            from agent.loops.reflect_loop import get_reflect_loop
+            r = await get_reflect_loop().run_cycle(
+                device_id=None, trigger="daily", lookback_days=7,
+            )
+            log.info(
+                "[reflect cron] ok=%s trades=%d new=%d dedupe=%d promoted=%d gate_blocked=%d",
+                r.ok, r.trades_analyzed, r.new_rules_proposed,
+                r.dedupe_skipped, r.promoted, r.gate_blocked,
+            )
+        except Exception as e:
+            log.warning("[reflect cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_daily_reflect,
+        trigger=CronTrigger(hour=12, minute=0, timezone="UTC"),
+        id="reflect_daily",
+        name="Reflect Loop Daily 20:00 (UTC 12:00)",
+        misfire_grace_time=3600,
+        max_instances=1,
+    )
+
+    # ── W3 D5+ 共创会话过期清理(每 5 分钟)─────────────────
+    # 引用 services/pump-scanner/migrations/local_pg/037_conversation_states.sql
+    # 30min 不活跃 → 标 aborted(保审计行不真删)
+    def _run_conv_cleanup():
+        try:
+            from agent.orchestration.cocreation_state_machine import cleanup_expired
+            n = cleanup_expired()
+            if n > 0:
+                log.info("[conv cleanup] aborted %d expired conversations", n)
+        except Exception as e:
+            log.debug("[conv cleanup] skipped: %s", e)
+
+    scheduler.add_job(
+        _run_conv_cleanup,
+        trigger="interval",
+        minutes=5,
+        id="cocreation_cleanup",
+        name="Cocreation State Cleanup (5min)",
+        misfire_grace_time=60,
+        max_instances=1,
+    )
+
     scheduler.start()
 
     # ── W3 D3: SafetyEngine 启动恢复 + DB 持久化挂载 ──────────────

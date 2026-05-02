@@ -215,6 +215,11 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 加 POST /api/agent/scout/evaluate(默认 dry_run=true)
   - **12 单元测试全过**;服务器接通(0 hot_coin 关联策略时正确返 0)
   - **🎉 Phase 2 5/5 Loop 全部完成 — Agent v1 编排层闭环!**
+- ✅ **W3 D5+ T16 + 2 cron 接入**(commit `8d587ba` deploy):Phase 1 Tool 13/17 + cron 闭环
+  - T16 run_backtest:包装 backtester.backtest_strategy + 规则化 warnings(sample_low/window_short/window_long/high_drawdown/disclaimer)
+  - main.py 加 reflect_daily cron(UTC 12:00 = 北京 20:00)真触发 ReflectLoop.run_cycle
+  - main.py 加 cocreation_cleanup cron(每 5min)清理过期共创会话
+  - **13 T16 测试全过**;服务器 deploy 后两个 cron 都成功 Added job ✅
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

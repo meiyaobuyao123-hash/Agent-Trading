@@ -1607,3 +1607,47 @@ async def abort_cocreation(
         log.warning("cocreation abort failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)[:200])
 
+
+# ── /cocreation/chat — LLM 串联完整 loop ──────────────────────
+
+
+class CocreationChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    skill_name: str = Field("signal-strategy-builder")
+
+
+@router.post("/cocreation/chat")
+async def cocreation_chat(
+    req: CocreationChatRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """共创 chat 主入口 — 接 P01/P11 + 状态机 + T12。
+
+    单 turn 处理:
+      load_active_state → append user → 路由到 stage handler →
+      调 LLM(失败降级)→ 解析 → transition → append assistant → 返回
+    """
+    try:
+        from agent.loops.chat_loop import get_cocreation_loop
+        loop = get_cocreation_loop()
+        result = await loop.handle(
+            device_id=user_id,
+            user_message=req.message,
+            skill_name=req.skill_name,
+        )
+        return {
+            "ok": result.ok,
+            "assistant_text": result.assistant_text,
+            "stage": result.stage,
+            "conversation_id": result.conversation_id,
+            "draft_data": result.draft_data,
+            "saved_strategy_id": result.saved_strategy_id,
+            "suggested_next_stage": result.suggested_next_stage,
+            "source": result.source,
+            "error": result.error,
+            "extra": result.extra,
+        }
+    except Exception as e:
+        log.warning("cocreation chat failed: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)[:200])
+

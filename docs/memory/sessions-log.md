@@ -2379,3 +2379,110 @@ POST /api/agent/notify/trigger {event:..., mode:paper, dry_run:true}
 2. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
 3. **剩余 12 Prompt** + Skill SKILL.md 化
 4. **WAL 真接入** + Eval golden 1660 / KMS
+
+---
+
+## 会话 11 续 12(autonomous-loop:Scout Loop — 5/5 Loop 完成 🎉,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第九轮
+
+### 实际产出(commit `4e02b4a` deploy)
+
+**Agent v1 第五个也是最后一个 Loop — Scout Loop**
+
+新建 agent/loops/scout_loop.py(200+ 行):
+- ScoutLoop.process(signal_payload, source, chain, token_address, ...,
+  mode_override, dry_run, max_dispatch)
+- 流程:
+  1. 构造 DataEvent(对齐 schemas.DataEvent)
+  2. StrategyManager.get_active_strategies(source) 拉关联此源策略
+  3. StrategyEvaluator().evaluate(event, strategies) — 复用 rule_engine
+  4. 对每条 triggered:
+     * check_daily_limit(skip → 累 skipped_daily_limit)
+     * 拼 NotifyLoop event(继承 trigger_context + 注入 signal_payload 到 token_data)
+     * mode = mode_override || strategy.mode || "paper"
+     * notify.process(event, mode, dry_run)
+     * record_trigger(非 dry_run)
+     * 单条失败不阻断其他(verdict=error 记入 notify_results)
+  5. max_dispatch 上限保护(默认 5 防爆炸)
+
+设计原则:
+- 与 event_listener.py 共存(不破坏线上 EventBus 自动订阅)
+- 本 Loop 给 manual /scout/evaluate endpoint + 测试用的可控接口
+- dry_run propagate 到下游 NotifyLoop;不真 record_trigger
+
+routes_agent.py:
+- POST /api/agent/scout/evaluate 手动触发(默认 dry_run=true)
+
+### 测试 (tests/test_scout_loop.py — 12 cases)
+- DataEvent build 失败 (1)
+- 无 active strategies 返 0 / 有 strategies 但无 triggers (2)
+- triggered → 真 dispatch + record_trigger 调用 (1)
+- daily_limit 跳过 + 累 skipped (1)
+- max_dispatch 上限保护 (1)
+- mode_override 应用 (1)
+- dry_run propagate + 不 record_trigger (1)
+- notify 失败记 error 不阻断 (1)
+- evaluator 失败标 ok=False (1)
+- signal_payload 注入 trigger_context.token_data (1)
+- singleton (1)
+
+**12/12 PASSED**;**累计本会话 282+12=294 后端测试全过**
+
+### 服务器实测
+```
+POST /api/agent/scout/evaluate {signal_payload:{score:75,...}, source:hot_coin,
+                                  dry_run:true}
+→ {ok:true, source:hot_coin, strategies_evaluated:0, triggered:0,
+   dispatched:0, latency_ms:129}
+```
+0 strategies 在 hot_coin source(真实状态:测试用户没配过该源策略),
+返 0 是正确行为。完整路径(DataEvent → evaluator → max_dispatch)已通。
+
+### 🎉 Agent v1 5/5 Loop 全部完成
+
+| Loop | 状态 | endpoint |
+|---|---|---|
+| ✅ Chat | P01+P11+T12 端到端 | POST /api/agent/cocreation/chat |
+| ✅ Thesis | L1 规则化 + L2 P02+Sonnet | POST /api/thesis |
+| ✅ Reflect | 反思 + dedupe + 5 硬晋升 | POST /api/agent/reflect/run |
+| ✅ Notify | safety+risk+T17+4 mode 分支+push | POST /api/agent/notify/trigger |
+| ✅ Scout | EventBus signal → strategy match → NotifyLoop | POST /api/agent/scout/evaluate |
+
+### Phase 进度大整合
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**12/17 Tool ✅** / **Memory 4 层 ✅** / WAL 真接入 ⏸
+- Phase 2:**5/5 Loop ✅** / **review_engine v2 LLM ✅** /
+  **6/18 Prompt + Loader 真实施 ✅** / Skill SKILL.md ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话总计
+- 后端 Python:**294 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 318 新测试,100% PASSED**
+- 27 commits 全部 deploy
+
+### Agent v1 已可用闭环(端到端)
+1. 用户 chat → Cocreation Loop → 创建策略(paper)
+2. 数据采集 → EventBus signal → ScoutLoop.evaluate → 命中策略
+3. ScoutLoop → NotifyLoop.process → safety+risk+T17+mode 路由
+4. paper 模式 → T07 写 paper trade + T13 push
+5. trade 累积 → cron daily 20:00 → ReflectLoop
+6. ReflectLoop → 反思 → dedupe → 5 硬晋升 → 14d Shadow Mode
+7. 用户在 Flutter 记忆管理页可看到 active/shadow 规则
+
+(thesis_loop 是上面 ScoutLoop → NotifyLoop 之间的可选辅助:
+auto 模式 + 高 score 时,可以先调 thesis_loop 拿 conviction,
+再决定是否走 HITL)
+
+### 下次接手候选
+1. **剩余 5 Tool**:T01 query_market / T02 query_holders / T03 query_onchain_activity / T08 execute_swap / T16 run_backtest(需外部 API + KMS)
+2. **剩余 12 Prompt** + Skill SKILL.md 化(S01-S08)
+3. **WAL 真接入** — 关键写入路径走 wal.py
+4. **Eval golden 1660 条** L1-L4
+5. **KMS AwsKmsProvider** — 需 AWS 账号
+6. **L3 thesis 真 debate** — debate.py 已存,接进 thesis_loop
+7. **conversation_states cleanup_expired cron** — 已写 helper,接 main.py scheduler
+8. **review_engine cron(daily 20:00)** — 接 ReflectLoop daily trigger

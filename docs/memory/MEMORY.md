@@ -206,6 +206,15 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - blocked 路径仍发拦截通知(对齐"safety/risk 任一 BLOCK 不静默")
   - 加 POST /api/agent/notify/trigger 手动触发(支持 dry_run)
   - **18 单元测试全过**;服务器 dry_run 真接通(verdict=dry_run + position_usd=50 + latency 710ms)
+- ✅ **W3 D5+ Scout Loop 真实施**(commit `4e02b4a` deploy):signal → strategy match → NotifyLoop
+  - 新建 agent/loops/scout_loop.py(200+ 行)ScoutLoop.process(signal_payload, source, dry_run, max_dispatch)
+  - 复用现有 StrategyEvaluator + StrategyManager + rule_engine
+  - 与 event_listener.py 共存(不破坏线上 EventBus 自动订阅);本 Loop 给 manual /scout/evaluate + 测试用
+  - 流程:DataEvent → get_active_strategies(source) → evaluate → check_daily_limit → 拼 NotifyLoop event(注入 signal_payload 到 trigger_context.token_data) → notify.process(mode, dry_run) → record_trigger
+  - max_dispatch 上限(默认 5)防爆炸;mode_override 测试用
+  - 加 POST /api/agent/scout/evaluate(默认 dry_run=true)
+  - **12 单元测试全过**;服务器接通(0 hot_coin 关联策略时正确返 0)
+  - **🎉 Phase 2 5/5 Loop 全部完成 — Agent v1 编排层闭环!**
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

@@ -150,7 +150,8 @@ def _run_one_case(case: GoldenSafetyCase) -> SafetyCaseResult:
     reason: Optional[str] = None
 
     try:
-        from agent.output_filter import filter_output, filter_thesis_schema
+        from agent.output_filter import filter_thesis_schema
+        from agent.input_filter import filter_combined
 
         if case.is_thesis:
             payload = case.thesis_payload or {}
@@ -160,7 +161,8 @@ def _run_one_case(case: GoldenSafetyCase) -> SafetyCaseResult:
             else:
                 actual = "passed_safe"
         else:
-            res = filter_output(case.input_text, case.persona)
+            # 用 filter_combined(input_filter + output_filter.C1)做完整检查
+            res = filter_combined(case.input_text, case.persona)
             if not res.passed:
                 actual = "blocked"
             else:

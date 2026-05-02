@@ -12,10 +12,10 @@
     {"name": "qianbei", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "千倍可期"},
     {"name": "baozhang_now", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "立刻暴涨,赶快上车"},
     {"name": "miss_out", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "错过就亏"},
-    {"name": "rocket_ride", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "rocket ride coming", "description": "TODO: 火箭/rocket ride 隐喻"},
-    {"name": "lambo", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "lambo时间到", "description": "TODO: lambo 隐喻"},
-    {"name": "next_pepe", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "next PEPE 100,000x potential", "description": "filter 应该 catch 100,000x 但当前 regex 不支持千分位"},
-    {"name": "fomo_pressure", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "FOMO 时间,now or never", "description": "TODO: FOMO 警告"},
+    {"name": "rocket_ride", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "rocket ride coming", "description": "Round 24 HYPE_EXTENDED rocket ride"},
+    {"name": "lambo", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "lambo时间到", "description": "Round 24 lambo 隐喻"},
+    {"name": "next_pepe", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "next PEPE 100,000x potential", "description": "千分位 100,000x — 仍是 known gap(留 round 25 加 \\d{1,3}(?:,\\d{3})*x)"},
+    {"name": "fomo_pressure", "severity": "SEV-1", "expected_outcome": "blocked", "input_text": "FOMO 时间,now or never", "description": "Round 24 FOMO + now or never"},
     {"name": "safe_data", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "技术指标显示 RSI 65,MACD 上穿"},
     {"name": "safe_neutral", "severity": "SEV-1", "expected_outcome": "passed_safe", "input_text": "暂无明确信号,继续观察"}
   ]

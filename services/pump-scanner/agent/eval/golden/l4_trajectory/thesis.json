@@ -1,0 +1,56 @@
+{
+  "category": "thesis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "5 thesis 旅程:L1 fast / L2 single LLM / L3 debate / fail fallback / multi-token sequential",
+  "cases": [
+    {
+      "name": "L1_fast_path_zero_cost",
+      "description": "用户问简单 thesis → 规则化 L1 走完(0 LLM)",
+      "steps": [
+        {"name": "thesis_route", "action_type": "route_call", "route_path": "", "route_method": "POST", "route_module": "api.routes_thesis"},
+        {"name": "thesis_loop_class", "action_type": "class_method", "cls_module": "agent.loops.thesis_loop", "cls_name": "ThesisLoop", "method": "generate"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"}
+      ]
+    },
+    {
+      "name": "L2_single_llm_thesis",
+      "description": "L2 走 P02 thesis writer 单 Sonnet 调用",
+      "steps": [
+        {"name": "thesis_route", "action_type": "route_call", "route_path": "", "route_method": "POST", "route_module": "api.routes_thesis"},
+        {"name": "thesis_loop_generate", "action_type": "class_method", "cls_module": "agent.loops.thesis_loop", "cls_name": "ThesisLoop", "method": "generate"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"},
+        {"name": "tool_recall_for_similar_cases", "action_type": "tool_call", "tool_name": "recall_memory"}
+      ]
+    },
+    {
+      "name": "L3_full_debate_path",
+      "description": "L3 = 3 路 analyst + P02 + Bull/Bear/Facilitator debate",
+      "steps": [
+        {"name": "thesis_route", "action_type": "route_call", "route_path": "", "route_method": "POST", "route_module": "api.routes_thesis"},
+        {"name": "thesis_loop_generate", "action_type": "class_method", "cls_module": "agent.loops.thesis_loop", "cls_name": "ThesisLoop", "method": "generate"},
+        {"name": "tool_tech_indicators", "action_type": "tool_call", "tool_name": "calc_technical_indicators"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"},
+        {"name": "tool_recall_memory", "action_type": "tool_call", "tool_name": "recall_memory"},
+        {"name": "tool_position_size_recommend", "action_type": "tool_call", "tool_name": "calc_position_size"}
+      ]
+    },
+    {
+      "name": "L3_fallback_to_L1_on_cost_block",
+      "description": "Cost guard EMERGENCY → L3 拒绝 → fallback L1",
+      "steps": [
+        {"name": "thesis_loop_generate", "action_type": "class_method", "cls_module": "agent.loops.thesis_loop", "cls_name": "ThesisLoop", "method": "generate"},
+        {"name": "tool_risk_metrics_only", "action_type": "tool_call", "tool_name": "calc_risk_metrics"}
+      ]
+    },
+    {
+      "name": "user_views_thesis_history",
+      "description": "用户查 thesis 列表 + 给 feedback",
+      "steps": [
+        {"name": "list_thesis_route", "action_type": "route_call", "route_path": "", "route_method": "GET", "route_module": "api.routes_thesis"},
+        {"name": "get_one_thesis", "action_type": "route_call", "route_path": "/{thesis_id}", "route_method": "GET", "route_module": "api.routes_thesis"},
+        {"name": "feedback_thesis", "action_type": "route_call", "route_path": "/{thesis_id}/feedback", "route_method": "POST", "route_module": "api.routes_thesis"}
+      ]
+    }
+  ]
+}

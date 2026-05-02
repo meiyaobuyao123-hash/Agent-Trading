@@ -1,0 +1,64 @@
+{
+  "category": "trading",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "5 交易旅程:paper open+close / notify HITL approve / notify HITL reject / auto with HITL / auto direct(KMS pending fallback)",
+  "cases": [
+    {
+      "name": "paper_open_then_close",
+      "description": "Scout 触发 → Notify (paper mode) → 开仓 → 后续平仓",
+      "steps": [
+        {"name": "scout_evaluate", "action_type": "route_call", "route_path": "/api/agent/scout/evaluate", "route_method": "POST"},
+        {"name": "scout_loop_handles", "action_type": "class_method", "cls_module": "agent.loops.scout_loop", "cls_name": "ScoutLoop", "method": "process"},
+        {"name": "notify_loop_handles", "action_type": "class_method", "cls_module": "agent.loops.notify_loop", "cls_name": "NotifyLoop", "method": "process"},
+        {"name": "tool_position_size", "action_type": "tool_call", "tool_name": "calc_position_size"},
+        {"name": "tool_paper_open", "action_type": "tool_call", "tool_name": "run_paper_trade"},
+        {"name": "tool_push_notification", "action_type": "tool_call", "tool_name": "send_push_notification"},
+        {"name": "side_effect_send_push", "action_type": "side_effect", "side_effect_module": "agent.push_service", "side_effect_fn": "send_push"},
+        {"name": "tool_paper_close_later", "action_type": "tool_call", "tool_name": "run_paper_trade"}
+      ]
+    },
+    {
+      "name": "notify_with_hitl_approve",
+      "description": "Notify + HITL → 用户批准 → 执行",
+      "steps": [
+        {"name": "notify_loop_process", "action_type": "class_method", "cls_module": "agent.loops.notify_loop", "cls_name": "NotifyLoop", "method": "process"},
+        {"name": "tool_create_approval", "action_type": "tool_call", "tool_name": "create_approval_request"},
+        {"name": "tool_send_push", "action_type": "tool_call", "tool_name": "send_push_notification"},
+        {"name": "user_lists_pending", "action_type": "route_call", "route_path": "/api/agent/pending-approvals", "route_method": "GET"},
+        {"name": "user_approves", "action_type": "route_call", "route_path": "/api/agent/pending-approvals/{approval_id}/approve", "route_method": "POST"}
+      ]
+    },
+    {
+      "name": "notify_with_hitl_reject",
+      "description": "用户拒绝 HITL → no execute",
+      "steps": [
+        {"name": "notify_loop_process", "action_type": "class_method", "cls_module": "agent.loops.notify_loop", "cls_name": "NotifyLoop", "method": "process"},
+        {"name": "tool_create_approval", "action_type": "tool_call", "tool_name": "create_approval_request"},
+        {"name": "user_rejects", "action_type": "route_call", "route_path": "/api/agent/pending-approvals/{approval_id}/reject", "route_method": "POST"}
+      ]
+    },
+    {
+      "name": "auto_with_hitl_amount_threshold",
+      "description": "auto mode 但 amount ≥ HITL_AMOUNT_USD → 走 HITL 流程",
+      "steps": [
+        {"name": "scout_loop", "action_type": "class_method", "cls_module": "agent.loops.scout_loop", "cls_name": "ScoutLoop", "method": "process"},
+        {"name": "notify_loop", "action_type": "class_method", "cls_module": "agent.loops.notify_loop", "cls_name": "NotifyLoop", "method": "process"},
+        {"name": "tool_position", "action_type": "tool_call", "tool_name": "calc_position_size"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"},
+        {"name": "tool_create_approval_high_amount", "action_type": "tool_call", "tool_name": "create_approval_request"},
+        {"name": "tool_push_hitl", "action_type": "tool_call", "tool_name": "send_push_notification"}
+      ]
+    },
+    {
+      "name": "auto_direct_kms_fallback_to_notify",
+      "description": "auto-direct 模式但 KMS 未实施 → fallback notify only",
+      "steps": [
+        {"name": "scout_loop", "action_type": "class_method", "cls_module": "agent.loops.scout_loop", "cls_name": "ScoutLoop", "method": "process"},
+        {"name": "notify_loop", "action_type": "class_method", "cls_module": "agent.loops.notify_loop", "cls_name": "NotifyLoop", "method": "process"},
+        {"name": "tool_position", "action_type": "tool_call", "tool_name": "calc_position_size"},
+        {"name": "tool_push_fallback", "action_type": "tool_call", "tool_name": "send_push_notification"}
+      ]
+    }
+  ]
+}

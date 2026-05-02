@@ -1,0 +1,52 @@
+{
+  "category": "reflect",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "5 反思旅程:daily cron / count trigger / emergency loss / propose-then-promote / dedupe-skip",
+  "cases": [
+    {
+      "name": "daily_cron_full_cycle",
+      "description": "20:00 cron 触发 → load trades → review_engine → reflect → propose rules",
+      "steps": [
+        {"name": "reflect_loop_class", "action_type": "class_method", "cls_module": "agent.loops.reflect_loop", "cls_name": "ReflectLoop", "method": "run_cycle"},
+        {"name": "tool_recall_memory", "action_type": "tool_call", "tool_name": "recall_memory"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"},
+        {"name": "side_effect_get_paper_engine", "action_type": "side_effect", "side_effect_module": "agent.paper_engine", "side_effect_fn": "get_paper_engine"},
+        {"name": "manual_route_run", "action_type": "route_call", "route_path": "/api/agent/reflect/run", "route_method": "POST"}
+      ]
+    },
+    {
+      "name": "count_trigger_after_10_trades",
+      "description": "10 笔闭仓累计 → run_cycle(trigger=count)",
+      "steps": [
+        {"name": "reflect_loop_run_cycle", "action_type": "class_method", "cls_module": "agent.loops.reflect_loop", "cls_name": "ReflectLoop", "method": "run_cycle"},
+        {"name": "tool_risk_metrics", "action_type": "tool_call", "tool_name": "calc_risk_metrics"}
+      ]
+    },
+    {
+      "name": "emergency_loss_trigger",
+      "description": "单笔 < -25% → emergency reflect 立即触发",
+      "steps": [
+        {"name": "reflect_loop_run_cycle", "action_type": "class_method", "cls_module": "agent.loops.reflect_loop", "cls_name": "ReflectLoop", "method": "run_cycle"},
+        {"name": "tool_recall_memory", "action_type": "tool_call", "tool_name": "recall_memory"}
+      ]
+    },
+    {
+      "name": "propose_then_promote_5_gates",
+      "description": "反思提议 → JSON-diff dedupe → 5 硬门槛 → semantic write",
+      "steps": [
+        {"name": "reflect_loop", "action_type": "class_method", "cls_module": "agent.loops.reflect_loop", "cls_name": "ReflectLoop", "method": "run_cycle"},
+        {"name": "tool_approve_rule", "action_type": "tool_call", "tool_name": "approve_rule"},
+        {"name": "wal_flush_cron", "action_type": "side_effect", "side_effect_module": "agent.memory.wal", "side_effect_fn": "MemoryWAL"}
+      ]
+    },
+    {
+      "name": "dedupe_skip_no_new_proposal",
+      "description": "新提议与历史 JSON-diff < 20% → 直接 skip",
+      "steps": [
+        {"name": "reflect_loop", "action_type": "class_method", "cls_module": "agent.loops.reflect_loop", "cls_name": "ReflectLoop", "method": "run_cycle"},
+        {"name": "tool_recall_memory_for_dedupe", "action_type": "tool_call", "tool_name": "recall_memory"}
+      ]
+    }
+  ]
+}

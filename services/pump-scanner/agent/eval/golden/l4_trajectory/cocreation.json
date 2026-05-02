@@ -1,0 +1,68 @@
+{
+  "category": "cocreation",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "description": "5 共创旅程:happy path / abort early / refine N 次 / dry_run zero / confirm-then-change",
+  "cases": [
+    {
+      "name": "happy_path",
+      "description": "用户从 idle 顺利走到 saved",
+      "steps": [
+        {"name": "user_starts", "action_type": "route_call", "route_path": "/api/agent/cocreation/start", "route_method": "POST"},
+        {"name": "loop_handles", "action_type": "class_method", "cls_module": "agent.loops.chat_loop", "cls_name": "CocreationLoop", "method": "handle"},
+        {"name": "stage_to_refining", "action_type": "stage_transition", "from_stage": "clarifying", "to_stage": "refining"},
+        {"name": "stage_to_dry_run", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "dry_run"},
+        {"name": "tool_backtest", "action_type": "tool_call", "tool_name": "run_backtest"},
+        {"name": "stage_to_confirming", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "confirming"},
+        {"name": "tool_list_strategies_quota", "action_type": "tool_call", "tool_name": "list_strategies"},
+        {"name": "stage_to_saved", "action_type": "stage_transition", "from_stage": "confirming", "to_stage": "saved"},
+        {"name": "tool_save_strategy", "action_type": "tool_call", "tool_name": "save_strategy"}
+      ]
+    },
+    {
+      "name": "abort_early_in_clarifying",
+      "description": "用户在澄清阶段就放弃",
+      "steps": [
+        {"name": "user_starts", "action_type": "route_call", "route_path": "/api/agent/cocreation/start", "route_method": "POST"},
+        {"name": "loop_handles", "action_type": "class_method", "cls_module": "agent.loops.chat_loop", "cls_name": "CocreationLoop", "method": "handle"},
+        {"name": "stage_clarifying_to_aborted", "action_type": "stage_transition", "from_stage": "clarifying", "to_stage": "aborted"},
+        {"name": "abort_endpoint_exists", "action_type": "route_call", "route_path": "/api/agent/cocreation/{conv_id}/abort", "route_method": "POST"}
+      ]
+    },
+    {
+      "name": "refine_loop_then_save",
+      "description": "用户在 refining 反复调整后保存",
+      "steps": [
+        {"name": "user_starts", "action_type": "route_call", "route_path": "/api/agent/cocreation/start", "route_method": "POST"},
+        {"name": "stage_to_refining", "action_type": "stage_transition", "from_stage": "clarifying", "to_stage": "refining"},
+        {"name": "stage_refine_loop", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "refining"},
+        {"name": "stage_to_dry_run", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "dry_run"},
+        {"name": "stage_back_to_refining", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "refining"},
+        {"name": "stage_to_dry_run_again", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "dry_run"},
+        {"name": "stage_to_confirming", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "confirming"},
+        {"name": "stage_to_saved", "action_type": "stage_transition", "from_stage": "confirming", "to_stage": "saved"},
+        {"name": "tool_save_strategy", "action_type": "tool_call", "tool_name": "save_strategy"}
+      ]
+    },
+    {
+      "name": "dry_run_zero_trades_back_to_refining",
+      "description": "回测 0 笔触发 → P06 引导回 refining",
+      "steps": [
+        {"name": "stage_refining_to_dry_run", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "dry_run"},
+        {"name": "tool_backtest", "action_type": "tool_call", "tool_name": "run_backtest"},
+        {"name": "stage_back_to_refining", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "refining"}
+      ]
+    },
+    {
+      "name": "confirm_then_change",
+      "description": "用户进入 confirming 后想改 → 回 refining",
+      "steps": [
+        {"name": "stage_to_confirming", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "confirming"},
+        {"name": "stage_change_back", "action_type": "stage_transition", "from_stage": "confirming", "to_stage": "refining"},
+        {"name": "stage_dry_run_again", "action_type": "stage_transition", "from_stage": "refining", "to_stage": "dry_run"},
+        {"name": "stage_confirm_again", "action_type": "stage_transition", "from_stage": "dry_run", "to_stage": "confirming"},
+        {"name": "stage_to_saved", "action_type": "stage_transition", "from_stage": "confirming", "to_stage": "saved"}
+      ]
+    }
+  ]
+}

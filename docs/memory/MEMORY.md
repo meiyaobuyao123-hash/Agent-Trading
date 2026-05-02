@@ -235,6 +235,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - check_before_call:LLM 调用前查 prompt_invocations 当月 SUM(60s 缓存),返 (allowed, actual_model, reason)
   - 接入 chat_loop / thesis_loop / review_engine 三个 LLM 调用站,blocked → fallback rule_engine
   - **28 单元测试全过**;服务器实测 chat 走 LLM(预算 <70%)正常 source=llm + Claude 真澄清
+- ✅ **W3 D5+ L3 thesis 真 debate**(commit `5c083aa` deploy):L3 路径完整实施(替代之前的 fallback L2)
+  - agent/loops/thesis_loop.py:_run_debate(cost_guard 检查 + DebateEngine.run_debate Bull/Bear/Facilitator 5 轮)
+  - _adjust_with_debate:Bull 强 +0.05;Bear 强反转 neutral;Draw ×0.85;facilitator action=hold 强制 neutral;PRD 二次校验
+  - debate_record 写 agent_thesis.debate_record JSONB 字段(migration 039 已建)
+  - cost_guard EMERGENCY 时 debate 跳过(避免 4x token);失败 swallow 不阻断 P02 输出
+  - **10 新测试全过**(累计 thesis_loop 43 测试);**Phase 2 thesis L1+L2+L3 完整路径 ✅**
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

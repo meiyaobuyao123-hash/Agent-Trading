@@ -2754,3 +2754,74 @@ LLM 路径仍正常工作,cost_guard 透明检查通过(当前预算占用 < 70%
 4. **Eval golden 1660 条** L1-L4
 5. **KMS AwsKmsProvider** — 需 AWS 账号
 6. **Skill loader.py + Progressive Disclosure** — S08+S01-03+S07 always loaded;S04/S05 lazy
+
+---
+
+## 会话 11 续 16(autonomous-loop:L3 thesis 真 debate,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十三轮
+
+### 实际产出(commit `5c083aa` deploy)
+
+**L3 thesis 真实施 — Bull/Bear/Facilitator 辩论闭环**
+
+agent/loops/thesis_loop.py:
+- 移除"L3 → L2 fallback"占位
+- 新增 _run_debate(tech, sent, onc, similar):
+  * cost_guard 检查(L3 比 P02 多 4x token,EMERGENCY 时拒)
+  * agent.debate.DebateEngine.run_debate(reports, memory_context):
+    Bull R1 → Bear R1 → Bull R2 → Bear R2 → Facilitator(全 Sonnet)
+  * 失败返 None(主路径继续用纯 P02 输出,不阻断)
+  * cost_usd 用 _estimate_cost_usd 算
+- 新增 _adjust_with_debate(thesis, debate):
+  * Bull 强(winner=bull + conf≥0.7) → conviction +0.05(clamp 1.0)
+  * Bear 强(winner=bear + conf≥0.7 + bullish) → 强反转 neutral + 削弱 conviction
+  * Draw / 低置信度 → conviction × 0.85
+  * facilitator.action='hold' → 强制 neutral
+  * 加 evidence 'debate_facilitator' + 加 risk
+  * PRD 硬约束二次校验:conviction<0.5 必须 hold/avoid/neutral
+  * 无 conclusion(空 dict)→ thesis 不变
+- _persist_thesis 加 debate_record 参数,写入 agent_thesis.debate_record JSONB
+- generate L3 路径:P02 → _run_debate → _adjust → persist → result.extra
+
+### 测试 (tests/test_thesis_loop.py — 10 新 cases,累计 43)
+- test_generate_l3_runs_debate(替代旧 fallback_to_l2):
+  Bull strong 0.8 → conviction 0.72→0.77;debate_facilitator 在 evidence;
+  extra.debate_record 完整
+- test_generate_l3_debate_failure_keeps_p02_thesis:
+  debate 返 None → conviction 不变,无 extra.debate_record
+- _adjust_with_debate (5):
+  bull strong 加 +0.05 / bear 反转 neutral 削弱 / draw 削弱 ×0.85 +
+  action=hold 强制 neutral / 低 conviction 强制 neutral / 无 conclusion 不动
+- _run_debate (4):
+  no api key / cost_guard blocks / engine 失败 / 成功 attaches cost
+
+**43/43 PASSED**;**累计本会话 355+10=365 后端测试全过**
+
+### Phase 2 thesis 路径完整 ✅
+- L1 规则化(0 LLM,score-based bullish/bearish/neutral,conviction < 0.5)
+- L2 P02 + Sonnet(decision schema 输出)
+- L3 P02 + Bull/Bear/Facilitator 辩论(5 轮 Sonnet,debate_record 持久化)
+
+### Phase 进度
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**5/5 Loop ✅** / review_engine v2 LLM ✅ / 6/18 Prompt ✅ /
+  4 cron ✅ / **L3 debate ✅** / Skill SKILL.md ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话总计
+- 后端 Python:**365 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 389 新测试,100% PASSED**
+- 35 commits 全部 deploy
+
+### 下次接手候选
+1. **Skill SKILL.md 化**(S01-S08)— 把 prompts/v1/Pxx/ 升级到 Anthropic Skill 格式
+2. **Skill loader.py + Progressive Disclosure** — S08+S01-03+S07 always loaded;S04/S05 lazy
+3. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+4. **Eval golden 1660 条** L1-L4
+5. **KMS AwsKmsProvider** — 需 AWS 账号
+6. **Flutter Memory Management UI** — 把 SemanticRule shadow_mode_until 倒计时接真后端

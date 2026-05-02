@@ -88,11 +88,20 @@ def test_estimate_cost_unknown_model_uses_sonnet():
 
 
 # ── _select_level ───────────────────────────────────────────
+#
+# 注:Round 34 加 rollout_gate L3 门 → L3 默认降级 L2;
+# 这些 _select_level 的测试只验 level 选择逻辑本身,所以 patch
+# is_in_rollout=True 让 L3 路径正常走过。Gate 行为另在
+# tests/test_rollout_gate_integration.py 单独测。
+
+from unittest.mock import patch as _gate_patch
+
 
 def test_select_level_explicit_passes_through():
     loop = ThesisLoop()
-    assert loop._select_level("L1", 100, 80) == "L1"
-    assert loop._select_level("L3", 5, 30) == "L3"
+    with _gate_patch("agent.rollout_gate.is_in_rollout", return_value=True):
+        assert loop._select_level("L1", 100, 80) == "L1"
+        assert loop._select_level("L3", 5, 30) == "L3"
 
 
 def test_select_level_auto_low_position_low_score_l1():
@@ -102,7 +111,8 @@ def test_select_level_auto_low_position_low_score_l1():
 
 def test_select_level_auto_high_score_l3():
     loop = ThesisLoop()
-    assert loop._select_level("auto", 100, 80) == "L3"
+    with _gate_patch("agent.rollout_gate.is_in_rollout", return_value=True):
+        assert loop._select_level("auto", 100, 80) == "L3"
 
 
 def test_select_level_auto_mid_l2():
@@ -309,7 +319,8 @@ async def test_generate_l3_runs_debate():
          patch.object(loop, "_run_debate",
                       AsyncMock(return_value=fake_debate)), \
          patch.object(loop, "_persist_thesis",
-                      AsyncMock(return_value="t-300")):
+                      AsyncMock(return_value="t-300")), \
+         patch("agent.rollout_gate.is_in_rollout", return_value=True):
         r = await loop.generate(
             device_id="00000000-0000-0000-0000-000000000001",
             chain="SOL", token_address="0xabc", level="L3",
@@ -340,7 +351,8 @@ async def test_generate_l3_debate_failure_keeps_p02_thesis():
                       AsyncMock(return_value=(fake, None, 0.05, 2000))), \
          patch.object(loop, "_run_debate", AsyncMock(return_value=None)), \
          patch.object(loop, "_persist_thesis",
-                      AsyncMock(return_value="t-301")):
+                      AsyncMock(return_value="t-301")), \
+         patch("agent.rollout_gate.is_in_rollout", return_value=True):
         r = await loop.generate(
             device_id="00000000-0000-0000-0000-000000000001",
             chain="SOL", token_address="0xabc", level="L3",

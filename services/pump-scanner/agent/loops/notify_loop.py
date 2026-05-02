@@ -115,6 +115,23 @@ class NotifyLoop:
             return self._fail(t0, mode, "blocked_safety",
                               reason=f"invalid_mode: {mode}")
 
+        # Round 34 rollout_gate:auto 模式真金交易,只对在
+        # agent_v1_auto_mode 灰度命中的 device 放行;未命中降级 notify
+        # (KMS 上线 + S14 red team drill 通过后才能 > 0)
+        if mode == "auto":
+            try:
+                from agent.rollout_gate import is_in_rollout
+                device_id = event.get("user_id") or ""
+                if not is_in_rollout(device_id, "agent_v1_auto_mode"):
+                    log.info(
+                        "[notify_loop] auto → notify 降级(rollout_gate %s 未命中 agent_v1_auto_mode)",
+                        device_id[:8] if device_id else "anon",
+                    )
+                    mode = "notify"
+            except Exception as e:
+                log.warning("[notify_loop] rollout_gate fail (%s),保守降 notify", e)
+                mode = "notify"
+
         # 1. Safety pre-check(全局 CB + 可选 HR)
         safety_ok, safety_reason, safety_meta = self._safety_pre_check(event, mode)
         if not safety_ok:

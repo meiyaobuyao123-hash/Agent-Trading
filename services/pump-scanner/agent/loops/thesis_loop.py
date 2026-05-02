@@ -103,8 +103,8 @@ class ThesisLoop:
         """
         t0 = time.monotonic()
 
-        # 1. 决策 level
-        chosen_level = self._select_level(level, position_usd, score)
+        # 1. 决策 level(含 rollout_gate L3 灰度判定)
+        chosen_level = self._select_level(level, position_usd, score, device_id)
 
         # 2. 拉 3 路 evidence(并发)
         tech, sent, onc = await self._gather_evidence(
@@ -202,19 +202,41 @@ class ThesisLoop:
 
     def _select_level(
         self, requested: str, position_usd: Optional[float], score: Optional[float],
+        device_id: str = "",
     ) -> str:
-        """auto level 决策:position_usd + score 综合判断。"""
-        if requested in ("L1", "L2", "L3"):
-            return requested
+        """auto level 决策:position_usd + score 综合判断。
 
-        # auto
-        pos = position_usd or 0.0
-        sc = score or 0.0
-        if pos < LEVEL_THRESHOLDS["L1_max_position_usd"] and sc < 50:
-            return "L1"
-        if sc < LEVEL_THRESHOLDS["L2_max_score"]:
-            return "L2"
-        return "L3"
+        Round 34 加 rollout_gate:L3(贵 + 风险高)只对在 agent_v1_thesis_l3
+        灰度命中的 device 开放;未命中 device 即便 score 高也降级 L2。
+        """
+        if requested in ("L1", "L2", "L3"):
+            chosen = requested
+        else:
+            # auto
+            pos = position_usd or 0.0
+            sc = score or 0.0
+            if pos < LEVEL_THRESHOLDS["L1_max_position_usd"] and sc < 50:
+                chosen = "L1"
+            elif sc < LEVEL_THRESHOLDS["L2_max_score"]:
+                chosen = "L2"
+            else:
+                chosen = "L3"
+
+        # rollout_gate:L3 灰度未命中 → 降级 L2
+        if chosen == "L3":
+            try:
+                from agent.rollout_gate import is_in_rollout
+                if not is_in_rollout(device_id, "agent_v1_thesis_l3"):
+                    log.info(
+                        "[thesis_loop] L3 → L2 降级(rollout_gate %s 未命中 agent_v1_thesis_l3)",
+                        device_id[:8] if device_id else "anon",
+                    )
+                    return "L2"
+            except Exception as e:
+                # rollout_gate fail → 保守降级 L2(避免误开 L3)
+                log.warning("[thesis_loop] rollout_gate fail (%s),保守降 L2", e)
+                return "L2"
+        return chosen
 
     async def _gather_evidence(
         self, chain: str, token_address: str, extra_context: Dict[str, Any],

@@ -316,7 +316,8 @@ async def test_process_auto_with_hitl_creates_approval():
          patch("agent.risk_manager.RiskManager", return_value=fake_risk), \
          patch("agent.tools.CalcPositionSizeTool", return_value=fake_t17), \
          patch("agent.tools.CreateApprovalRequestTool", return_value=fake_t09), \
-         patch("agent.tools.SendPushNotificationTool", return_value=fake_t13):
+         patch("agent.tools.SendPushNotificationTool", return_value=fake_t13), \
+         patch("agent.rollout_gate.is_in_rollout", return_value=True):  # Round 34: gate-open
         r = await loop.process(
             _event(), mode="auto",
             account_balance_usd=10000,  # 让 fixed_pct 高
@@ -357,7 +358,8 @@ async def test_process_auto_no_hitl_fallback_to_notify():
     with patch("agent.safety_engine.get_safety_engine", return_value=fake_engine), \
          patch("agent.risk_manager.RiskManager", return_value=fake_risk), \
          patch("agent.tools.CalcPositionSizeTool", return_value=fake_t17), \
-         patch("agent.tools.SendPushNotificationTool", return_value=fake_t13):
+         patch("agent.tools.SendPushNotificationTool", return_value=fake_t13), \
+         patch("agent.rollout_gate.is_in_rollout", return_value=True):  # Round 34: gate-open
         r = await loop.process(
             _event(), mode="auto",
             thesis={"conviction": 0.85},

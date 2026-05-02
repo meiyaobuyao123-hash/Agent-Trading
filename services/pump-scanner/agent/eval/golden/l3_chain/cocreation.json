@@ -1,0 +1,95 @@
+{
+  "chain": "cocreation",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "description": "Cocreation Chain: idle → clarifying → refining → dry_run → confirming → saved",
+  "cases": [
+    {
+      "name": "class_loadable",
+      "chain_id": "cocreation",
+      "expected_outcome": "class_loadable"
+    },
+    {
+      "name": "entry_method_handle",
+      "description": "CocreationLoop.handle(device_id, conv_id, message, ...) 是单 turn 入口",
+      "chain_id": "cocreation",
+      "expected_outcome": "entry_method_present",
+      "entry_method": "handle"
+    },
+    {
+      "name": "tools_save_strategy_at_saved",
+      "description": "saved 阶段调 T12 save_strategy 写入 agent_strategies",
+      "chain_id": "cocreation",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "save_strategy"
+      ]
+    },
+    {
+      "name": "tools_list_strategies_quota_check",
+      "description": "saved 前要 T05 list_strategies 检查 active_count ≤ 20",
+      "chain_id": "cocreation",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "list_strategies"
+      ]
+    },
+    {
+      "name": "tools_run_backtest_dry_run",
+      "description": "dry_run 阶段调 T16 run_backtest 算 30d 回测",
+      "chain_id": "cocreation",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "run_backtest"
+      ]
+    },
+    {
+      "name": "route_post_cocreation_chat",
+      "description": "POST /api/agent/cocreation/chat 主对话入口",
+      "chain_id": "cocreation",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/cocreation/chat",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "route_post_cocreation_start",
+      "chain_id": "cocreation",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/cocreation/start",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "route_post_cocreation_message",
+      "chain_id": "cocreation",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/cocreation/{conv_id}/message",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "route_post_cocreation_transition",
+      "chain_id": "cocreation",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/cocreation/{conv_id}/transition",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "route_post_cocreation_abort",
+      "chain_id": "cocreation",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/cocreation/{conv_id}/abort",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "cron_cocreation_cleanup",
+      "description": "main.py cron 每 5min 清理过期共创会话",
+      "chain_id": "cocreation",
+      "expected_outcome": "cron_registered",
+      "cron_job_id": "cocreation_cleanup"
+    }
+  ]
+}

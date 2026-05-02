@@ -1,0 +1,48 @@
+{
+  "chain": "scout",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Scout Chain: signal_payload → strategy match → check_daily_limit → NotifyLoop dispatch",
+  "cases": [
+    {
+      "name": "class_loadable",
+      "chain_id": "scout",
+      "expected_outcome": "class_loadable"
+    },
+    {
+      "name": "entry_method_process",
+      "description": "ScoutLoop.process(signal_payload, source, dry_run, max_dispatch) 是入口",
+      "chain_id": "scout",
+      "expected_outcome": "entry_method_present",
+      "entry_method": "process"
+    },
+    {
+      "name": "tools_list_strategies",
+      "description": "Scout 拉 active 策略做 evaluator",
+      "chain_id": "scout",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "list_strategies"
+      ]
+    },
+    {
+      "name": "route_post_scout_evaluate",
+      "description": "POST /api/agent/scout/evaluate 手动测试 + dry_run",
+      "chain_id": "scout",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/scout/evaluate",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "tools_chain_to_notify",
+      "description": "Scout 触发后 dispatch 到 NotifyLoop,所以 Notify 的工具也间接需要",
+      "chain_id": "scout",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "calc_position_size",
+        "send_push_notification"
+      ]
+    }
+  ]
+}

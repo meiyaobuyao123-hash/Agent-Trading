@@ -1,0 +1,80 @@
+{
+  "chain": "thesis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Thesis Chain: chat → S08 → 3 路 analyst → P02 → debate → final thesis",
+  "cases": [
+    {
+      "name": "class_loadable",
+      "chain_id": "thesis",
+      "expected_outcome": "class_loadable"
+    },
+    {
+      "name": "entry_method_generate",
+      "description": "ThesisLoop.generate(device_id, chain, token, level) 是主入口",
+      "chain_id": "thesis",
+      "expected_outcome": "entry_method_present",
+      "entry_method": "generate"
+    },
+    {
+      "name": "tools_l1_path",
+      "description": "L1 路径用 calc_risk_metrics 评估 conviction",
+      "chain_id": "thesis",
+      "expected_outcome": "tools_wired",
+      "required_tools": ["calc_risk_metrics", "recall_memory"]
+    },
+    {
+      "name": "tools_l3_debate_path",
+      "description": "L3 路径需技术指标 + 仓位计算 + 风险",
+      "chain_id": "thesis",
+      "expected_outcome": "tools_wired",
+      "required_tools": ["calc_technical_indicators", "calc_position_size", "calc_risk_metrics"]
+    },
+    {
+      "name": "route_post_thesis_root",
+      "description": "POST '' 是 routes_thesis 主入口(挂载为 /api/thesis)",
+      "chain_id": "thesis",
+      "expected_outcome": "route_registered",
+      "route_path": "",
+      "route_method": "POST",
+      "route_module": "api.routes_thesis"
+    },
+    {
+      "name": "route_get_thesis_by_id",
+      "chain_id": "thesis",
+      "expected_outcome": "route_registered",
+      "route_path": "/{thesis_id}",
+      "route_method": "GET",
+      "route_module": "api.routes_thesis"
+    },
+    {
+      "name": "route_post_thesis_feedback",
+      "chain_id": "thesis",
+      "expected_outcome": "route_registered",
+      "route_path": "/{thesis_id}/feedback",
+      "route_method": "POST",
+      "route_module": "api.routes_thesis"
+    },
+    {
+      "name": "route_list_thesis",
+      "chain_id": "thesis",
+      "expected_outcome": "route_registered",
+      "route_path": "",
+      "route_method": "GET",
+      "route_module": "api.routes_thesis"
+    },
+    {
+      "name": "tools_recall_for_similar_cases",
+      "description": "L2/L3 都需要 recall_memory 拉历史相似案例",
+      "chain_id": "thesis",
+      "expected_outcome": "tools_wired",
+      "required_tools": ["recall_memory"]
+    },
+    {
+      "name": "tools_position_for_action_recommendation",
+      "chain_id": "thesis",
+      "expected_outcome": "tools_wired",
+      "required_tools": ["calc_position_size"]
+    }
+  ]
+}

@@ -1,0 +1,96 @@
+{
+  "chain": "notify",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Notify Chain: strategy.triggered → safety pre-check → RiskManager → T17 → mode 分支 → T13 push",
+  "cases": [
+    {
+      "name": "class_loadable",
+      "chain_id": "notify",
+      "expected_outcome": "class_loadable"
+    },
+    {
+      "name": "entry_method_process",
+      "description": "NotifyLoop.process(event, mode, dry_run) 是主入口",
+      "chain_id": "notify",
+      "expected_outcome": "entry_method_present",
+      "entry_method": "process"
+    },
+    {
+      "name": "tools_position_calc",
+      "description": "T17 calc_position_size 必备(HR01/HR04 仓位上限)",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "calc_position_size"
+      ]
+    },
+    {
+      "name": "tools_push_notification",
+      "description": "T13 send_push_notification 必备(notify/auto/auto-direct 都要推)",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "send_push_notification"
+      ]
+    },
+    {
+      "name": "tools_paper_trade_for_paper_mode",
+      "description": "paper 模式需 T07 run_paper_trade",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "run_paper_trade"
+      ]
+    },
+    {
+      "name": "tools_create_approval_for_hitl",
+      "description": "auto+HITL 模式需 T09 create_approval_request",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "create_approval_request"
+      ]
+    },
+    {
+      "name": "route_post_notify_trigger",
+      "description": "POST /api/agent/notify/trigger 手动触发(支持 dry_run)",
+      "chain_id": "notify",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/notify/trigger",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "tools_risk_metrics_check",
+      "description": "RiskManager 9 项审核需要 calc_risk_metrics",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "calc_risk_metrics"
+      ]
+    },
+    {
+      "name": "tools_full_chain",
+      "description": "完整链路:仓位 + 推送 + paper + HITL + 风险 全部就位",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "calc_position_size",
+        "send_push_notification",
+        "run_paper_trade",
+        "create_approval_request",
+        "calc_risk_metrics"
+      ]
+    },
+    {
+      "name": "tools_recall_for_history",
+      "description": "Notify 在生成推送时可拉相关历史(可选)",
+      "chain_id": "notify",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "recall_memory"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "chain": "reflect",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Reflect Chain: cron 20:00 → load trades → review_engine → reflection → 5 hard gates → semantic write",
+  "cases": [
+    {
+      "name": "class_loadable",
+      "chain_id": "reflect",
+      "expected_outcome": "class_loadable"
+    },
+    {
+      "name": "entry_method_run_cycle",
+      "description": "ReflectLoop.run_cycle(trigger=daily/count/emergency) 是主入口",
+      "chain_id": "reflect",
+      "expected_outcome": "entry_method_present",
+      "entry_method": "run_cycle"
+    },
+    {
+      "name": "tools_recall_memory",
+      "description": "反思时拉历史 episodic/reflection 做 dedupe",
+      "chain_id": "reflect",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "recall_memory"
+      ]
+    },
+    {
+      "name": "tools_approve_rule",
+      "description": "5 硬门槛通过 → T11 approve_rule 写 semantic",
+      "chain_id": "reflect",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "approve_rule"
+      ]
+    },
+    {
+      "name": "tools_risk_metrics",
+      "description": "review_engine 计算 win_rate/EV/Sharpe 用 calc_risk_metrics",
+      "chain_id": "reflect",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "calc_risk_metrics"
+      ]
+    },
+    {
+      "name": "route_post_reflect_run",
+      "description": "POST /api/agent/reflect/run 手动触发反思周期",
+      "chain_id": "reflect",
+      "expected_outcome": "route_registered",
+      "route_path": "/api/agent/reflect/run",
+      "route_method": "POST",
+      "route_module": "api.routes_agent"
+    },
+    {
+      "name": "cron_reflect_daily",
+      "description": "main.py cron reflect_daily 每天 UTC 12:00 跑一次",
+      "chain_id": "reflect",
+      "expected_outcome": "cron_registered",
+      "cron_job_id": "reflect_daily"
+    },
+    {
+      "name": "cron_memory_wal_flush",
+      "description": "WAL 异步入主表 cron(10s)",
+      "chain_id": "reflect",
+      "expected_outcome": "cron_registered",
+      "cron_job_id": "memory_wal_flush"
+    },
+    {
+      "name": "cron_memory_wal_retry",
+      "description": "WAL 失败重试 cron(30s)",
+      "chain_id": "reflect",
+      "expected_outcome": "cron_registered",
+      "cron_job_id": "memory_wal_retry"
+    },
+    {
+      "name": "tools_full_reflect_chain",
+      "description": "完整链路:recall + approve + risk_metrics 全就位",
+      "chain_id": "reflect",
+      "expected_outcome": "tools_wired",
+      "required_tools": [
+        "recall_memory",
+        "approve_rule",
+        "calc_risk_metrics"
+      ]
+    }
+  ]
+}

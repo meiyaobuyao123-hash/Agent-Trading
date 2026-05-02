@@ -3092,3 +3092,69 @@ python3 -m pytest tests/test_eval_skill_runner.py -v # 26/26
 6. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
 7. **KMS AwsKmsProvider** — 需 AWS 账号
 8. **62 Launch Criteria** 逐项 sign-off
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 20 — L1 Prompt 框架 + 6 P 静态契约
+
+### 做了什么(commit `9f0b1e7`)
+
+**A. L1 Prompt eval 框架**(不调 LLM,只静态契约 + 安全 + 渲染):
+- agent/eval/prompt_runner.py 新建(~310 行)
+- 6 outcome 类型:
+  - metadata_ok — 必填字段(prompt_id/version/model/max_tokens)+ temperature 0-1.5 + body≥200 + status enum + rollout 0-100
+  - render_ok — vars 完整时无未替换 {{var}}
+  - render_missing_vars — vars 缺失时占位符保留(不抛错)
+  - examples_safe — few-shot assistant 输出无 C1 blocklist 命中(同步 output_filter)
+  - examples_count_min — ≥ 3 条(对齐 17-tech-plan §Phase 2)
+  - version_select — bucket 选 version → status 符合 expected
+- CLI:python -m agent.eval.prompt_runner --suite=l1_prompt [--prompt=P01]
+
+**B. 6 P fixture(38 case)**:
+- P01_chat_clarify (8) / P02_thesis_writer (6) / P10_risk_reviewer (6)
+- P11_signal_strategy_builder (6) / P13_review_engine_daily (6) / P18_persona_translator (6)
+- **L1 Prompt 全套 6/6 prompts / 38/38 cases / 100% pass**
+
+**C. 真发现 + 修复**(per spec "Few-shot ≥3"):
+- P11 examples 原 2 条 < 3 → 加 Example 3(多链热币 SOL/BSC/Base / persona=pro / score≥80)
+- P18 examples 原 2 条 < 3 → 加 Example 3(pro → intermediate translation,thesis JSON 精简)
+
+**D. 测试**(tests/test_eval_prompt_runner.py 31 用例):
+- dataclass(4)/ metadata 8 类(8)/ render 4(4)/ examples 4(4)/ version_select 3(3)
+- run_one_case 2(2)/ golden loader 2(2)/ 端到端 run_l1_prompt_suite 2(2)/ regex 2(2)
+- 31/31 全过;3 eval suite 联跑(test_eval_runner + skill_runner + prompt_runner)84/84 全过
+
+### Phase 进度(对齐 17-tech-plan.md)
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**100% ✅(5 Loop + 7 Skill + 6 Prompt + L3 debate + 4 cron)**
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- **Phase 4:L1 Tool 13/13 ✅ + L2 Skill 7/7 框架 ✅ + L1 Prompt 6/18 框架 ✅**
+
+### 累计本会话总计
+- pytest 全量回归:**886/888 passed**(2 pre-existing failures 与本轮无关)
+- 本轮新增:**31 tests + 6 golden fixtures + 2 examples 修补**
+- 41 commits 累计 deploy
+- L1 Tool: 13/13 / 140 / 100%
+- L2 Skill: 7/7 / 44 / 100%
+- L1 Prompt: 6/6 / 38 / 100%(剩 12 P 待实施)
+
+### 验证
+
+```bash
+cd services/pump-scanner
+python3 -m agent.eval.runner --suite=l1_tool        # 140/140 100%
+python3 -m agent.eval.skill_runner --suite=l2_skill # 44/44 100%
+python3 -m agent.eval.prompt_runner --suite=l1_prompt # 38/38 100%
+python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
+```
+
+### 下次接手候选
+1. **剩余 12 个 Prompt**(P03-P09/P12/P14-P17)— 写 prompt.md + frontmatter + examples
+2. **L1 Prompt 真 540 case** — 18 P × ≥ 30(需 LLM judge 评估输出质量)
+3. **L2 Skill 真执行 eval** — LLM cassette/VCR 录回放
+4. **L3 Chain eval 40 cases** — 4 chain × ≥ 10
+5. **L4 Trajectory 20 多轮场景**
+6. **Safety AE 270 cases** — 红队对抗
+7. **剩余 4 Tool**(T01/T02/T03/T08)— 外部 API + KMS
+8. **62 Launch Criteria** 逐项 sign-off

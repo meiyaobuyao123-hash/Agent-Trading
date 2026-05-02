@@ -262,6 +262,13 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 4 outcome 类型:metadata_ok / loaded_full_content / tools_required_known / expect_fields(scalar + list subset)
   - **L2 Skill 全套 7/7 / 44 case / 100% pass**(只验静态契约,LLM cassette 留 W7-W12)
   - **26 skill_runner 自身测试全过**;pytest 全量 855/857 PASSED(2 pre-existing failures)
+- ✅ **W3 D5+ L1 Prompt 框架 + 6 P 静态契约**(commit `9f0b1e7`):Phase 4 L1 Prompt 起步
+  - 新建 agent/eval/prompt_runner.py(310 行)+ 6 个 l1_prompt JSON(P01/P02/P10/P11/P13/P18 共 38 case)
+  - 6 outcome 类型:metadata_ok / render_ok / render_missing_vars / examples_safe / examples_count_min / version_select
+  - 校验:必填字段 + temp 0-1.5 + max_tokens 0-8192 + body≥200 + status enum + rollout 0-100;blocklist 同步 output_filter C1
+  - **L1 Prompt 全套 6/6 prompts / 38 case / 100% pass**
+  - **真发现**:P11 + P18 examples 各 2 条 < 3 → 修补 Example 3(multi-chain hot coins / pro→intermediate)
+  - **31 prompt_runner 自身测试全过**;pytest 全量 886/888(+31)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

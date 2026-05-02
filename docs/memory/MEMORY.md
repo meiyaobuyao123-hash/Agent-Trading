@@ -255,6 +255,13 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - CLI:`python -m agent.eval.runner --suite=l1_tool [--tool=...]`
   - 6 核心 Tool fixture:calc_risk_metrics(11)/ calc_position_size(13)/ calc_technical_indicators(11)/ approve_rule(10)/ list_strategies(11)/ run_backtest(10)= **66 case 100% pass + metadata 全 ✓**
   - **27 runner 自身测试全过**;剩余 7 Tool fixture + L2/L3/L4 留 W7-W12
+- ✅ **W3 D5+ L1 Tool 收尾 + L2 Skill 框架**(commit `ae2e9e3`):Phase 4 L1 100% + L2 骨架
+  - 7 个剩余 L1 Tool fixture:recall_memory(11)/ update_strategy_status(11)/ run_paper_trade(10)/ create_approval_request(10)/ get_paper_performance(10)/ save_strategy(11)/ send_push_notification(11)= **74 case + 修 sell_with_trade_id 案例**
+  - **L1 Tool 全套 13/13 tools / 140 case / 100% pass**
+  - 新建 agent/eval/skill_runner.py(280 行)+ 7 个 l2_skill JSON(S01/S02/S03/S04/S05/S07/S08 共 44 case)
+  - 4 outcome 类型:metadata_ok / loaded_full_content / tools_required_known / expect_fields(scalar + list subset)
+  - **L2 Skill 全套 7/7 / 44 case / 100% pass**(只验静态契约,LLM cassette 留 W7-W12)
+  - **26 skill_runner 自身测试全过**;pytest 全量 855/857 PASSED(2 pre-existing failures)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

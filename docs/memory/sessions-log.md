@@ -3025,3 +3025,70 @@ L1 Tool 严格 100% pass(对齐 17-tech-plan.md Phase 4 验收门槛)。
 6. **Safety AE 270 cases** — 红队对抗
 7. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
 8. **KMS AwsKmsProvider** — 需 AWS 账号
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 19 — L1 Tool 收尾 + L2 Skill eval 框架
+
+### 做了什么(commit `ae2e9e3`)
+
+**A. L1 Tool fixture 收尾**(7 个新 fixture):
+- recall_memory.json (11 case) — device_id 缺失/空/非 UUID,limit 边界,filter 组合
+- update_strategy_status.json (11) — strategy_id/new_status 校验,5 状态枚举,user_id 可选
+- run_paper_trade.json (10) — buy/sell 两种 action,trade_id required for sell;**修了 sell 案例 expected outcome(无 DB 时 close_position 抛 → execute_error)**
+- create_approval_request.json (10) — device/strategy/trigger_conditions 必填,timeout 30/60-3600s 边界
+- get_paper_performance.json (10) — strategy_id 校验,include_comparison 开关,promotion_blockers 计算
+- save_strategy.json (11) — spec.conditions/actions 必填,rules/actions minItems=1,cooldown ≥5,mode 枚举
+- send_push_notification.json (11) — user_id/title/body/category 必填,category 6 枚举,title maxLength 80
+
+**L1 Tool eval 全套 13/13 tools / 140/140 cases / 100% pass**
+
+**B. L2 Skill eval 框架**(不调 LLM,只静态契约):
+- agent/eval/skill_runner.py (280 行) — 与 L1 runner 同结构
+  - GoldenSkillCase / SkillReport / SkillEvalReport
+  - 4 outcome 类型:metadata_ok / loaded_full_content / tools_required_known / expect_fields
+  - expect_fields 支持 scalar 等值 + list subset
+  - CLI:`python -m agent.eval.skill_runner --suite=l2_skill [--skill=...]`
+- agent/eval/golden/l2_skill/{S01,S02,S03,S04,S05,S07,S08}.json — 7 fixture / 44 case
+  - 每 Skill:metadata_ok / loaded_full_content / tools_required_known + 关键字段 spot-check
+  - S05/S08 额外 sub_skills_allowed 校验
+
+**L2 Skill eval 全套 7 skills / 44 cases / 100% pass**
+
+**C. 测试**(tests/test_eval_skill_runner.py 26 用例):
+- dataclass(4)/ metadata 7 类(7)/ tools_known(2)/ full_content(3)
+- case runner 6 类(6)/ golden loader(2)/ 端到端 run_l2_skill_suite(2)
+- 26/26 全过
+
+### Phase 进度(对齐 17-tech-plan.md)
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- Phase 2:**100% ✅(5 Loop + 7 Skill + 6 Prompt + L3 debate + 4 cron)**
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- **Phase 4:L1 Tool 13/13 100% ✅ + L2 Skill 框架 ✅(等 LLM cassette 真实施)**
+
+### 累计本会话总计
+- pytest 全量回归:**855 passed, 2 failed**(failures 都是 pre-existing — DB config + flaky)
+- 本轮新增:**26 tests + 11 golden fixtures**
+- 40 commits 累计 deploy
+- L1 Tool: 13/13 / 140 case / 100%
+- L2 Skill: 7/7 / 44 case / 100%
+
+### 验证
+
+```bash
+cd services/pump-scanner
+python3 -m agent.eval.runner --suite=l1_tool        # 140/140 100%
+python3 -m agent.eval.skill_runner --suite=l2_skill # 44/44 100%
+python3 -m pytest tests/test_eval_skill_runner.py -v # 26/26
+```
+
+### 下次接手候选(W7-W12 真实施 / 其他)
+1. **L2 Skill 真实执行 eval** — 加 LLM cassette/VCR 录回放,扩到 ~50 case/Skill = 350
+2. **L1 Prompt eval 540 cases** — 18 P × ≥ 30(需先把 P03-P09/P12/P14-P17 12 个 Prompt 写完)
+3. **L3 Chain eval 40 cases** — 4 chain(thesis/notify/reflect/cocreation)× ≥ 10
+4. **L4 Trajectory 20 多轮场景**
+5. **Safety AE 270 cases** — 红队对抗
+6. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+7. **KMS AwsKmsProvider** — 需 AWS 账号
+8. **62 Launch Criteria** 逐项 sign-off

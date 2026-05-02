@@ -1,0 +1,85 @@
+{
+  "category": "thesis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Thesis JSON 输出质量评分(S08 thesis-writer 产物)— 10 sample 含 7 高质量 + 3 不及格(veto 触发)",
+  "samples": [
+    {
+      "name": "high_quality_full_thesis",
+      "description": "完整 thesis JSON,所有维度高分",
+      "topic_keywords": ["TRUMP", "SOL", "bullish", "RSI"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "min_len": 100,
+      "max_len": 1500,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.72, \"summary_30w\": \"TRUMP/SOL 三路一致看涨\", \"entry_zone\": {\"low\": 0.92, \"high\": 0.96}, \"stop_loss\": 0.85, \"target\": 1.15, \"risks\": [\"流动性偏薄风险\", \"regime 切换风险\", \"集中度 top10 45%\"], \"evidence\": [{\"layer\": \"technical\", \"text\": \"RSI 35 反弹 + MACD 上穿\", \"weight\": 0.4}, {\"layer\": \"sentiment\", \"text\": \"3 KOL 同方向\", \"weight\": 0.3}, {\"layer\": \"onchain\", \"text\": \"smart money 净流入 +$80k\", \"weight\": 0.3}], \"level\": \"L3\"}"
+    },
+    {
+      "name": "thesis_high_conviction_3_risks",
+      "topic_keywords": ["PEPE", "ETH", "bullish"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.65, \"summary_30w\": \"PEPE 突破前高趋势确认\", \"risks\": [\"hype 持续 7d 已 priced in\", \"BB 上轨触及 mean reversion\"], \"evidence\": [{\"layer\": \"technical\", \"text\": \"突破 0.00085 前高\", \"weight\": 0.4}, {\"layer\": \"onchain\", \"text\": \"top10 = 48% 健康\", \"weight\": 0.3}, {\"layer\": \"sentiment\", \"text\": \"hype 持续\", \"weight\": 0.3}], \"level\": \"L2\"}"
+    },
+    {
+      "name": "thesis_low_conviction_hold",
+      "topic_keywords": ["NEW", "BSC"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"hold\", \"conviction\": 0.42, \"summary_30w\": \"信号有分歧,低置信度\", \"risks\": [\"流动性 $8k 低于门槛\", \"top10 72% 高度集中\", \"smart money 净流出\"], \"evidence\": [{\"layer\": \"onchain\", \"text\": \"top10=78% rug 风险\", \"weight\": 0.5}], \"level\": \"L1\"}"
+    },
+    {
+      "name": "thesis_neutral_with_data",
+      "topic_keywords": ["BTC", "RANGE"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"neutral\", \"conviction\": 0.5, \"summary_30w\": \"BTC RANGE 行情中性\", \"risks\": [\"突破方向不明\", \"成交量萎缩\"], \"evidence\": [{\"layer\": \"technical\", \"text\": \"BB 收窄\", \"weight\": 0.4}, {\"layer\": \"onchain\", \"text\": \"sm 净流持平\", \"weight\": 0.3}], \"level\": \"L2\"}"
+    },
+    {
+      "name": "thesis_avoid_rug_risk",
+      "topic_keywords": ["NEW", "BSC", "rug"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"avoid\", \"conviction\": 0.2, \"summary_30w\": \"高 rug 风险,不建议买入\", \"risks\": [\"top10 78% 高度集中\", \"流动性 $8k 极低\", \"smart money 0 elite 跟单\"], \"evidence\": [{\"layer\": \"onchain\", \"text\": \"holder 集中度警告\", \"weight\": 0.6}], \"level\": \"L1\"}"
+    },
+    {
+      "name": "thesis_with_disclaimer",
+      "description": "含明确免责声明",
+      "topic_keywords": ["TRUMP", "SOL"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.6, \"summary_30w\": \"TRUMP 信号偏强,DYOR 自行判断\", \"risks\": [\"过往表现不代表未来\", \"crypto 市场永远有风险\"], \"evidence\": [{\"layer\": \"technical\", \"text\": \"RSI 60 上行\", \"weight\": 0.4}, {\"layer\": \"sentiment\", \"text\": \"KOL 看涨\", \"weight\": 0.3}], \"level\": \"L2\", \"disclaimer\": \"本工具不构成投资建议\"}"
+    },
+    {
+      "name": "thesis_l3_full_debate",
+      "topic_keywords": ["PEPE", "ETH", "bullish"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.68, \"summary_30w\": \"L3 辩论后 +0.05 confirmed\", \"risks\": [\"BB 上轨技术回调\", \"hype 已 priced in\", \"regime 切换敏感\"], \"evidence\": [{\"layer\": \"technical\", \"text\": \"MA 金叉\", \"weight\": 0.35}, {\"layer\": \"sentiment\", \"text\": \"3 KOL 一致\", \"weight\": 0.3}, {\"layer\": \"onchain\", \"text\": \"net+$50k\", \"weight\": 0.35}], \"level\": \"L3\", \"debate_summary\": \"Bull 0.75 > Bear 0.35\"}"
+    },
+    {
+      "name": "BAD_thesis_no_risks_veto",
+      "description": "risks 为空 → C2 schema veto + risk=0 veto",
+      "topic_keywords": ["TRUMP"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.7, \"risks\": [], \"evidence\": [{\"layer\": \"tech\", \"text\": \"x\"}]}"
+    },
+    {
+      "name": "BAD_thesis_no_action_veto",
+      "description": "无任何 action verb → actionability veto",
+      "topic_keywords": ["TRUMP"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [\"a\", \"b\"], \"evidence\": [{\"layer\": \"x\"}]}"
+    },
+    {
+      "name": "BAD_thesis_safety_blocklist_veto",
+      "description": "命中 blocklist → safety<10 veto",
+      "topic_keywords": ["TRUMP"],
+      "expected_format": "json_thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.9, \"risks\": [\"a\", \"b\"], \"evidence\": [{\"layer\": \"x\"}], \"summary\": \"百倍机会,稳的\"}"
+    }
+  ]
+}

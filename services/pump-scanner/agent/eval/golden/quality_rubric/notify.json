@@ -1,0 +1,70 @@
+{
+  "category": "notify",
+  "version": "v1.0",
+  "owner": "pm-lead",
+  "description": "推送通知文案(P16 notify_compose 产物)— 10 sample 含 8 高质量 + 2 不及格。max_len 100 短文案",
+  "samples": [
+    {
+      "name": "notify_high_conviction",
+      "topic_keywords": ["TRUMP", "信心", "买入"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "TRUMP 触发:聪明钱跟单。3 路一致看涨,信心 72%,smart money 净流 +$80k 触发。建议买入 $100。请注意流动性变化。"
+    },
+    {
+      "name": "notify_low_conviction_warning",
+      "topic_keywords": ["NEW", "低置信度", "观望"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "NEW 触发(低置信度)。信心 42%,信号有分歧。仅供参考,不建议跟单,建议观望。注意流动性偏薄风险。"
+    },
+    {
+      "name": "notify_crisis_blocked",
+      "topic_keywords": ["CRISIS", "宏观"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "PEPE 信号 blocked (CRISIS regime)。conviction 强制封顶 0.3,建议 hold。宏观风险高,等待 regime 恢复 NORMAL,自行判断。"
+    },
+    {
+      "name": "notify_paper_mode",
+      "topic_keywords": ["paper", "模拟"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "SOL 聪明钱 paper 触发:模拟买入 $100,信心 65%。模拟盘还在跑(30/30 笔后才晋升 notify),保持观察,DYOR。"
+    },
+    {
+      "name": "notify_hitl_pending",
+      "topic_keywords": ["审批", "HITL"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "TRUMP auto 触发,$200 进场需要审批(HITL)。信心 70%,请在 5 分钟内确认或拒绝,谨慎判断风险。"
+    },
+    {
+      "name": "notify_review_ready",
+      "topic_keywords": ["复盘", "今日"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "今日复盘已生成:3 笔 / 胜率 67% / EV +1.8%。点击查看详情和明日建议。仅供参考,DYOR。"
+    },
+    {
+      "name": "notify_hitl_rejected_followup",
+      "topic_keywords": ["拒绝", "策略"],
+      "min_len": 30, "max_len": 200,
+      "output_text": "你刚拒绝了 TRUMP 的 HITL 建议。策略状态保持 paper 模式,可观望调整。如需切回 auto 请到设置确认。"
+    },
+    {
+      "name": "notify_promotion_eligible",
+      "topic_keywords": ["晋升", "paper"],
+      "min_len": 30, "max_len": 250,
+      "output_text": "你的 SOL 聪明钱策略已达 paper→notify 晋升门槛(35d / 42 笔 / EV +2.1%)。建议升级到 notify 模式,需自行判断风险。"
+    },
+    {
+      "name": "BAD_notify_no_action",
+      "description": "无 action verb",
+      "topic_keywords": ["TRUMP"],
+      "min_len": 20, "max_len": 200,
+      "output_text": "TRUMP 一些数据。RSI 35。MACD -0.05。"
+    },
+    {
+      "name": "BAD_notify_hype_violation",
+      "description": "命中 blocklist + 隐式 promise",
+      "topic_keywords": ["PEPE"],
+      "min_len": 20, "max_len": 200,
+      "output_text": "PEPE 必涨 100x !保证赚,稳的,赶快买入!"
+    }
+  ]
+}

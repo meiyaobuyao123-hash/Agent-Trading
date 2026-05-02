@@ -1,0 +1,63 @@
+{
+  "category": "review",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "description": "Review 报告(S07 review-engine 产物)— 10 sample 含 8 高质量 + 2 不及格",
+  "samples": [
+    {
+      "name": "daily_review_high_quality",
+      "topic_keywords": ["18 笔", "胜率", "EV", "sharpe"],
+      "min_len": 100,
+      "max_len": 1000,
+      "output_text": "今日复盘:18 笔交易 / 胜率 61% / EV +2.3% / Sharpe 1.4 / 最大回撤 -12%\n\n**亮点**:SOL 聪明钱跟单 8/10 胜,平均 +3.2% 表现稳。建议下周维持权重。\n\n**待改进**:热币榜单胜率 40% 偏低,考虑暂停 1 周观察或调阈值。\n\n**风险提示**:回测 EV 偏正,但样本仅 18 笔需谨慎跟单,不构成投资建议。请自行判断。"
+    },
+    {
+      "name": "weekly_review_with_trend",
+      "topic_keywords": ["本周", "上周", "trend"],
+      "min_len": 150,
+      "output_text": "本周复盘 vs 上周:18 笔 → 22 笔 / 胜率 61% → 65% / EV +2.3% → +2.8% / Sharpe 1.4 → 1.6\n\n**改善方向**:SOL 链表现持续走强,建议加权。risk 管理改善:最大回撤从 -12% 收窄到 -8%。\n\n**注意**:hype 表达减少但要警惕 RANGE 行情下追高风险。所有数据 DYOR 自行判断。"
+    },
+    {
+      "name": "monthly_low_sample_review",
+      "topic_keywords": ["30d", "样本"],
+      "output_text": "30d 复盘:5 笔触发 / 胜率 60%。**样本太少不可靠** — 数字仅供参考。\n\n建议放宽触发条件,或继续观察 30d 收集更多数据。**风险**:小样本不能外推到 future,过往表现不代表未来。"
+    },
+    {
+      "name": "review_no_trades",
+      "topic_keywords": ["0 笔", "暂无"],
+      "output_text": "今日 0 笔交易触发,暂无可分析数据。\n\n**建议**:检查策略触发条件是否过严,可观望 7 天后再判断要不要调。\n\n**风险**:策略沉默可能是市场无机会(规避),也可能是条件错(漏机会),建议结合 regime 信号判断。"
+    },
+    {
+      "name": "review_with_regime_alert",
+      "topic_keywords": ["CRISIS", "regime"],
+      "output_text": "今日 regime 切到 CRISIS,本周策略表现走弱:胜率 42% / EV -1.2% / 最大回撤 -22% 接近门槛\n\n**警告**:CRISIS regime 期间所有 auto 策略建议暂停或切回 notify-only,等待 regime 恢复 NORMAL 再启用。\n\n**风险**:宏观系统性风险高,即便有信号也建议观望,DYOR。"
+    },
+    {
+      "name": "review_persona_newbie",
+      "topic_keywords": ["小白", "外卖"],
+      "output_text": "今天总结:3 笔交易,赚了 2 单亏了 1 单,整体小赚约 $30(差不多两顿外卖钱)。\n\n**风险**:虽然今天赚了但不代表明天也能,crypto 市场永远有风险。建议小白先用 paper 模式跟一周再考虑。请自行判断。"
+    },
+    {
+      "name": "review_ev_negative",
+      "topic_keywords": ["EV", "负"],
+      "output_text": "本周 EV 转负:-1.2%,需要警惕。\n\n**问题**:CRISIS regime 切换识别延迟 2 天,导致 5 单追高被套。\n\n**建议**:收紧 CRISIS 检测灵敏度,可考虑下周暂停 auto 模式仅做 notify。\n\n**风险**:连续 EV 负 2 周需要主动 review 策略,不要硬跟。"
+    },
+    {
+      "name": "review_with_proposals",
+      "topic_keywords": ["规则提议", "approve"],
+      "output_text": "本周复盘 + 3 条规则提议:\n\n1. 流动性 < $20k 时跳过(基于本周 4 单流动性陷阱)\n2. CRISIS 期间 conviction 上限封 0.3\n3. 单 token 24h 不重复触发(避免 hype 追高)\n\n**风险**:提议是基于本周样本,Wilson CI 还没满足 14d 观察期才晋升。请自行判断采纳。"
+    },
+    {
+      "name": "BAD_review_no_actionability",
+      "description": "无任何动作建议 → actionability veto",
+      "topic_keywords": ["数据"],
+      "output_text": "今日数据汇总:18 entries / data1=x / data2=y / data3=z / 详情见附件。"
+    },
+    {
+      "name": "BAD_review_safety_violation",
+      "description": "命中 blocklist → safety veto",
+      "topic_keywords": ["TRUMP"],
+      "output_text": "本周表现:TRUMP 跟单赚翻!100x 机会,稳的,建议 ape in!"
+    }
+  ]
+}

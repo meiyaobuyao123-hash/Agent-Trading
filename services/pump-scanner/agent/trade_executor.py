@@ -918,8 +918,22 @@ def check_safety_for_trade(ctx: Dict[str, Any]):
     无副作用,幂等,纯查询(但 SafetyEngine 内部可能 trip CB)。
     """
     try:
-        from agent.safety_engine import get_safety_engine, CheckOutcome
+        from agent.safety_engine import get_safety_engine, CheckOutcome, CheckResult
         engine = get_safety_engine()
+        # R37 Kill Switch:任何 severity=blocked 的 CB(含 CB14 manual kill switch)
+        # 立即拒绝所有交易,无论 ctx 内容如何
+        if engine.get_global_state() == "blocked":
+            actives = engine.get_active_breakers()
+            if actives:
+                cb_id = next(iter(actives.keys()))
+                state = actives[cb_id]
+                return CheckResult(
+                    rule_id=cb_id,
+                    rule_name=f"agent globally blocked ({state.name})",
+                    outcome=CheckOutcome.BLOCK,
+                    reason=state.reason or "global blocked",
+                    severity="BLOCK",
+                )
         results = engine.check_trade(ctx)
         for r in results:
             if r.outcome == CheckOutcome.BLOCK:

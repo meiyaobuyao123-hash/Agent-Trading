@@ -115,18 +115,18 @@ class TestLoading:
 
     def test_load_succeeds(self, engine: SafetyEngine):
         assert engine.loaded
-        # v0.3 全部 30 HR + 13 CB + 5 C 都 implemented
+        # v0.3 全部 30 HR + 13 CB + 5 C 都 implemented;R37 加 CB14 manual kill switch → 14 CB
         assert len(engine.hard_rules) == 30
-        assert len(engine.circuit_breakers) == 13
+        assert len(engine.circuit_breakers) == 14
         assert len(engine.constitutional) == 5
         impl_hr = [r for r in engine.hard_rules if r.get("implemented")]
         impl_cb = [r for r in engine.circuit_breakers if r.get("implemented")]
         assert len(impl_hr) == 30
-        assert len(impl_cb) == 13
+        assert len(impl_cb) == 14  # R37 加 CB14
         # hr_to_cb_map 至少 5 条
         assert len(engine.hr_to_cb_map) >= 5
-        # cb_index 应包含 13 条
-        assert len(engine._cb_index) == 13
+        # cb_index 应包含 14 条(CB01-CB14)
+        assert len(engine._cb_index) == 14
 
     def test_failsafe_when_yaml_missing(self, tmp_path):
         e = SafetyEngine()

@@ -542,6 +542,111 @@ class SemanticMemory:
             self._last_load = 0  # 强制刷新缓存
         return deprecated
 
+    # ============================================================
+    # R37 P0-4 Shadow Mode 14d 评估
+    # ============================================================
+
+    SHADOW_GRADUATE_MIN_MATCHES = 3       # 14d 内至少触发 3 次才认为有意义
+    SHADOW_GRADUATE_MIN_WIN_RATE = 40.0   # 触发的样本胜率 < 40% 视为失败
+
+    def evaluate_shadow_rules(self) -> Dict[str, int]:
+        """评估到期的 Shadow Mode 规则(14d 观察期完毕)。
+
+        每条 shadow rule 评估:
+          - match_count < 3:dormant(从未触发,无意义)
+          - 胜率 < 40%(样本 ≥ 3):failed_shadow(变 inactive)
+          - 否则:graduated(清 shadow_mode_until,正式上线)
+
+        返回 {graduated, dormant, failed, errors}。
+        cron(每 6h)+ 手动 endpoint 都可触发。
+        """
+        counts = {"graduated": 0, "dormant": 0, "failed": 0, "errors": 0}
+        now = datetime.now(timezone.utc)
+        try:
+            res = (
+                get_db()
+                .table("agent_memory")
+                .select("*")
+                .eq("type", "semantic")
+                .eq("is_active", True)
+                .lte("shadow_mode_until", now.isoformat())
+                .execute()
+            )
+            shadow_rules = res.data or []
+        except Exception as e:
+            log.warning("[SemanticMemory] shadow query failed: %s", e)
+            counts["errors"] += 1
+            return counts
+
+        for rule in shadow_rules:
+            try:
+                match_count = int(rule.get("match_count") or 0)
+                comply_win = int(rule.get("comply_win") or 0)
+                comply_lose = int(rule.get("comply_lose") or 0)
+                total_samples = comply_win + comply_lose
+                rule_id = rule["id"]
+
+                if match_count < self.SHADOW_GRADUATE_MIN_MATCHES:
+                    # dormant: 从未触发,变 inactive
+                    get_db().table("agent_memory").update({
+                        "is_active": False,
+                        "shadow_mode_until": None,
+                        "metadata": {**(rule.get("metadata") or {}),
+                                     "shadow_outcome": "dormant",
+                                     "evaluated_at": now.isoformat()},
+                    }).eq("id", rule_id).execute()
+                    counts["dormant"] += 1
+                    log.info("[SemanticMemory] shadow→dormant: %s (matches=%d)",
+                             rule.get("content", "")[:60], match_count)
+                elif total_samples >= 3 and total_samples > 0:
+                    win_rate = (comply_win / total_samples) * 100
+                    if win_rate < self.SHADOW_GRADUATE_MIN_WIN_RATE:
+                        get_db().table("agent_memory").update({
+                            "is_active": False,
+                            "shadow_mode_until": None,
+                            "metadata": {**(rule.get("metadata") or {}),
+                                         "shadow_outcome": "failed",
+                                         "shadow_win_rate": win_rate,
+                                         "evaluated_at": now.isoformat()},
+                        }).eq("id", rule_id).execute()
+                        counts["failed"] += 1
+                        log.warning(
+                            "[SemanticMemory] shadow→failed: %s (win_rate=%.1f%%)",
+                            rule.get("content", "")[:60], win_rate,
+                        )
+                    else:
+                        # graduated:清 shadow_mode_until,保留 is_active
+                        get_db().table("agent_memory").update({
+                            "shadow_mode_until": None,
+                            "metadata": {**(rule.get("metadata") or {}),
+                                         "shadow_outcome": "graduated",
+                                         "shadow_win_rate": win_rate,
+                                         "evaluated_at": now.isoformat()},
+                        }).eq("id", rule_id).execute()
+                        counts["graduated"] += 1
+                        log.info(
+                            "[SemanticMemory] shadow→graduated: %s (win_rate=%.1f%%)",
+                            rule.get("content", "")[:60], win_rate,
+                        )
+                else:
+                    # match_count >= 3 但没有 comply 数据(rule 触发后没记 outcome)
+                    # 保守:再多观察一段(延长 7 天)
+                    extended = now + timedelta(days=7)
+                    get_db().table("agent_memory").update({
+                        "shadow_mode_until": extended.isoformat(),
+                    }).eq("id", rule_id).execute()
+                    log.info(
+                        "[SemanticMemory] shadow extended +7d (no comply data): %s",
+                        rule.get("content", "")[:60],
+                    )
+            except Exception as e:
+                log.warning("[SemanticMemory] shadow eval row failed: %s", e)
+                counts["errors"] += 1
+
+        if counts["graduated"] or counts["dormant"] or counts["failed"]:
+            self._last_load = 0  # 强刷
+        return counts
+
     def force_refresh(self) -> None:
         """强制刷新缓存"""
         self._last_load = 0

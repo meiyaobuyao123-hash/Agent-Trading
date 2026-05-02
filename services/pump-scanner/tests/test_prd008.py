@@ -438,7 +438,7 @@ class TestStrategyManagerMode:
 
     @patch("agent.strategy_manager.get_db")
     def test_go_live(self, mock_get_db):
-        """go_live 将 paper 切换到 live"""
+        """go_live 将 paper 切换到 live(R37: 加 force=True 绕开新增的晋升门槛)"""
         mock_db = MagicMock()
         # get_strategy 返回 paper + active
         mock_db.table.return_value.select.return_value.eq.return_value.execute.return_value = MagicMock(
@@ -452,7 +452,8 @@ class TestStrategyManagerMode:
 
         from agent.strategy_manager import StrategyManager
         mgr = StrategyManager()
-        result = mgr.go_live("strat-001")
+        # R37 P0-2:加门槛后,需 force=True 绕开(此 test 验证 mode 切换本身不验证门槛)
+        result = mgr.go_live("strat-001", force=True)
         assert result is not None
         # 验证 update 被调用
         mock_db.table.return_value.update.assert_called()

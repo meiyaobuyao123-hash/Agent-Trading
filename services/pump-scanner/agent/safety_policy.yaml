@@ -22,7 +22,7 @@ last_modified: "2026-05-01"
 owner: security-lead
 implemented_count:
   hard_rules: 30            # HR01-HR30 全部
-  circuit_breakers: 13      # CB01-CB13 全部
+  circuit_breakers: 14      # CB01-CB13 + CB14 manual kill switch
   constitutional: 5
 
 # HR 触发后自动 trip 对应 CB(熔断联动)
@@ -515,6 +515,13 @@ circuit_breakers:
     auto_release_after_min: 60
     tripped_by_hr: HR16
     description: 大盘 CRISIS → 1h 全局禁买入
+
+  - id: CB14
+    name: Manual Kill Switch(管理员人工 1 键关停)
+    severity: blocked
+    implemented: true
+    auto_release_after_min: null          # 永久 BLOCKED 直到 admin 手动解除
+    description: routes_admin /kill-switch 触发,永久 BLOCKED 直到 release;< 10s SLA
 
 # ============================================================
 # Constitutional Rules (C1-C5)

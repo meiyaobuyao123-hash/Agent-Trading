@@ -436,6 +436,56 @@ async def main():
         max_instances=1,
     )
 
+    # ── R37 P0-4 Semantic Shadow Mode 14d 评估(每 6 小时)──
+    # 引用 docs/agent-pm/06-memory-spec.md §4.3 Shadow Mode
+    # find rules where shadow_mode_until < now → graduate / dormant / failed
+    def _run_shadow_eval():
+        try:
+            from agent.memory import get_memory_manager
+            counts = get_memory_manager().semantic.evaluate_shadow_rules()
+            if any(counts[k] > 0 for k in ("graduated", "dormant", "failed")):
+                log.info(
+                    "[shadow eval cron] graduated=%d dormant=%d failed=%d errors=%d",
+                    counts["graduated"], counts["dormant"], counts["failed"], counts["errors"],
+                )
+        except Exception as e:
+            log.warning("[shadow eval cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_shadow_eval,
+        trigger="interval",
+        hours=6,
+        id="shadow_eval",
+        name="Semantic Shadow Mode 14d Evaluation (6h)",
+        misfire_grace_time=600,
+        max_instances=1,
+    )
+
+    # ── R37 P0-3 HITL 5/15/60min 超时升级(每 60s)──────────
+    # 引用 docs/agent-pm/04-agent-spec.md §3.2 + 11-launch-criteria-hitl.md
+    # scan pending_approvals → 5min 重推 / 15min 降级 / 60min 过期
+    async def _run_hitl_timeout_scan():
+        try:
+            from agent.loops.hitl_timeout_loop import scan_and_escalate
+            counts = await scan_and_escalate()
+            if any(counts[k] > 0 for k in ("repushed", "degraded", "expired")):
+                log.info(
+                    "[hitl-timeout cron] repushed=%d degraded=%d expired=%d errors=%d",
+                    counts["repushed"], counts["degraded"], counts["expired"], counts["errors"],
+                )
+        except Exception as e:
+            log.warning("[hitl-timeout cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_hitl_timeout_scan,
+        trigger="interval",
+        seconds=60,
+        id="hitl_timeout_scan",
+        name="HITL Timeout 5/15/60min Escalation (60s)",
+        misfire_grace_time=30,
+        max_instances=1,
+    )
+
     # ── W3 D5+ Memory WAL flush(每 10s)─────────────────────
     # 引用 services/pump-scanner/migrations/local_pg/036_pending_approvals_wal.sql
     # 引用 docs/agent-pm/06-memory-spec.md §3.5 Write Reliability

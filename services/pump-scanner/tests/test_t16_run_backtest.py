@@ -27,12 +27,12 @@ VALID_SPEC = {
 }
 
 
-# ── Registry now has 13 tools ───────────────────────────────
+# ── Registry has 17 tools(R35 加完 T01/T02/T03/T08)─────────
 
 def test_registry_includes_t16():
     reg = get_tool_registry()
     assert "run_backtest" in reg
-    assert len(reg) == 13
+    assert len(reg) == 17
 
 
 # ── Input schema validation ─────────────────────────────────

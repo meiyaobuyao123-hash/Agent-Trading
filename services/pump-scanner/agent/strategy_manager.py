@@ -1,15 +1,24 @@
 """
-策略管理器 — CRUD + Cooldown 管理
+策略管理器 — CRUD + Cooldown 管理 + paper→auto 晋升门槛(R37 P0-2)
 
 提供策略的创建、读取、更新、删除，
 以及冷却时间管理和触发计数。
+
+paper→auto 晋升门槛(对齐 docs/agent-pm/04-agent-spec.md §5.4 + 03-prd §5.4):
+  ALL 必须满足:
+    1. 策略创建满 30 天(created_at + 30d <= now)
+    2. closed paper trades >= 30 笔
+    3. avg_pnl_pct >= +1%(EV ≥ +1%)
+    4. max_drawdown_pct < 30%(从 pnl_pcts 累计算)
+  go_live() 调 check_promotion_eligibility() 校验;不通过返 None + reasons[]
+  admin 可用 force=True 绕开(写 audit_log)
 
 Python 3.9 兼容。
 """
 import json
 import logging
-from typing import Any, Dict, List, Optional
-from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime, timezone, timedelta
 
 from database import get_db
 
@@ -229,14 +238,155 @@ class StrategyManager:
 
     # ── PRD-008: 模式切换 ─────────────────────────────────────
 
-    def go_live(self, strategy_id: str) -> Optional[Dict[str, Any]]:
+    # paper→auto 晋升门槛常数(可配置,但默认对齐 spec)
+    PROMOTE_MIN_DAYS = 30
+    PROMOTE_MIN_CLOSED_TRADES = 30
+    PROMOTE_MIN_AVG_PNL_PCT = 1.0      # EV ≥ +1%
+    PROMOTE_MAX_DRAWDOWN_PCT = 30.0    # 最大回撤 < 30%
+
+    def _compute_paper_stats_sync(self, strategy_id: str) -> Dict[str, Any]:
+        """同步版 paper trades 统计(go_live 是 sync,不能 await async)。
+        返回:
+          {closed_count, avg_pnl_pct, max_drawdown_pct, win_rate, pnl_pcts}
+        """
+        try:
+            res = (
+                get_db()
+                .table("agent_paper_trades")
+                .select("status,pnl_pct,pnl_usd,closed_at")
+                .eq("strategy_id", strategy_id)
+                .execute()
+            )
+            trades = res.data or []
+        except Exception as e:
+            log.error("[promotion] paper trades query failed: %s", e)
+            trades = []
+
+        closed = [t for t in trades if t.get("status") == "closed"]
+        if not closed:
+            return {
+                "closed_count": 0,
+                "avg_pnl_pct": 0.0,
+                "max_drawdown_pct": 0.0,
+                "win_rate": 0.0,
+                "pnl_pcts": [],
+            }
+        # 按 closed_at 升序计算累计回撤
+        closed_sorted = sorted(closed, key=lambda t: t.get("closed_at") or "")
+        pnl_pcts = [float(t.get("pnl_pct") or 0) for t in closed_sorted]
+        # max drawdown:cumulative pnl 序列的最大下降幅度(从峰值)
+        cum_pct = 0.0
+        peak = 0.0
+        max_dd = 0.0
+        for p in pnl_pcts:
+            cum_pct += p
+            if cum_pct > peak:
+                peak = cum_pct
+            dd = peak - cum_pct
+            if dd > max_dd:
+                max_dd = dd
+        wins = sum(1 for p in pnl_pcts if p > 0)
+        return {
+            "closed_count": len(closed),
+            "avg_pnl_pct": sum(pnl_pcts) / len(pnl_pcts),
+            "max_drawdown_pct": max_dd,
+            "win_rate": (wins / len(closed)) * 100,
+            "pnl_pcts": pnl_pcts,
+        }
+
+    def check_promotion_eligibility(
+        self, strategy_id: str,
+    ) -> Dict[str, Any]:
+        """检查策略是否符合 paper→auto 晋升门槛。
+        返回 {eligible: bool, reasons: [], days_active, closed_count,
+               avg_pnl_pct, max_drawdown_pct, required: {...}}
+        引用 04-agent-spec §5.4 + 03-prd §5.4。
+        """
+        strategy = self.get_strategy(strategy_id)
+        required = {
+            "min_days": self.PROMOTE_MIN_DAYS,
+            "min_closed_trades": self.PROMOTE_MIN_CLOSED_TRADES,
+            "min_avg_pnl_pct": self.PROMOTE_MIN_AVG_PNL_PCT,
+            "max_drawdown_pct": self.PROMOTE_MAX_DRAWDOWN_PCT,
+        }
+        if not strategy:
+            return {
+                "eligible": False,
+                "reasons": ["strategy_not_found"],
+                "required": required,
+            }
+        if strategy.get("status") != "active":
+            return {
+                "eligible": False,
+                "reasons": [f"strategy_not_active:{strategy.get('status')}"],
+                "required": required,
+            }
+
+        # 计算 days_active
+        created_at = strategy.get("created_at")
+        days_active = 0
+        if created_at:
+            try:
+                # Supabase 返 ISO 字符串
+                if isinstance(created_at, str):
+                    cdt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+                else:
+                    cdt = created_at
+                if cdt.tzinfo is None:
+                    cdt = cdt.replace(tzinfo=timezone.utc)
+                days_active = (datetime.now(timezone.utc) - cdt).days
+            except Exception as e:
+                log.warning("[promotion] parse created_at failed: %s", e)
+
+        stats = self._compute_paper_stats_sync(strategy_id)
+        reasons: List[str] = []
+        if days_active < self.PROMOTE_MIN_DAYS:
+            reasons.append(
+                f"need_{self.PROMOTE_MIN_DAYS}d_active_got_{days_active}d"
+            )
+        if stats["closed_count"] < self.PROMOTE_MIN_CLOSED_TRADES:
+            reasons.append(
+                f"need_{self.PROMOTE_MIN_CLOSED_TRADES}_closed_trades_got_{stats['closed_count']}"
+            )
+        if stats["avg_pnl_pct"] < self.PROMOTE_MIN_AVG_PNL_PCT:
+            reasons.append(
+                f"need_avg_pnl_>={self.PROMOTE_MIN_AVG_PNL_PCT}%_got_{stats['avg_pnl_pct']:.2f}%"
+            )
+        if stats["max_drawdown_pct"] >= self.PROMOTE_MAX_DRAWDOWN_PCT:
+            reasons.append(
+                f"max_drawdown_{stats['max_drawdown_pct']:.2f}%_>=_{self.PROMOTE_MAX_DRAWDOWN_PCT}%_limit"
+            )
+
+        return {
+            "eligible": len(reasons) == 0,
+            "reasons": reasons,
+            "days_active": days_active,
+            "closed_count": stats["closed_count"],
+            "avg_pnl_pct": round(stats["avg_pnl_pct"], 2),
+            "max_drawdown_pct": round(stats["max_drawdown_pct"], 2),
+            "win_rate": round(stats["win_rate"], 2),
+            "required": required,
+        }
+
+    def go_live(
+        self,
+        strategy_id: str,
+        force: bool = False,
+        actor: str = "user",
+    ) -> Optional[Dict[str, Any]]:
         """
         将策略从 paper 切换到 live 模式
 
-        前提：策略必须是 active + paper 模式。
+        前提：策略必须是 active + paper 模式 + 通过晋升门槛(force=True 跳过)。
+
+        Args:
+            strategy_id: 策略 UUID
+            force: True = 跳过晋升门槛(仅 admin 用,会写 audit_log)
+            actor: 'user' / 'admin' / 'system' — 用于 audit log
 
         Returns:
-            更新后的策略记录，失败返回 None
+            更新后的策略记录;不通过门槛返 None;
+            mode 已是 live → 直接返当前(幂等)。
         """
         strategy = self.get_strategy(strategy_id)
         if not strategy:
@@ -254,9 +404,27 @@ class StrategyManager:
             )
             return None
 
+        # ── R37 P0-2:晋升门槛检查 ──────────────────────────────
+        if not force:
+            check = self.check_promotion_eligibility(strategy_id)
+            if not check["eligible"]:
+                log.warning(
+                    "[go_live] strategy %s NOT ELIGIBLE: %s",
+                    strategy_id, check["reasons"],
+                )
+                return None
+        else:
+            log.warning(
+                "[go_live] strategy %s force=True actor=%s — bypassing eligibility",
+                strategy_id, actor,
+            )
+
         result = self.update_strategy(strategy_id, {"mode": "live"})
         if result:
-            log.info("Strategy %s switched to LIVE mode", strategy_id)
+            log.info(
+                "Strategy %s switched to LIVE mode (force=%s actor=%s)",
+                strategy_id, force, actor,
+            )
         return result
 
     def get_mode(self, strategy_id: str) -> str:

@@ -1,0 +1,64 @@
+{
+  "tool": "update_strategy_status",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_strategy_id_invalid",
+      "input": {"new_status": "paused"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_new_status_invalid",
+      "input": {"strategy_id": "s-1"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "strategy_id_empty_invalid",
+      "input": {"strategy_id": "", "new_status": "paused"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "new_status_unknown_invalid",
+      "input": {"strategy_id": "s-1", "new_status": "ghost"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_active_no_db_returns_strategy_not_found",
+      "description": "DB 不通时 SELECT 返空 → strategy_not_found(ok=true,output.ok=false)",
+      "input": {"strategy_id": "s-eval-1", "new_status": "paused"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_paused_no_db",
+      "input": {"strategy_id": "s-eval-2", "new_status": "active"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_archived_no_db",
+      "input": {"strategy_id": "s-eval-3", "new_status": "archived"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "with_user_id_filter",
+      "input": {"strategy_id": "s-eval-4", "new_status": "paused", "user_id": "u-1"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "new_status_draft_invalid",
+      "description": "不允许从 active 切到 draft(只能 active/paused/archived)",
+      "input": {"strategy_id": "s-1", "new_status": "draft"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "new_status_pending_invalid",
+      "input": {"strategy_id": "s-1", "new_status": "pending"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "user_id_optional",
+      "input": {"strategy_id": "s-eval-5", "new_status": "active"},
+      "expected_outcome": "ok"
+    }
+  ]
+}

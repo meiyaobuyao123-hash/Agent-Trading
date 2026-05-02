@@ -1,0 +1,41 @@
+{
+  "skill": "S01_technical_analysis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S01",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded",
+      "skill_id": "S01",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S01",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_haiku_low_cost",
+      "description": "S01 是 Haiku(per docs/agent-pm/13-cost-budget.md analyst layer)",
+      "skill_id": "S01",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-haiku-4-5-20251001"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S01",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "technical-analysis"}
+    },
+    {
+      "name": "tools_include_calc_indicators",
+      "skill_id": "S01",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["calc_technical_indicators"]}
+    }
+  ]
+}

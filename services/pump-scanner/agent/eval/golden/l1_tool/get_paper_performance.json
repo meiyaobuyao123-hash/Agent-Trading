@@ -1,0 +1,58 @@
+{
+  "tool": "get_paper_performance",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_strategy_id_invalid",
+      "input": {},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "strategy_id_empty_invalid",
+      "input": {"strategy_id": ""},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "strategy_id_wrong_type_invalid",
+      "input": {"strategy_id": 12345},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "include_comparison_wrong_type_invalid",
+      "input": {"strategy_id": "s-1", "include_comparison": "yes"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_no_db_returns_ok_with_blockers",
+      "description": "engine.get_stats 抛 → ok=true + promotion_blockers 含 db_query_failed",
+      "input": {"strategy_id": "s-eval-1"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_with_comparison",
+      "input": {"strategy_id": "s-eval-2", "include_comparison": true},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_no_comparison",
+      "input": {"strategy_id": "s-eval-3", "include_comparison": false},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "long_strategy_id",
+      "input": {"strategy_id": "strategy-very-long-uuid-aaaaaa-bbbbbb-cccccc-dddddd"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "include_comparison_default_false",
+      "input": {"strategy_id": "s-eval-4"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "uuid_like_strategy_id",
+      "input": {"strategy_id": "550e8400-e29b-41d4-a716-446655440000"},
+      "expected_outcome": "ok"
+    }
+  ]
+}

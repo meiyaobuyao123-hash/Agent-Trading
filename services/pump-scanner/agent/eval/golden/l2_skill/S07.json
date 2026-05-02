@@ -1,0 +1,42 @@
+{
+  "skill": "S07_review_engine",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S07",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded",
+      "skill_id": "S07",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S07",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_haiku_for_review",
+      "description": "S07 复盘是模板化报告,用 Haiku 控成本(per docs/agent-pm/13-cost-budget.md)",
+      "skill_id": "S07",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-haiku-4-5-20251001"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S07",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "review-engine"}
+    },
+    {
+      "name": "tools_include_approve_rule",
+      "description": "Reflect → 提议 → S07 调 T11 approve_rule(用户确认后写入)",
+      "skill_id": "S07",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["approve_rule", "calc_risk_metrics"]}
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "tool": "save_strategy",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_user_id_invalid",
+      "input": {"spec": {"conditions": {"rules": [{"x": 1}]}, "actions": [{"y": 2}]}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_spec_invalid",
+      "input": {"user_id": "u-1"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "user_id_empty_invalid",
+      "input": {"user_id": "", "spec": {"conditions": {"rules": [{"x": 1}]}, "actions": [{"y": 2}]}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "spec_missing_conditions_invalid",
+      "input": {"user_id": "u-1", "spec": {"actions": [{"y": 2}]}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "spec_missing_actions_invalid",
+      "input": {"user_id": "u-1", "spec": {"conditions": {"rules": [{"x": 1}]}}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "rules_empty_invalid",
+      "description": "conditions.rules minItems=1",
+      "input": {"user_id": "u-1", "spec": {"conditions": {"rules": []}, "actions": [{"y": 2}]}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "actions_empty_invalid",
+      "input": {"user_id": "u-1", "spec": {"conditions": {"rules": [{"x": 1}]}, "actions": []}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "cooldown_too_small_invalid",
+      "description": "cooldown_minutes < 5 → schema reject",
+      "input": {
+        "user_id": "u-1",
+        "spec": {
+          "conditions": {"rules": [{"x": 1}]},
+          "actions": [{"y": 2}],
+          "cooldown_minutes": 1
+        }
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "mode_unknown_invalid",
+      "input": {
+        "user_id": "u-1",
+        "spec": {
+          "conditions": {"rules": [{"x": 1}]},
+          "actions": [{"y": 2}],
+          "mode": "auto"
+        }
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_minimal_no_db_returns_ok_false",
+      "description": "DB 不通时 mgr.create_strategy 抛 RuntimeError → ok=true,output.ok=false",
+      "input": {
+        "user_id": "u-eval-1",
+        "spec": {
+          "conditions": {"rules": [{"data_source": "hot_coins", "field": "score", "op": ">=", "value": 70}]},
+          "actions": [{"type": "alert", "channel": "push"}]
+        },
+        "skip_quota_check": true
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_full_spec_paper_mode",
+      "input": {
+        "user_id": "u-eval-2",
+        "spec": {
+          "name": "Eval Paper Strategy",
+          "description": "test",
+          "conditions": {"rules": [{"data_source": "x", "field": "y", "op": ">=", "value": 1}]},
+          "actions": [{"type": "alert"}],
+          "filters": {"chains": ["SOL"]},
+          "risk_params": {"max_amount_usd": 100},
+          "cooldown_minutes": 30,
+          "mode": "paper"
+        },
+        "source_prompt": "用户原始消息",
+        "skip_quota_check": true
+      },
+      "expected_outcome": "ok"
+    }
+  ]
+}

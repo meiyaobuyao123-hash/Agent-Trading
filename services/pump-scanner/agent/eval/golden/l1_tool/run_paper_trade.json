@@ -1,0 +1,75 @@
+{
+  "tool": "run_paper_trade",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_action_invalid",
+      "input": {"price": 100},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_price_invalid",
+      "input": {"action": "buy"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "action_unknown_invalid",
+      "input": {"action": "hold", "price": 100},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "price_zero_invalid",
+      "input": {"action": "buy", "price": 0},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "price_negative_invalid",
+      "input": {"action": "buy", "price": -10},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "buy_missing_strategy_id_returns_ok_false",
+      "description": "schema 通过但 buy 缺 required → ok=true,output.ok=false",
+      "input": {
+        "action": "buy", "price": 100,
+        "user_id": "u-1", "token_address": "0xabc",
+        "token_symbol": "X", "chain": "SOL",
+        "amount_usd": 50, "sl_pct": -10, "tp_pct": 30
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "buy_missing_required_fields_returns_ok_false",
+      "input": {"action": "buy", "price": 100},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "sell_missing_trade_id_returns_ok_false",
+      "input": {"action": "sell", "price": 130},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "sell_with_trade_id_no_db_execute_error",
+      "description": "DB 不通时 engine.close_position 抛 → EXECUTE_ERROR",
+      "input": {
+        "action": "sell", "price": 132,
+        "trade_id": "trade-eval-1", "exit_reason": "manual"
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "buy_with_trigger_context",
+      "input": {
+        "action": "buy", "price": 100,
+        "user_id": "u-1", "strategy_id": "s-1",
+        "token_address": "0xabc", "token_symbol": "X", "chain": "SOL",
+        "amount_usd": 50, "sl_pct": -10, "tp_pct": 30,
+        "trigger_context": {"score": 85}
+      },
+      "expected_outcome": "ok"
+    }
+  ]
+}

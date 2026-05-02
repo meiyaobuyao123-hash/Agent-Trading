@@ -1,0 +1,89 @@
+{
+  "tool": "create_approval_request",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_device_id_invalid",
+      "input": {"strategy_id": "s-1", "trigger_conditions_matched": {}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_strategy_id_invalid",
+      "input": {"device_id": "dev-1", "trigger_conditions_matched": {}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_trigger_conditions_invalid",
+      "input": {"device_id": "dev-1", "strategy_id": "s-1"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "device_id_empty_invalid",
+      "input": {"device_id": "", "strategy_id": "s-1", "trigger_conditions_matched": {}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "strategy_id_empty_invalid",
+      "input": {"device_id": "dev-1", "strategy_id": "", "trigger_conditions_matched": {}},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "timeout_too_small_invalid",
+      "description": "timeout_seconds < 60 → schema reject",
+      "input": {
+        "device_id": "dev-1", "strategy_id": "s-1",
+        "trigger_conditions_matched": {},
+        "timeout_seconds": 30
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "timeout_too_large_invalid",
+      "description": "timeout_seconds > 3600 → schema reject",
+      "input": {
+        "device_id": "dev-1", "strategy_id": "s-1",
+        "trigger_conditions_matched": {},
+        "timeout_seconds": 7200
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "trigger_wrong_type_invalid",
+      "input": {
+        "device_id": "dev-1", "strategy_id": "s-1",
+        "trigger_conditions_matched": "not an object"
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_no_db_execute_error",
+      "description": "DB 不通 → local_db conn 抛 → EXECUTE_ERROR",
+      "input": {
+        "device_id": "dev-eval-1", "strategy_id": "s-eval-1",
+        "trigger_conditions_matched": {"score": 80},
+        "amount_usd": 100,
+        "timeout_seconds": 300
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    },
+    {
+      "name": "valid_with_idem_no_db_execute_error",
+      "input": {
+        "device_id": "dev-eval-2", "strategy_id": "s-eval-2",
+        "trigger_conditions_matched": {"score": 75},
+        "thesis_id": "thesis-1",
+        "token_address": "0xabc",
+        "chain": "ETH",
+        "amount_usd": 50,
+        "timeout_seconds": 600,
+        "idempotency_key": "idem-eval-1"
+      },
+      "expected_outcome": "execute_error",
+      "expected_failure_mode": "EXECUTE_ERROR",
+      "skip_idempotent_check": true
+    }
+  ]
+}

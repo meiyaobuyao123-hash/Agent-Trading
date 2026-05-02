@@ -1,0 +1,49 @@
+{
+  "skill": "S08_thesis_writer",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S08",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded",
+      "description": "S08 是 ALWAYS_LOADED 核心 Skill,body 必须有 schema/rules/persona",
+      "skill_id": "S08",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S08",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_sonnet_for_synthesis",
+      "description": "S08 thesis 合成是关键决策点,用 Sonnet(per docs/agent-pm/13-cost-budget.md L2/L3 thesis layer)",
+      "skill_id": "S08",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-sonnet-4-6"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S08",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "thesis-writer"}
+    },
+    {
+      "name": "sub_skills_include_S01_S02_S03",
+      "description": "S08 在 L3 时可调 3 路 analyst sub-skill",
+      "skill_id": "S08",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"sub_skills_allowed": ["S01", "S02", "S03"]}
+    },
+    {
+      "name": "tools_include_risk_and_position",
+      "skill_id": "S08",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["calc_risk_metrics", "calc_position_size"]}
+    }
+  ]
+}

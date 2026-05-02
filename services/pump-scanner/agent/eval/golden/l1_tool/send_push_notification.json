@@ -1,0 +1,87 @@
+{
+  "tool": "send_push_notification",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_user_id_invalid",
+      "input": {"title": "t", "body": "b", "category": "system"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_title_invalid",
+      "input": {"user_id": "u-1", "body": "b", "category": "system"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_body_invalid",
+      "input": {"user_id": "u-1", "title": "t", "category": "system"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "missing_category_invalid",
+      "input": {"user_id": "u-1", "title": "t", "body": "b"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "category_unknown_invalid",
+      "input": {"user_id": "u-1", "title": "t", "body": "b", "category": "promotion"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "user_id_empty_invalid",
+      "input": {"user_id": "", "title": "t", "body": "b", "category": "system"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "title_empty_invalid",
+      "input": {"user_id": "u-1", "title": "", "body": "b", "category": "system"},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "title_too_long_invalid",
+      "description": "title maxLength=80",
+      "input": {
+        "user_id": "u-1",
+        "title": "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT",
+        "body": "b",
+        "category": "system"
+      },
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_strategy_triggered_no_firebase",
+      "description": "FCM 未配置 → send_push 返 0,但 ok=true(sent_count=0)",
+      "input": {
+        "user_id": "u-eval-1",
+        "title": "策略触发",
+        "body": "TRUMP 评分突破 80",
+        "category": "strategy_triggered",
+        "params": {"strategy_id": "s-1", "token_address": "0xabc"}
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_hitl_approval_with_params",
+      "input": {
+        "user_id": "u-eval-2",
+        "title": "需要审批",
+        "body": "买入 ETH $200",
+        "category": "hitl_approval",
+        "params": {"approval_id": "a-1"},
+        "extra_data": {"thesis_id": "thesis-1"}
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_review_ready_minimal",
+      "input": {
+        "user_id": "u-eval-3",
+        "title": "日报",
+        "body": "今日 3 单",
+        "category": "review_ready"
+      },
+      "expected_outcome": "ok"
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "skill": "S03_onchain_analysis",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S03",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded",
+      "skill_id": "S03",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S03",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_haiku",
+      "skill_id": "S03",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-haiku-4-5-20251001"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S03",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "onchain-analysis"}
+    },
+    {
+      "name": "tools_include_recall_and_risk",
+      "skill_id": "S03",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["recall_memory", "calc_risk_metrics"]}
+    }
+  ]
+}

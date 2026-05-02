@@ -1,0 +1,68 @@
+{
+  "tool": "recall_memory",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "missing_device_id_invalid",
+      "input": {},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "device_id_empty_invalid",
+      "input": {"device_id": ""},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "layers_unknown_invalid",
+      "input": {"device_id": "u-1", "layers": ["foo"]},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "limit_zero_invalid",
+      "input": {"device_id": "u-1", "limit_per_layer": 0},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "limit_too_high_invalid",
+      "input": {"device_id": "u-1", "limit_per_layer": 100},
+      "expected_outcome": "input_invalid"
+    },
+    {
+      "name": "valid_default_layers",
+      "description": "memory_manager init 失败时返空 layer + ok",
+      "input": {"device_id": "u-eval-1"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_filter_only_semantic",
+      "input": {"device_id": "u-eval-2", "layers": ["semantic"]},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_with_chain_filter",
+      "input": {"device_id": "u-eval-3", "chain": "SOL"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_with_trigger_source",
+      "input": {"device_id": "u-eval-4", "trigger_source": "smart_money"},
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "valid_all_layers_with_filters",
+      "input": {
+        "device_id": "u-eval-5",
+        "layers": ["working", "episodic", "semantic"],
+        "chain": "ETH", "trigger_source": "kol",
+        "limit_per_layer": 5
+      },
+      "expected_outcome": "ok"
+    },
+    {
+      "name": "chain_null_allowed",
+      "input": {"device_id": "u-eval-6", "chain": null},
+      "expected_outcome": "ok"
+    }
+  ]
+}

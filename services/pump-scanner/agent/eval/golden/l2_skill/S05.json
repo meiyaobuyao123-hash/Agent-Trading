@@ -1,0 +1,47 @@
+{
+  "skill": "S05_trade_strategy_builder",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S05",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded_lazy",
+      "skill_id": "S05",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S05",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_sonnet",
+      "skill_id": "S05",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-sonnet-4-6"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S05",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "trade-strategy-builder"}
+    },
+    {
+      "name": "tools_include_status_and_perf",
+      "skill_id": "S05",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["update_strategy_status", "get_paper_performance"]}
+    },
+    {
+      "name": "sub_skills_include_S08",
+      "description": "S05 模式晋升时调 S08 写 thesis 决策",
+      "skill_id": "S05",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"sub_skills_allowed": ["S08"]}
+    }
+  ]
+}

@@ -1,0 +1,42 @@
+{
+  "skill": "S04_signal_strategy_builder",
+  "version": "v1.0",
+  "owner": "agent-team",
+  "cases": [
+    {
+      "name": "metadata_ok",
+      "skill_id": "S04",
+      "expected_outcome": "metadata_ok"
+    },
+    {
+      "name": "full_content_loaded_lazy",
+      "description": "S04 是 LAZY,load_full 应按需读盘也能拿到 body",
+      "skill_id": "S04",
+      "expected_outcome": "loaded_full_content"
+    },
+    {
+      "name": "tools_required_in_registry",
+      "skill_id": "S04",
+      "expected_outcome": "tools_required_known"
+    },
+    {
+      "name": "model_is_sonnet_for_complex_chat",
+      "description": "S04 共创涉及多轮澄清,用 Sonnet(per docs/agent-pm/13-cost-budget.md)",
+      "skill_id": "S04",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"model": "claude-sonnet-4-6"}
+    },
+    {
+      "name": "name_matches",
+      "skill_id": "S04",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"name": "signal-strategy-builder"}
+    },
+    {
+      "name": "tools_include_save_and_backtest",
+      "skill_id": "S04",
+      "expected_outcome": "expect_fields",
+      "expect_fields": {"tools_required": ["save_strategy", "run_backtest"]}
+    }
+  ]
+}

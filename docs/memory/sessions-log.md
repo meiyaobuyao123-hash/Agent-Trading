@@ -4024,3 +4024,79 @@ W17-W22 真 LLM judge + 真人工 100 标注上线时,framework 即用,但 Pears
 6. **chat_loop 加共创 sub_skill_full gate** — 进一步细粒度
 7. **Dashboard** — 解析 eval-snapshot.json 趋势画 Grafana
 8. **Slack/email 告警** — nightly hard gate fail / launch progress 周报
+
+---
+
+## 2026-05-02 R35 一日上线 + 团队内测就绪(用户校准 + 跑出来真上线)
+
+### 用户三轮校准我才走对路
+
+**R32-R34 跑偏**:把"100+ DAU 公司流程"硬套个人项目(法务 12 项 / KMS / Beta 灰度)。
+**R35 校准**:用户没 AWS / 没付费用户 / 不要新付费第三方 / 早期项目自己用。
+
+**关键纠正**:
+- "OKX 行情 key 之前就有,你他么弄丢了?" → 我承认本地 .env 残缺(只 4 个 key)误导我说"4 个 Tool 缺",
+  实际 config.py + 服务器 .env 三个 OKX key 都在,trade_executor / okx_market_client 早就跑
+- "今天你把所有的东西做好,测试完成上线到服务器,我要给我的团队成员试用" → 一日上线 + Flutter 打包
+
+### 做了什么(commit `95c0acb`)
+
+**A. 4 个 Tool 包装(17/17 完整)**:
+- T01 query_market(180 行 包装 okx_market_client 4 子 action)
+- T02 query_holders(120 行 包装 hot_coin_fetcher.fetch_top_holders)
+- T03 query_onchain_activity(120 行 读 smart_money_signals 表)
+- T08 execute_swap(190 行 包装 trade_executor + 严校验)
+
+**B. tools/__init__.py 注册 17/17**:run_time get_tool_registry() 返完整 17 Tool
+
+**C. rollout_gate 全开**:
+- agent_v1: 0 → 100(主门内部团队全员命中)
+- agent_v1_thesis_l3: 0 → 100(L3 真 debate 全开)
+- agent_v1_l3_debate_full: 0 → 100
+- agent_v1_auto_mode: 0 ⚠️ **保持**(防真金误触发)
+- 删 agent_v1_kms_signing(用 Flutter Keychain 替代,免费够用)
+
+**D. Launch criteria 17 blocked → not_applicable**(早期项目无付费用户):
+- legal 12 全 → "internal use, no paid users"
+- safety S13 KMS / S14 red team → "Flutter Keychain / 内测期不需要"
+- cost C12 / product P07 / hitl H05 → "internal team, N/A"
+- **Launch criteria 62/62 100% ✅**
+
+**E. 测试 +29 用例 + 修 6 pre-existing**:
+- test_tools_t01_t02_t03_t08.py 29 case(metadata + input_invalid + mock 调用 + 边界)
+- 改 6 pre-existing(rollout default 100% / launch legal not_applicable)
+- verify.sh + eval-gate.yml 加 test_tools_t01_t02_t03_t08.py
+- pytest 413 tests / 39s 全过 ✅
+
+**F. 服务器部署成功**:
+- ssh deploy + jsonschema 装 + restart 双服务
+- 8000 LISTEN ✅
+- 17 Tools 服务器侧 import OK ✅
+- /api/agent/strategies 真返数据 ✅
+- 服务器 run_all 8/9 suite 过(L3/L4 4 case framework bug 不影响真功能)
+
+**G. iOS IPA 打包成功**:
+- `apps/app/build/ios/ipa/aitrading_app.ipa`(10.2 MB)
+- Future Trading v1.2.0 build 8
+- ad-hoc 签名,可直接给团队成员安装
+- Android APK 没装 SDK 跳过
+
+**H. docs/runbook/team-test.md 团队内测指南**:
+- 7 功能 list(thesis / 共创 / 策略 / 推送 / 复盘 / 记忆管理 / HITL)
+- ⚠️ 不要试 auto 模式
+- bug 反馈 P0-P3
+- 已知不完美 + Kill Switch 命令
+
+### 累计本会话总计
+- R35 一日完成(plan + survey + 4 Tool + rollout + tests + launch + verify + 部署 + IPA + 指南)
+- 56 commits(R35 = `95c0acb`)
+- pytest 1184 + 29 + 修补 = ~1200+
+- 17/17 Tools / 9/9 eval suite framework / Phase 4 + Beta 准备 + R35 就绪
+
+### 下次接手候选(团队反馈后)
+1. **修 L3/L4 routes_thesis route 检查 framework bug**(import 成功后 router.routes 检查路径前缀)
+2. **收团队内测反馈 + 修 P0/P1 bug**
+3. **如果团队体验好 → KMS 实施 → 开 auto_mode 真金**
+4. **Stage 0 → 5% Canary** — 真用户(团队外)流量
+5. **Android APK 打包**(装 ANDROID_HOME 后)
+6. **真 LLM judge 接通**(anthropic API 已有)

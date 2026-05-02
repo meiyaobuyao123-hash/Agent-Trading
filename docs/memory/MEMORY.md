@@ -395,6 +395,27 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - verify.sh + eval-gate.yml 加 test_rollout_gate_integration.py(382 tests)
   - pytest 全量 1184/1186(+17)
   - **Beta gate 真接通,改 DEFAULT_ROLLOUT_PCT 数字即生效**
+- ✅ **R35 一日上线 + 团队内测就绪**(commit `95c0acb` + 服务器 deploy + iOS IPA):
+  - **17/17 Tools 完整**(R35 包装 4 个剩余 Tool + 注册 registry):
+    - T01 query_market(180 行 包装 okx_market_client)
+    - T02 query_holders(120 行 包装 hot_coin_fetcher.fetch_top_holders + 60% rug 红线)
+    - T03 query_onchain_activity(120 行 读 smart_money_signals 表 + big_buy_warning)
+    - T08 execute_swap(190 行 真金路径 — 包装 trade_executor.execute_trade,签名走 Flutter Keychain)
+  - **rollout_gate 全开**:agent_v1=100 / thesis_l3=100 / **auto_mode=0**(防真金误触)
+  - **删过度工程化**:legal 12 sign-off / KMS / red team drill / NPS / biometric drill 全 → not_applicable("内测期不需要")
+  - **Launch criteria 62/62 100%** ✅(从 45/62 升,真合规对齐内部使用)
+  - **L1 Tool 17/17 / 182/182 100%** ✅
+  - **测试 +29 用例**(test_tools_t01_t02_t03_t08.py)+ 修 6 个 pre-existing
+  - **verify.sh 413 tests / 39s 全过** ✅
+  - **服务器部署成功** ✅(ssh deploy + jsonschema 装 + restart pump-scanner-api):
+    - 8000 LISTEN
+    - 17 Tools 服务器侧注册 OK
+    - /api/agent/strategies 返真数据
+    - 服务器 run_all 8/9 suite 过(L3/L4 routes_thesis 路径检查 framework bug,不影响真功能)
+  - **iOS IPA 打包成功** ✅:`apps/app/build/ios/ipa/aitrading_app.ipa`(10.2 MB / Future Trading v1.2.0 build 8)
+  - **docs/runbook/team-test.md** 团队内测指南(7 功能 / bug P0-P3 / 已知不完美 / Kill Switch)
+  - **agent_v1_auto_mode 保 0**:防真金误触发,Flutter App 即便点 auto 也不会真买
+  - 给团队成员发 IPA + 指引 → 装上即可试 paper / notify / thesis / 共创 / 复盘 / 记忆管理
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

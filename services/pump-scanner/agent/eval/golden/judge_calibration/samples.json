@@ -1,0 +1,2209 @@
+{
+  "suite": "judge_calibration",
+  "version": "v1.0",
+  "owner": "agent-team + safety-lead",
+  "description": "100 sample 冷启动 — 启发式 judge baseline + 小噪声模拟人工。W17-W22 替换 human_scores 为真人工标注 + judge_scores 为真 LLM judge 输出。",
+  "n_samples": 100,
+  "samples": [
+    {
+      "name": "thesis_001",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.74, \"summary_30w\": \"TRUMP/SOL bullish 信号\", \"risks\": [\"流动性偏薄\", \"集中度高\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"MA20 超买\"}, {\"layer\": \"sent\", \"text\": \"流动性 $120k\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "TRUMP",
+        "bullish"
+      ],
+      "human_scores": {
+        "relevance": 9.9,
+        "reasoning": 6.9,
+        "actionability": 10,
+        "risk": 10,
+        "calibration": 2.8,
+        "format": 9.8,
+        "structure": 9.2,
+        "length": 10,
+        "disclaimer": 5.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_002",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bearish\", \"conviction\": 0.59, \"summary_30w\": \"PEPE/ETH bearish 信号\", \"risks\": [\"流动性偏薄\", \"rug 风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"MA 金叉\"}, {\"layer\": \"sent\", \"text\": \"提及量 +120% 24h\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "PEPE",
+        "bearish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.4,
+        "actionability": 10,
+        "risk": 9.4,
+        "calibration": 7.1,
+        "format": 10,
+        "structure": 9.8,
+        "length": 10,
+        "disclaimer": 5.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_003",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"hold\", \"conviction\": 0.4, \"summary_30w\": \"DOGE/BSC hold 信号\", \"risks\": [\"流动性偏薄\", \"regime 切换风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"MA20 超买\"}, {\"layer\": \"sent\", \"text\": \"top10 = 45% 健康\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "DOGE",
+        "hold"
+      ],
+      "human_scores": {
+        "relevance": 9.2,
+        "reasoning": 5.4,
+        "actionability": 9.9,
+        "risk": 10,
+        "calibration": 6.6,
+        "format": 9.6,
+        "structure": 10,
+        "length": 9.9,
+        "disclaimer": 5.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_004",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.73, \"summary_30w\": \"SHIB/Base bullish 信号\", \"risks\": [\"rug 风险\", \"regime 切换风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"top10 = 45% 健康\"}, {\"layer\": \"sent\", \"text\": \"提及量 +120% 24h\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "SHIB",
+        "bullish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 6.1,
+        "actionability": 10,
+        "risk": 9.9,
+        "calibration": 7.3,
+        "format": 10,
+        "structure": 9.8,
+        "length": 10,
+        "disclaimer": 5.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_005",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bearish\", \"conviction\": 0.62, \"summary_30w\": \"BONK/SOL bearish 信号\", \"risks\": [\"rug 风险\", \"集中度高\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"RSI 35 反弹 + MACD 上穿\"}, {\"layer\": \"sent\", \"text\": \"BB 上轨\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "BONK",
+        "bearish"
+      ],
+      "human_scores": {
+        "relevance": 9.6,
+        "reasoning": 6.7,
+        "actionability": 10.0,
+        "risk": 9.5,
+        "calibration": 2.9,
+        "format": 10,
+        "structure": 9.4,
+        "length": 9.7,
+        "disclaimer": 5.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_006",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"neutral\", \"conviction\": 0.5, \"summary_30w\": \"WIF/ETH neutral 信号\", \"risks\": [\"集中度高\", \"波动剧烈\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"BB 上轨\"}, {\"layer\": \"sent\", \"text\": \"MA20 超买\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "WIF",
+        "neutral"
+      ],
+      "human_scores": {
+        "relevance": 9.2,
+        "reasoning": 3.8,
+        "actionability": 9.8,
+        "risk": 9.3,
+        "calibration": 2.4,
+        "format": 9.8,
+        "structure": 9.6,
+        "length": 9.9,
+        "disclaimer": 4.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_007",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.84, \"summary_30w\": \"POPCAT/BSC bullish 信号\", \"risks\": [\"集中度高\", \"流动性偏薄\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"MA 金叉\"}, {\"layer\": \"sent\", \"text\": \"提及量 +120% 24h\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "POPCAT",
+        "bullish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 4.4,
+        "actionability": 10,
+        "risk": 10,
+        "calibration": 5.5,
+        "format": 10,
+        "structure": 10,
+        "length": 10.0,
+        "disclaimer": 5.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_008",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bearish\", \"conviction\": 0.58, \"summary_30w\": \"MEW/Base bearish 信号\", \"risks\": [\"集中度高\", \"rug 风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"3 KOL 同方向\"}, {\"layer\": \"sent\", \"text\": \"RSI 35 反弹 + MACD 上穿\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "MEW",
+        "bearish"
+      ],
+      "human_scores": {
+        "relevance": 9.6,
+        "reasoning": 6.0,
+        "actionability": 10,
+        "risk": 10,
+        "calibration": 3.1,
+        "format": 10,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 5.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_009",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"neutral\", \"conviction\": 0.51, \"summary_30w\": \"TURBO/SOL neutral 信号\", \"risks\": [\"rug 风险\", \"流动性偏薄\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"提及量 +120% 24h\"}, {\"layer\": \"sent\", \"text\": \"MA 金叉\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "TURBO",
+        "neutral"
+      ],
+      "human_scores": {
+        "relevance": 9.5,
+        "reasoning": 4.6,
+        "actionability": 9.8,
+        "risk": 10,
+        "calibration": 7.1,
+        "format": 10,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 6.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_010",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.72, \"summary_30w\": \"TRUMP/ETH bullish 信号\", \"risks\": [\"波动剧烈\", \"rug 风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"KOL 看涨度 0.78\"}, {\"layer\": \"sent\", \"text\": \"MA20 超买\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "TRUMP",
+        "bullish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.4,
+        "actionability": 10,
+        "risk": 10,
+        "calibration": 2.2,
+        "format": 9.9,
+        "structure": 10,
+        "length": 9.4,
+        "disclaimer": 4.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_011",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bearish\", \"conviction\": 0.76, \"summary_30w\": \"PEPE/BSC bearish 信号\", \"risks\": [\"流动性偏薄\", \"regime 切换风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"3 KOL 同方向\"}, {\"layer\": \"sent\", \"text\": \"MA 金叉\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "PEPE",
+        "bearish"
+      ],
+      "human_scores": {
+        "relevance": 9.7,
+        "reasoning": 3.0,
+        "actionability": 9.7,
+        "risk": 10,
+        "calibration": 2.6,
+        "format": 10,
+        "structure": 9.7,
+        "length": 10,
+        "disclaimer": 4.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_012",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"neutral\", \"conviction\": 0.53, \"summary_30w\": \"DOGE/Base neutral 信号\", \"risks\": [\"流动性偏薄\", \"过往不代表未来\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"3 KOL 同方向\"}, {\"layer\": \"sent\", \"text\": \"smart money 净流 +$80k\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "DOGE",
+        "neutral"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 3.8,
+        "actionability": 10,
+        "risk": 9.4,
+        "calibration": 2.1,
+        "format": 10,
+        "structure": 9.0,
+        "length": 9.1,
+        "disclaimer": 4.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_013",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bullish\", \"conviction\": 0.74, \"summary_30w\": \"SHIB/SOL bullish 信号\", \"risks\": [\"集中度高\", \"regime 切换风险\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"KOL 看涨度 0.78\"}, {\"layer\": \"sent\", \"text\": \"流动性 $120k\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "SHIB",
+        "bullish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 4.8,
+        "actionability": 9.5,
+        "risk": 9.9,
+        "calibration": 2.2,
+        "format": 10,
+        "structure": 9.8,
+        "length": 9.5,
+        "disclaimer": 4.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_014",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"bearish\", \"conviction\": 0.61, \"summary_30w\": \"BONK/ETH bearish 信号\", \"risks\": [\"集中度高\", \"流动性偏薄\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"流动性 $120k\"}, {\"layer\": \"sent\", \"text\": \"BB 上轨\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "BONK",
+        "bearish"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.5,
+        "actionability": 10,
+        "risk": 10,
+        "calibration": 2.3,
+        "format": 9.6,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 5.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_015",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"hold\", \"conviction\": 0.48, \"summary_30w\": \"WIF/BSC hold 信号\", \"risks\": [\"regime 切换风险\", \"波动剧烈\"], \"evidence\": [{\"layer\": \"tech\", \"text\": \"smart money 净流 +$80k\"}, {\"layer\": \"sent\", \"text\": \"提及量 +120% 24h\"}], \"level\": \"L2\"}",
+      "topic_keywords": [
+        "WIF",
+        "hold"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 6.0,
+        "actionability": 10,
+        "risk": 9.4,
+        "calibration": 6.7,
+        "format": 10,
+        "structure": 9.4,
+        "length": 10,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_016",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "POPCAT",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 1.4,
+        "reasoning": 3.0,
+        "actionability": 0.6,
+        "risk": 0.1,
+        "calibration": 2.1,
+        "format": 10,
+        "structure": 10,
+        "length": 9.1,
+        "disclaimer": 5.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_017",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "MEW",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.0,
+        "reasoning": 2.2,
+        "actionability": 0,
+        "risk": 0,
+        "calibration": 2.7,
+        "format": 10,
+        "structure": 9.8,
+        "length": 9.3,
+        "disclaimer": 4.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_018",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "TURBO",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 1.0,
+        "reasoning": 2.7,
+        "actionability": 0.2,
+        "risk": 0.8,
+        "calibration": 3.5,
+        "format": 9.9,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_019",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "TRUMP",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.5,
+        "reasoning": 3.3,
+        "actionability": 0,
+        "risk": 0,
+        "calibration": 3.5,
+        "format": 10,
+        "structure": 10,
+        "length": 9.7,
+        "disclaimer": 5.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_020",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "PEPE",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.7,
+        "reasoning": 2.4,
+        "actionability": 0,
+        "risk": 0,
+        "calibration": 2.6,
+        "format": 10,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 5.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_021",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "DOGE",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.4,
+        "reasoning": 1.9,
+        "actionability": 0,
+        "risk": 0.1,
+        "calibration": 2.5,
+        "format": 10.0,
+        "structure": 10,
+        "length": 9.9,
+        "disclaimer": 4.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_022",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "SHIB",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.6,
+        "reasoning": 2.2,
+        "actionability": 0,
+        "risk": 0.3,
+        "calibration": 2.7,
+        "format": 10,
+        "structure": 9.6,
+        "length": 10,
+        "disclaimer": 5.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_023",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "BONK",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.7,
+        "reasoning": 2.3,
+        "actionability": 0,
+        "risk": 0,
+        "calibration": 3.4,
+        "format": 9.6,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 5.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_024",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "WIF",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.4,
+        "reasoning": 2.9,
+        "actionability": 0,
+        "risk": 0.2,
+        "calibration": 3.5,
+        "format": 10,
+        "structure": 10,
+        "length": 10,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "thesis_025",
+      "category": "thesis",
+      "is_thesis": true,
+      "output_text": "{\"direction\": \"unknown\", \"conviction\": 0.5, \"risks\": [], \"evidence\": []}",
+      "topic_keywords": [
+        "POPCAT",
+        "test"
+      ],
+      "human_scores": {
+        "relevance": 0.7,
+        "reasoning": 2.0,
+        "actionability": 0.4,
+        "risk": 0,
+        "calibration": 2.1,
+        "format": 9.1,
+        "structure": 9.5,
+        "length": 10,
+        "disclaimer": 5.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_001",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:13笔交易 / 胜率 70% / EV +2.9% / Sharpe 1.1 / 最大回撤 -18%。\n\n建议维持权重。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 7.1,
+        "actionability": 7.5,
+        "risk": 9.6,
+        "calibration": 9.5,
+        "format": 9.2,
+        "structure": 5.9,
+        "length": 9.5,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_002",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周6笔 / WR 75% / EV +1.6%。regime NORMAL 继续观察。建议下周调整阈值。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.2,
+        "reasoning": 5.0,
+        "actionability": 8.5,
+        "risk": 9.2,
+        "calibration": 8.4,
+        "format": 5.8,
+        "structure": 5.6,
+        "length": 10,
+        "disclaimer": 7.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_003",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:11 笔触发,胜率 70%。样本可观,建议暂停 1 周观察。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 9.5,
+        "reasoning": 4.9,
+        "actionability": 5.3,
+        "risk": 7.7,
+        "calibration": 6.7,
+        "format": 7.1,
+        "structure": 4.8,
+        "length": 10,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_004",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:9笔交易 / 胜率 57% / EV +3.1% / Sharpe 1.4 / 最大回撤 -21%。\n\n建议调整阈值。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 7.8,
+        "actionability": 8.6,
+        "risk": 9.1,
+        "calibration": 10,
+        "format": 8.7,
+        "structure": 5.5,
+        "length": 10,
+        "disclaimer": 9.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_005",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周16笔 / WR 57% / EV +4.0%。SOL 聪明钱表现稳。建议下周维持权重。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.2,
+        "reasoning": 5.3,
+        "actionability": 8.6,
+        "risk": 8.3,
+        "calibration": 7.8,
+        "format": 6.9,
+        "structure": 4.9,
+        "length": 9.1,
+        "disclaimer": 8.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_006",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:8 笔触发,胜率 54%。样本可观,建议调整阈值。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 9.6,
+        "reasoning": 5.5,
+        "actionability": 6.1,
+        "risk": 7.0,
+        "calibration": 6.0,
+        "format": 7.1,
+        "structure": 5.2,
+        "length": 10,
+        "disclaimer": 4.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_007",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:17笔交易 / 胜率 62% / EV +2.6% / Sharpe 1.4 / 最大回撤 -16%。\n\n建议调整阈值。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 9.2,
+        "reasoning": 7.3,
+        "actionability": 7.8,
+        "risk": 9.5,
+        "calibration": 8.8,
+        "format": 8.6,
+        "structure": 5.6,
+        "length": 10,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_008",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周26笔 / WR 73% / EV +0.9%。regime NORMAL 继续观察。建议下周考虑加权。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 1.8,
+        "reasoning": 6.3,
+        "actionability": 9.9,
+        "risk": 8.6,
+        "calibration": 7.8,
+        "format": 6.0,
+        "structure": 5.1,
+        "length": 9.9,
+        "disclaimer": 8.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_009",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:8 笔触发,胜率 59%。样本可观,建议调整阈值。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.3,
+        "actionability": 7.2,
+        "risk": 6.6,
+        "calibration": 6.0,
+        "format": 6.8,
+        "structure": 5.7,
+        "length": 10,
+        "disclaimer": 4.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_010",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:21笔交易 / 胜率 53% / EV +3.5% / Sharpe 1.2 / 最大回撤 -24%。\n\n建议调整阈值。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 8.5,
+        "actionability": 8.7,
+        "risk": 10,
+        "calibration": 8.9,
+        "format": 9.5,
+        "structure": 4.9,
+        "length": 9.6,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_011",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周9笔 / WR 61% / EV +3.2%。建议下周维持权重。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.9,
+        "reasoning": 6.4,
+        "actionability": 9.4,
+        "risk": 8.9,
+        "calibration": 7.8,
+        "format": 6.1,
+        "structure": 4.2,
+        "length": 9.3,
+        "disclaimer": 8.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_012",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:15 笔触发,胜率 65%。样本可观,建议暂停 1 周观察。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10.0,
+        "reasoning": 5.1,
+        "actionability": 5.3,
+        "risk": 8.0,
+        "calibration": 5.6,
+        "format": 5.7,
+        "structure": 4.5,
+        "length": 9.2,
+        "disclaimer": 5.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_013",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:12笔交易 / 胜率 68% / EV +3.8% / Sharpe 0.9 / 最大回撤 -23%。\n\n建议维持权重。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 8.5,
+        "actionability": 7.5,
+        "risk": 10,
+        "calibration": 9.4,
+        "format": 8.6,
+        "structure": 5.0,
+        "length": 10,
+        "disclaimer": 10.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_014",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周29笔 / WR 54% / EV +0.9%。regime NORMAL 继续观察。建议下周暂停 1 周观察。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.9,
+        "reasoning": 5.0,
+        "actionability": 6.5,
+        "risk": 8.3,
+        "calibration": 7.6,
+        "format": 7.3,
+        "structure": 5.0,
+        "length": 9.1,
+        "disclaimer": 8.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_015",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:21 笔触发,胜率 69%。样本可观,建议考虑加权。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.7,
+        "actionability": 8.1,
+        "risk": 6.5,
+        "calibration": 6.3,
+        "format": 5.9,
+        "structure": 5.7,
+        "length": 9.2,
+        "disclaimer": 5.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_016",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:27笔交易 / 胜率 59% / EV +1.9% / Sharpe 1.6 / 最大回撤 -19%。\n\n建议升级 notify。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 7.3,
+        "actionability": 7.9,
+        "risk": 9.6,
+        "calibration": 9.9,
+        "format": 9.3,
+        "structure": 5.0,
+        "length": 9.9,
+        "disclaimer": 9.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_017",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周19笔 / WR 53% / EV +1.4%。建议下周调整阈值。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.3,
+        "reasoning": 5.2,
+        "actionability": 8.7,
+        "risk": 9.5,
+        "calibration": 7.3,
+        "format": 5.6,
+        "structure": 5.5,
+        "length": 10,
+        "disclaimer": 8.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_018",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:12 笔触发,胜率 68%。样本可观,建议暂停 1 周观察。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 4.3,
+        "actionability": 4.5,
+        "risk": 8.0,
+        "calibration": 7.2,
+        "format": 6.7,
+        "structure": 5.3,
+        "length": 10,
+        "disclaimer": 4.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_019",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日复盘:6笔交易 / 胜率 60% / EV +0.7% / Sharpe 1.1 / 最大回撤 -23%。\n\n建议暂停 1 周观察。\n\n风险提示:不构成投资建议,请自行判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 10.0,
+        "reasoning": 7.6,
+        "actionability": 7.5,
+        "risk": 9.8,
+        "calibration": 10,
+        "format": 10,
+        "structure": 6.0,
+        "length": 9.5,
+        "disclaimer": 9.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_020",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "本周9笔 / WR 73% / EV +3.8%。BTC 反弹带动。建议下周暂停 1 周观察。注意 regime 切换风险,DYOR。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 1.7,
+        "reasoning": 5.6,
+        "actionability": 6.6,
+        "risk": 8.9,
+        "calibration": 8.8,
+        "format": 6.3,
+        "structure": 6.0,
+        "length": 10,
+        "disclaimer": 8.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_021",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "30d 复盘:30 笔触发,胜率 63%。样本可观,建议切回 paper。crypto 永远有风险,谨慎判断。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 9.3,
+        "reasoning": 5.7,
+        "actionability": 4.8,
+        "risk": 8.4,
+        "calibration": 6.2,
+        "format": 5.7,
+        "structure": 5.7,
+        "length": 9.2,
+        "disclaimer": 5.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_022",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日数据汇总:11 entries。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.0,
+        "reasoning": 1.4,
+        "actionability": 0.7,
+        "risk": 0.9,
+        "calibration": 2.1,
+        "format": 7.1,
+        "structure": 4.5,
+        "length": 0.2,
+        "disclaimer": 4.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_023",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日数据汇总:12 entries。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.2,
+        "reasoning": 1.8,
+        "actionability": 0.3,
+        "risk": 0.1,
+        "calibration": 3.9,
+        "format": 6.8,
+        "structure": 5.8,
+        "length": 0,
+        "disclaimer": 5.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_024",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日数据汇总:5 entries。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 1.2,
+        "reasoning": 1.6,
+        "actionability": 0.4,
+        "risk": 0,
+        "calibration": 2.5,
+        "format": 5.7,
+        "structure": 6.0,
+        "length": 0.5,
+        "disclaimer": 5.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "review_025",
+      "category": "review",
+      "is_thesis": false,
+      "output_text": "今日数据汇总:15 entries。",
+      "topic_keywords": [
+        "复盘",
+        "胜率"
+      ],
+      "human_scores": {
+        "relevance": 0.2,
+        "reasoning": 1.4,
+        "actionability": 0,
+        "risk": 0,
+        "calibration": 2.6,
+        "format": 5.6,
+        "structure": 4.7,
+        "length": 0,
+        "disclaimer": 4.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_001",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "TRUMP 触发:smart money 净流 +$80k。信心 46%,建议买入。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "TRUMP",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.8,
+        "reasoning": 7.7,
+        "actionability": 7.9,
+        "risk": 6.9,
+        "calibration": 6.7,
+        "format": 6.3,
+        "structure": 5.4,
+        "length": 10.0,
+        "disclaimer": 5.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_002",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "PEPE 信号(auto)。score 突破 80,建议等待 $50。本工具不构成投资建议。",
+      "topic_keywords": [
+        "PEPE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.5,
+        "reasoning": 5.0,
+        "actionability": 8.4,
+        "risk": 9.3,
+        "calibration": 3.8,
+        "format": 6.4,
+        "structure": 4.6,
+        "length": 10,
+        "disclaimer": 9.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_003",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "DOGE 触发(信心 68%)。score 突破 80。建议建议买入。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "DOGE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 7.2,
+        "actionability": 8.1,
+        "risk": 9.9,
+        "calibration": 6.9,
+        "format": 6.4,
+        "structure": 4.6,
+        "length": 10,
+        "disclaimer": 9.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_004",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "SHIB 触发:score 突破 80。信心 69%,买入。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "SHIB",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.2,
+        "reasoning": 5.0,
+        "actionability": 6.7,
+        "risk": 5.6,
+        "calibration": 6.9,
+        "format": 5.5,
+        "structure": 5.7,
+        "length": 9.8,
+        "disclaimer": 4.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_005",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "BONK 信号(paper)。smart money 净流 +$80k,建议提示卖出 $200。本工具不构成投资建议。",
+      "topic_keywords": [
+        "BONK",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 6.7,
+        "reasoning": 6.9,
+        "actionability": 9.4,
+        "risk": 9.8,
+        "calibration": 3.5,
+        "format": 7.2,
+        "structure": 5.8,
+        "length": 10,
+        "disclaimer": 9.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_006",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "WIF 触发(信心 45%)。score 突破 80。建议等待。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "WIF",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.1,
+        "actionability": 6.4,
+        "risk": 7.0,
+        "calibration": 7.0,
+        "format": 7.0,
+        "structure": 5.4,
+        "length": 9.3,
+        "disclaimer": 7.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_007",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "POPCAT 触发:score 突破 80。信心 70%,建议买入。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "POPCAT",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 4.8,
+        "actionability": 9.1,
+        "risk": 6.6,
+        "calibration": 6.2,
+        "format": 5.8,
+        "structure": 5.8,
+        "length": 9.7,
+        "disclaimer": 4.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_008",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "MEW 信号(notify)。smart money 净流 +$80k,建议建议买入 $100。本工具不构成投资建议。",
+      "topic_keywords": [
+        "MEW",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.4,
+        "reasoning": 7.4,
+        "actionability": 10,
+        "risk": 9.7,
+        "calibration": 3.0,
+        "format": 6.0,
+        "structure": 4.3,
+        "length": 10,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_009",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "TURBO 触发(信心 58%)。RSI 反弹。建议提示卖出。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "TURBO",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.3,
+        "actionability": 7.7,
+        "risk": 8.1,
+        "calibration": 6.4,
+        "format": 5.7,
+        "structure": 5.5,
+        "length": 9.5,
+        "disclaimer": 8.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_010",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "TRUMP 触发:score 突破 80。信心 71%,等待。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "TRUMP",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.0,
+        "actionability": 7.7,
+        "risk": 6.1,
+        "calibration": 5.7,
+        "format": 6.3,
+        "structure": 4.5,
+        "length": 9.2,
+        "disclaimer": 4.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_011",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "PEPE 信号(paper)。热币榜单进入,建议提示卖出 $200。本工具不构成投资建议。",
+      "topic_keywords": [
+        "PEPE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 6.5,
+        "reasoning": 4.2,
+        "actionability": 8.3,
+        "risk": 9.3,
+        "calibration": 2.7,
+        "format": 6.8,
+        "structure": 4.9,
+        "length": 10,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_012",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "DOGE 触发(信心 60%)。smart money 净流 +$80k。建议买入。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "DOGE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.7,
+        "reasoning": 7.5,
+        "actionability": 7.3,
+        "risk": 7.8,
+        "calibration": 6.4,
+        "format": 6.9,
+        "structure": 5.3,
+        "length": 9.2,
+        "disclaimer": 7.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_013",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "SHIB 触发:热币榜单进入。信心 72%,等待。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "SHIB",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.1,
+        "reasoning": 6.2,
+        "actionability": 6.2,
+        "risk": 5.5,
+        "calibration": 6.6,
+        "format": 6.3,
+        "structure": 4.7,
+        "length": 10,
+        "disclaimer": 5.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_014",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "BONK 信号(paper)。score 突破 80,建议买入 $200。本工具不构成投资建议。",
+      "topic_keywords": [
+        "BONK",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 6.1,
+        "reasoning": 4.9,
+        "actionability": 9.0,
+        "risk": 9.8,
+        "calibration": 3.3,
+        "format": 7.2,
+        "structure": 5.2,
+        "length": 10,
+        "disclaimer": 9.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_015",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "WIF 触发(信心 55%)。RSI 反弹。建议买入。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "WIF",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 5.1,
+        "actionability": 6.9,
+        "risk": 7.0,
+        "calibration": 6.2,
+        "format": 7.5,
+        "structure": 4.7,
+        "length": 10,
+        "disclaimer": 8.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_016",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "POPCAT 触发:热币榜单进入。信心 77%,买入。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "POPCAT",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.1,
+        "reasoning": 4.8,
+        "actionability": 7.9,
+        "risk": 6.9,
+        "calibration": 7.1,
+        "format": 5.7,
+        "structure": 4.4,
+        "length": 10,
+        "disclaimer": 5.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_017",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "MEW 信号(notify)。热币榜单进入,建议建议持有 $200。本工具不构成投资建议。",
+      "topic_keywords": [
+        "MEW",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.1,
+        "reasoning": 4.9,
+        "actionability": 9.5,
+        "risk": 10,
+        "calibration": 2.4,
+        "format": 7.2,
+        "structure": 5.1,
+        "length": 10,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_018",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "TURBO 触发(信心 56%)。score 突破 80。建议提示卖出。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "TURBO",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.5,
+        "reasoning": 6.3,
+        "actionability": 7.6,
+        "risk": 7.7,
+        "calibration": 6.1,
+        "format": 7.5,
+        "structure": 6.0,
+        "length": 10,
+        "disclaimer": 9.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_019",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "TRUMP 触发:KOL 喊单。信心 55%,建议买入。请注意流动性变化,谨慎判断。",
+      "topic_keywords": [
+        "TRUMP",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 9.2,
+        "reasoning": 6.4,
+        "actionability": 7.8,
+        "risk": 7.2,
+        "calibration": 7.1,
+        "format": 6.7,
+        "structure": 4.0,
+        "length": 9.5,
+        "disclaimer": 4.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_020",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "PEPE 信号(paper)。RSI 反弹,建议观望 $50。本工具不构成投资建议。",
+      "topic_keywords": [
+        "PEPE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.8,
+        "reasoning": 3.9,
+        "actionability": 7.6,
+        "risk": 8.9,
+        "calibration": 2.7,
+        "format": 6.7,
+        "structure": 4.9,
+        "length": 9.4,
+        "disclaimer": 10,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_021",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "DOGE 触发(信心 69%)。热币榜单进入。建议建议持有。crypto 风险,DYOR。",
+      "topic_keywords": [
+        "DOGE",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 10,
+        "reasoning": 7.0,
+        "actionability": 7.3,
+        "risk": 8.6,
+        "calibration": 6.8,
+        "format": 5.6,
+        "structure": 6.0,
+        "length": 10,
+        "disclaimer": 8.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_022",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "SHIB 一些数据。RSI 35。",
+      "topic_keywords": [
+        "SHIB",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.2,
+        "reasoning": 4.0,
+        "actionability": 0,
+        "risk": 0.8,
+        "calibration": 2.6,
+        "format": 5.8,
+        "structure": 4.3,
+        "length": 0.2,
+        "disclaimer": 5.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_023",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "BONK 一些数据。RSI 35。",
+      "topic_keywords": [
+        "BONK",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 6.4,
+        "reasoning": 3.4,
+        "actionability": 0.2,
+        "risk": 0,
+        "calibration": 3.0,
+        "format": 6.4,
+        "structure": 5.6,
+        "length": 0,
+        "disclaimer": 5.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_024",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "WIF 一些数据。RSI 35。",
+      "topic_keywords": [
+        "WIF",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 6.8,
+        "reasoning": 3.7,
+        "actionability": 0.7,
+        "risk": 0,
+        "calibration": 3.8,
+        "format": 6.3,
+        "structure": 5.7,
+        "length": 0,
+        "disclaimer": 5.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "notify_025",
+      "category": "notify",
+      "is_thesis": false,
+      "output_text": "POPCAT 一些数据。RSI 35。",
+      "topic_keywords": [
+        "POPCAT",
+        "信心"
+      ],
+      "human_scores": {
+        "relevance": 5.6,
+        "reasoning": 3.2,
+        "actionability": 0,
+        "risk": 0.9,
+        "calibration": 3.4,
+        "format": 6.4,
+        "structure": 4.2,
+        "length": 0,
+        "disclaimer": 4.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_001",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 ETH 链 KOL 喊单?每笔 $200?默认止损 -12% / 止盈 +24% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 6.5,
+        "reasoning": 7.5,
+        "actionability": 7.8,
+        "risk": 5.1,
+        "calibration": 8.9,
+        "format": 6.6,
+        "structure": 5.3,
+        "length": 9.8,
+        "disclaimer": 9.2,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_002",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "回测 30d:24 笔 / 胜率 75% / 平均 +2.8%。建议切到 notify。请自行判断风险。STAGE_TRANSITION:confirming",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 6.9,
+        "reasoning": 5.7,
+        "actionability": 7.8,
+        "risk": 6.6,
+        "calibration": 7.6,
+        "format": 6.1,
+        "structure": 4.2,
+        "length": 10,
+        "disclaimer": 7.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_003",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "明白,把止损改到 -9% 反映你更保守。重新跑回测?也可以调 cooldown,谨慎判断风险。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.0,
+        "reasoning": 4.9,
+        "actionability": 6.7,
+        "risk": 6.1,
+        "calibration": 5.7,
+        "format": 6.1,
+        "structure": 4.5,
+        "length": 9.9,
+        "disclaimer": 5.1,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_004",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "已保存「ETH BTC 大盘」(paper 模式)。可观望 30 天后再调整,自行判断风险。STAGE_TRANSITION:saved",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.5,
+        "reasoning": 3.0,
+        "actionability": 10,
+        "risk": 4.6,
+        "calibration": 3.2,
+        "format": 6.8,
+        "structure": 5.4,
+        "length": 9.1,
+        "disclaimer": 4.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_005",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 SOL 链 热币榜单?每笔 $200?默认止损 -14% / 止盈 +28% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 6.5,
+        "reasoning": 8.6,
+        "actionability": 8.2,
+        "risk": 5.4,
+        "calibration": 7.3,
+        "format": 6.8,
+        "structure": 4.1,
+        "length": 10,
+        "disclaimer": 9.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_006",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "回测 30d:27 笔 / 胜率 63% / 平均 +2.5%。建议保存为 paper。请自行判断风险。STAGE_TRANSITION:confirming",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 5.2,
+        "reasoning": 6.0,
+        "actionability": 8.3,
+        "risk": 7.4,
+        "calibration": 7.3,
+        "format": 6.1,
+        "structure": 4.6,
+        "length": 10,
+        "disclaimer": 8.7,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_007",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "明白,把止损改到 -8% 反映你更保守。重新跑回测?也可以调 cooldown,谨慎判断风险。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.8,
+        "reasoning": 3.5,
+        "actionability": 7.5,
+        "risk": 5.1,
+        "calibration": 5.7,
+        "format": 6.4,
+        "structure": 4.8,
+        "length": 10,
+        "disclaimer": 4.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_008",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "已保存「BSC KOL 喊单」(notify 模式)。可观望 30 天后再调整,自行判断风险。STAGE_TRANSITION:saved",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 0.4,
+        "reasoning": 2.8,
+        "actionability": 9.7,
+        "risk": 3.7,
+        "calibration": 3.4,
+        "format": 6.7,
+        "structure": 5.1,
+        "length": 9.6,
+        "disclaimer": 4.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_009",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 ETH 链 KOL 喊单?每笔 $50?默认止损 -10% / 止盈 +25% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 7.0,
+        "reasoning": 6.9,
+        "actionability": 7.9,
+        "risk": 6.9,
+        "calibration": 8.5,
+        "format": 7.0,
+        "structure": 4.6,
+        "length": 9.2,
+        "disclaimer": 8.5,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_010",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "回测 30d:17 笔 / 胜率 51% / 平均 +3.5%。建议保存为 paper。请自行判断风险。STAGE_TRANSITION:confirming",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 5.9,
+        "reasoning": 5.2,
+        "actionability": 8.6,
+        "risk": 7.0,
+        "calibration": 8.1,
+        "format": 6.8,
+        "structure": 4.7,
+        "length": 9.8,
+        "disclaimer": 9.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_011",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "明白,把止损改到 -20% 反映你更保守。重新跑回测?也可以调 cooldown,谨慎判断风险。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 0.9,
+        "reasoning": 4.1,
+        "actionability": 6.2,
+        "risk": 5.6,
+        "calibration": 6.4,
+        "format": 6.3,
+        "structure": 5.3,
+        "length": 9.6,
+        "disclaimer": 4.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_012",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "已保存「SOL KOL 喊单」(paper 模式)。可观望 30 天后再调整,自行判断风险。STAGE_TRANSITION:saved",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.9,
+        "reasoning": 2.1,
+        "actionability": 10,
+        "risk": 4.4,
+        "calibration": 3.4,
+        "format": 6.2,
+        "structure": 4.9,
+        "length": 9.2,
+        "disclaimer": 4.9,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_013",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 BSC 链 KOL 喊单?每笔 $50?默认止损 -17% / 止盈 +28% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 5.8,
+        "reasoning": 7.0,
+        "actionability": 9.2,
+        "risk": 6.5,
+        "calibration": 7.4,
+        "format": 7.1,
+        "structure": 4.2,
+        "length": 10,
+        "disclaimer": 8.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_014",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "回测 30d:17 笔 / 胜率 68% / 平均 +1.2%。建议切到 notify。请自行判断风险。STAGE_TRANSITION:confirming",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 5.4,
+        "reasoning": 6.5,
+        "actionability": 6.7,
+        "risk": 8.4,
+        "calibration": 8.3,
+        "format": 5.8,
+        "structure": 4.2,
+        "length": 9.5,
+        "disclaimer": 7.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_015",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "明白,把止损改到 -20% 反映你更保守。重新跑回测?也可以调 cooldown,谨慎判断风险。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 0.3,
+        "reasoning": 4.7,
+        "actionability": 6.2,
+        "risk": 6.9,
+        "calibration": 6.8,
+        "format": 6.4,
+        "structure": 5.1,
+        "length": 10,
+        "disclaimer": 5.4,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_016",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "已保存「SOL KOL 喊单」(notify 模式)。可观望 30 天后再调整,自行判断风险。STAGE_TRANSITION:saved",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.8,
+        "reasoning": 3.1,
+        "actionability": 10,
+        "risk": 4.1,
+        "calibration": 3.9,
+        "format": 6.1,
+        "structure": 4.9,
+        "length": 9.9,
+        "disclaimer": 5.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_017",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 Base 链 BTC 大盘?每笔 $100?默认止损 -14% / 止盈 +29% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 6.6,
+        "reasoning": 8.0,
+        "actionability": 8.2,
+        "risk": 5.1,
+        "calibration": 7.9,
+        "format": 5.6,
+        "structure": 4.7,
+        "length": 9.6,
+        "disclaimer": 8.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_018",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "回测 30d:17 笔 / 胜率 67% / 平均 +3.4%。建议继续调整。请自行判断风险。STAGE_TRANSITION:confirming",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 7.0,
+        "reasoning": 5.1,
+        "actionability": 8.7,
+        "risk": 7.3,
+        "calibration": 8.2,
+        "format": 7.4,
+        "structure": 5.5,
+        "length": 9.1,
+        "disclaimer": 9.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_019",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "明白,把止损改到 -17% 反映你更保守。重新跑回测?也可以调 cooldown,谨慎判断风险。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.1,
+        "reasoning": 3.6,
+        "actionability": 7.2,
+        "risk": 6.0,
+        "calibration": 7.4,
+        "format": 6.4,
+        "structure": 5.6,
+        "length": 10,
+        "disclaimer": 6.0,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_020",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "已保存「ETH KOL 喊单」(paper 模式)。可观望 30 天后再调整,自行判断风险。STAGE_TRANSITION:saved",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 0.2,
+        "reasoning": 3.1,
+        "actionability": 9.1,
+        "risk": 4.9,
+        "calibration": 4.0,
+        "format": 6.5,
+        "structure": 5.2,
+        "length": 9.7,
+        "disclaimer": 5.8,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_021",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "好的,跟 BSC 链 BTC 大盘?每笔 $50?默认止损 -20% / 止盈 +26% 可吗?paper 起步,不构成投资建议。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 5.8,
+        "reasoning": 8.3,
+        "actionability": 8.9,
+        "risk": 5.1,
+        "calibration": 8.3,
+        "format": 6.2,
+        "structure": 4.7,
+        "length": 10,
+        "disclaimer": 8.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_022",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "数据如下:RSI 35。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 0.5,
+        "reasoning": 4.8,
+        "actionability": 0.9,
+        "risk": 0.2,
+        "calibration": 2.3,
+        "format": 5.7,
+        "structure": 5.3,
+        "length": 0.8,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_023",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "数据如下:RSI 35。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.3,
+        "reasoning": 4.4,
+        "actionability": 0,
+        "risk": 0.4,
+        "calibration": 2.2,
+        "format": 6.6,
+        "structure": 5.3,
+        "length": 0,
+        "disclaimer": 4.3,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_024",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "数据如下:RSI 35。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.4,
+        "reasoning": 5.0,
+        "actionability": 1.0,
+        "risk": 0.8,
+        "calibration": 2.2,
+        "format": 6.8,
+        "structure": 5.0,
+        "length": 0,
+        "disclaimer": 4.6,
+        "safety": 10.0
+      }
+    },
+    {
+      "name": "chat_025",
+      "category": "chat",
+      "is_thesis": false,
+      "output_text": "数据如下:RSI 35。",
+      "topic_keywords": [
+        "策略",
+        "建议"
+      ],
+      "human_scores": {
+        "relevance": 1.9,
+        "reasoning": 3.8,
+        "actionability": 0.5,
+        "risk": 0,
+        "calibration": 4.0,
+        "format": 5.8,
+        "structure": 4.6,
+        "length": 0.6,
+        "disclaimer": 5.0,
+        "safety": 10.0
+      }
+    }
+  ]
+}

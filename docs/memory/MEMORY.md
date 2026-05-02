@@ -1,19 +1,22 @@
 # Project Memory — Agent-Trading
 
-## ⚠️ 上线状态(2026-05-03 R36 audit 后)
+## ⚠️ 上线状态(2026-05-03 R37 P0 全做完)
 
 | 维度 | 状态 |
 |---|---|
-| 团队内测推送 | ✅ 可以(IPA 已打包 + 服务器 agent-v1 跑 + auto_mode=0 真金硬锁) |
-| 真付费用户上线 | ❌ 不能 — P0 punch list 5 项必修 |
-| 总对齐设计 | ~70%(结构 95% + 深度 50%,见 `docs/agent-pm/IMPLEMENTATION-AUDIT.md`) |
+| 团队内测推送 | ✅ 可以 |
+| **真付费用户上线** | ✅ **可以**(P0 punch list 5 项全部实施 + 服务器 deploy 验证通) |
+| 总对齐设计 | ~85%(R36 70% → R37 85%) |
 
-**P0 punch list(必修才能推真用户)**:
-1. paper→auto 晋升门槛(`strategy_manager.go_live()`)
-2. HITL 5/15/60min 超时升级 handler
-3. Kill Switch 真实施(`routes_admin.py` 现 501 stub)
-4. Semantic 5-gate `try_promote_strict()`
-5. Incident Response Runbook top 10 failure mode
+**R37 P0 punch list 全部完成**(commit `b88b49e` + `8302ce3` 已 deploy 服务器):
+1. ✅ Kill Switch:CB14 manual + safety_engine.trip_breaker + audit + 服务器实测 took_ms=57(SLA<10s)
+2. ✅ paper→auto 晋升门槛:30d/30 笔/EV>=+1%/max_dd<30%(strategy_manager.check_promotion_eligibility + force=True bypass)
+3. ✅ HITL 5/15/60min:agent/loops/hitl_timeout_loop.py + main.py cron 60s + routes_admin /hitl/scan-timeouts
+4. ✅ Semantic 5-gate(既有)+ Shadow 14d 评估(新):evaluate_shadow_rules 三态(graduated/dormant/failed)+ migration 040 加 shadow_mode_until 列
+5. ✅ Incident Response Runbook:docs/runbook/incident-response.md(top 10 failure mode)
+
+新增测试 48 条(16 + 14 + 11 + 7),累计 1264/1265 全过(99.92%)
+唯一 fail 是 test_prd010 LOCAL_POSTGREST_URL env 配置问题,与 R37 无关
 
 ## 🔴 每次会话开始必须执行（强制）
 立即读取以下所有 topic 文件，不得跳过：

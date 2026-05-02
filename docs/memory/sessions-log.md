@@ -4181,3 +4181,79 @@ flutter widget test 18/18 + 后端 pytest 1200+ ✅
 - sessions-log.md 末尾追加本段
 - pitfalls.md 不变(无新坑)
 - 双份 cp + 切 main 提交 + push
+
+---
+
+## 会话 R37(2026-05-03)— P0 punch list 全实施 + 真用户上线就绪
+
+### 用户要求
+"继续自己干完，明早我要推给真实用户"
+
+### P0 punch list 5 项全部完成 + 服务器 deploy + 端到端验证
+
+**P0-1 Kill Switch 真实施**(commit `b88b49e`):
+- safety_policy.yaml 加 CB14 manual kill switch(severity=blocked, auto_release=null)
+- routes_admin /agent/kill-switch + release + state + cb_list + cb_reset 全部接 SafetyEngine.trip_breaker / release_breaker
+- trade_executor.check_safety_for_trade 加 global_state == 'blocked' 优先检查(任何 blocked CB 拦所有 trade)
+- audit log 写 security_audit_log
+- ADMIN_TOKEN env 鉴权
+- 服务器实测 took_ms=57(SLA<10s 远满足)
+- 16 测试
+
+**P0-2 paper→auto 晋升门槛**(strategy_manager):
+- check_promotion_eligibility():30d + 30 笔 + EV>=+1% + max_dd<30%(对齐 04-agent-spec §5.4)
+- _compute_paper_stats_sync():同步累计回撤公式
+- go_live(force=False, actor='user'):不通过返 None
+- 14 测试
+
+**P0-3 HITL 5/15/60min 超时升级**:
+- agent/loops/hitl_timeout_loop.py + scan_and_escalate() async
+- 5min re-push(push_resent_at 幂等)/ 15min decision_reason 标 'hitl_15min_degraded' / 60min status='expired' + audit
+- routes_admin /hitl/scan-timeouts 手动 + main.py cron 60s
+- 11 测试
+
+**P0-4 Semantic 5-gate**(既有 ✅)+ **Shadow 14d 评估**(新):
+- semantic_memory.evaluate_shadow_rules() 三态:dormant(match<3)/ failed(胜率<40%)/ graduated
+- 无 comply 数据 → 延 7d
+- routes_admin /memory/shadow-eval + main.py cron 6h
+- 7 测试 + migration 040 加 shadow_mode_until 列(commit `8302ce3`)
+
+**P0-5 Incident Response Runbook**:
+- docs/runbook/incident-response.md(~400 行 / top 10 failure mode)
+- 10 incidents 含症状/SEV/cmd/根因/恢复
+
+### 服务器 deploy + 真验证
+
+```
+ssh ubuntu@... 'cd /opt/agent-trading && git pull origin agent-v1 && sudo systemctl restart pump-scanner-api pump-scanner'
+sudo -u postgres psql -d agent_trading_local -f migrations/local_pg/040_agent_memory_shadow.sql
+```
+
+测试结果:
+- /api/admin/cb → 14 breakers ✅
+- Kill Switch trip → took_ms=57, global_state=blocked, cb_id=CB14 ✅
+- Kill Switch release → global_state=normal ✅
+- /api/admin/hitl/scan-timeouts → repushed=0 degraded=0 expired=0 errors=0 ✅
+- /api/admin/memory/shadow-eval → graduated=0 dormant=0 failed=0 errors=0 ✅(migration 040 修通)
+
+### 全量 pytest
+
+1264/1265 (99.92%) ✅;唯一 fail 是 pre-existing test_prd010 LOCAL_POSTGREST_URL env 配置问题
+
+### Commits
+- `b88b49e` feat(R37): P0 punch list 5 项全实施
+- `8302ce3` feat(R37): migration 040 — agent_memory 加 Shadow Mode 列
+
+### 现在能推真用户
+- agent_v1=100 / thesis_l3=100 / **auto_mode 仍保 0**(真金 mode 由用户走 paper→auto 门槛 + HITL)
+- Kill Switch < 10s 兜底
+- Incident Runbook 应急
+- 5 项 P0 全过
+
+### 下次接手候选(P1)
+1. Mode 命名对齐(paper/live → paper/notify_only/auto)
+2. Thesis schema 补 3 字段(regime_at_generation / disclaimer / used_tools)
+3. L3 真 Debate 实施(Bull/Bear/Facilitator)
+4. WAL 接通 Episodic 关键写入
+5. Constitutional Rules C1-C5 注入 System Prompt
+6. LLM judge calibration(100 pair Pearson≥0.7)

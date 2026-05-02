@@ -249,6 +249,12 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - ALWAYS_LOADED(S01/S02/S03/S07/S08)预加载;LAZY(S04/S05)按需读
   - 7 个完整 SKILL.md(Anthropic Skill 格式 + frontmatter + system prompt + tools_required + failure_fallback)
   - **27 单元测试全过**;服务器实测 7 skill 加载 OK(thesis_l3 ~679 tokens / reflect ~172 tokens)
+- ✅ **W3 D5+ Eval Phase 4 起步**(commit `76f0e4c`):L1 Tool runner + 6 Tool 66 case 100% pass
+  - 新建 agent/eval/runner.py(280 行)+ agent/eval/golden/l1_tool/{6 JSON}
+  - GoldenCase / EvalReport;_validate_metadata / _run_one_case / _check_idempotent
+  - CLI:`python -m agent.eval.runner --suite=l1_tool [--tool=...]`
+  - 6 核心 Tool fixture:calc_risk_metrics(11)/ calc_position_size(13)/ calc_technical_indicators(11)/ approve_rule(10)/ list_strategies(11)/ run_backtest(10)= **66 case 100% pass + metadata 全 ✓**
+  - **27 runner 自身测试全过**;剩余 7 Tool fixture + L2/L3/L4 留 W7-W12
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

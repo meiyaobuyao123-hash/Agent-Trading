@@ -161,7 +161,7 @@ class MainShell extends StatefulWidget {
 }
 
 class _MainShellState extends State<MainShell> {
-  int _currentIndex = 0;
+  int _currentIndex = 2; // R36 E2E: 临时默认 Agent Tab,演示完撤回
 
   static const _screens = [
     DataScreen(),

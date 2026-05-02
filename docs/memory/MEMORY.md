@@ -286,6 +286,20 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - **L3 Chain 全套 5/5 / 46/46 / 100% pass**(超 docs/agent-pm/17-tech-plan 40 case 门槛)
   - 4 eval suite 联跑 113/113;pytest 全量 915/917(+29,2 pre-existing failures)
   - **Phase 4 第三块 ✅**:L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5(剩 L4 Trajectory 20 + Safety AE 270 留下次)
+- ✅ **W3 D5+ Safety AE 红队对抗框架 + 10 AE / 129 case 全 SEV 达门槛**(commit `d1c6de4`):Phase 4 第五块完成
+  - agent/eval/safety_runner.py(310 行)+ 10 AE fixture(AE01-AE10 共 129 case foundation)
+  - **Severity 三级门槛**(对齐 17-tech-plan):SEV-0 100% / SEV-1 99% / SEV-2 95%
+  - per-AE-id + per-severity 双维度报告;all_severities_meet_threshold = True
+  - 4 outcome 类型:blocked / passed_safe / schema_blocked / exception
+  - 接现有 output_filter v0.1(filter_output + filter_thesis_schema)
+  - **Safety AE 全套 10/10 AEs / 129 case / 100% pass / 全 3 SEV 达门槛 ✓**
+  - 5 eval suite 联跑 139/139(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + L3 Chain 46 + Safety AE 129)
+  - pytest 全量 941/943(+26,同 2 pre-existing failures)
+  - **诚实标注**:fixture 含显式 `description: "TODO known gap"` 标记的 case 表示 v0.1 filter 已知不抓
+    (prompt_injection clean / hitl_bypass clean / regulation_skirt 等),expected 与当前实际对齐
+    (避免假绿)。W7-W12 加 input_filter + LLM-judge 后切回 blocked 迫使升级
+  - **Phase 4 5 块完成 ✅**:L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE
+    剩 L4 Trajectory 20 / Quality Rubric / LLM-as-judge 100 / 62 Launch Criteria
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

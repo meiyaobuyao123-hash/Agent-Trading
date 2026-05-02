@@ -179,6 +179,16 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - 加 POST /api/agent/cocreation/chat 端点
   - **26 chat_loop 测试全过**(mock anthropic 覆盖所有分支)
   - **服务器 LLM 真调通**:curl POST /chat 返 source=llm + Claude Haiku 真澄清提问("确认一下:-10% 和 +30% 是百分比?")
+- ✅ **W3 D5+ Thesis Loop 真实施**(commit `19aeccb` deploy):3 路 + P02 + agent_thesis 持久化
+  - 新建 agent/loops/thesis_loop.py(400+ 行)ThesisLoop.generate(device_id, chain, token, level=auto/L1/L2/L3)
+  - _select_level:position+score 综合判断;L3 暂 fallback L2(真 debate 留 W7-W12)
+  - _gather_evidence:并发 3 路 analyst,失败 layer 用 NEUTRAL_FALLBACK 不阻断
+  - L1 路径:_make_l1_thesis 0 LLM 成本(conviction < 0.5)
+  - L2 路径:P02 + Sonnet → JSON 解析;LLM 失败降级 L1
+  - _normalize_and_validate 实施 PRD 硬约束(conviction<0.5 必须 hold/avoid + risks≥2 + summary 60 字)
+  - _persist_thesis 写本地 PG agent_thesis;非 UUID device_id 跳过
+  - 重构 routes_thesis 全部 4 endpoint(POST/GET/{id}/{id}feedback/list)
+  - **33 单元测试全过**;服务器 L1 真接通(score=75 → bullish + 0 cost)
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

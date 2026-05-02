@@ -36,7 +36,7 @@ Thesis _baseThesis({
     risks: risks ?? const ['流动性可能枯竭', '大户砸盘风险'],
     summary30w: '短期看涨,小仓位试水',
     evidence: evidence ?? [
-      EvidenceItem(source: 'smart_money_signals', value: '+45000 USD', ts: DateTime(2026, 5, 1)),
+      EvidenceItem(layer: 'smart_money_signals', text: '+45000 USD', ts: DateTime(2026, 5, 1)),
     ],
     similarPastCases: cases ?? const [],
     costUsd: costUsd,
@@ -113,8 +113,8 @@ void main() {
 
     testWidgets('Evidence 折叠区显示 source 数', (tester) async {
       final t = _baseThesis(evidence: [
-        EvidenceItem(source: 'smart_money', value: 'x', ts: DateTime(2026, 5, 1)),
-        EvidenceItem(source: 'hot_coins', value: 'y', ts: DateTime(2026, 5, 1)),
+        EvidenceItem(layer: 'smart_money', text: 'x', ts: DateTime(2026, 5, 1)),
+        EvidenceItem(layer: 'hot_coins', text: 'y', ts: DateTime(2026, 5, 1)),
       ]);
       await tester.pumpWidget(_wrap(ThesisCard(thesis: t)));
       expect(find.text('证据 (2)'), findsOneWidget);
@@ -160,7 +160,7 @@ void main() {
   group('折叠交互', () {
     testWidgets('点击 Evidence 展开后显示具体数据', (tester) async {
       final t = _baseThesis(evidence: [
-        EvidenceItem(source: 'smart_money_signals', value: '+45000', ts: DateTime(2026, 5, 1)),
+        EvidenceItem(layer: 'smart_money_signals', text: '+45000', ts: DateTime(2026, 5, 1)),
       ]);
       await tester.pumpWidget(_wrap(ThesisCard(thesis: t)));
 

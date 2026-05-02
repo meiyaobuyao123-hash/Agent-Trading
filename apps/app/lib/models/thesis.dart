@@ -86,14 +86,29 @@ class EntryZone {
 }
 
 class EvidenceItem {
-  final String source; // 'smart_money_signals' / 'hot_coins.score' / ...
-  final String value;
+  /// 后端 schema(对齐 docs/agent-pm/04-agent-spec.md + S08 thesis-writer):
+  ///   layer: "technical" | "sentiment" | "onchain" | "rule_engine" | ...
+  ///   text:  证据简述
+  ///   weight: 0.0-1.0
+  /// 兼容老字段 source/value 作 fallback
+  final String layer;   // 旧名 source
+  final String text;    // 旧名 value
+  final double weight;
   final DateTime? ts;
-  const EvidenceItem({required this.source, required this.value, this.ts});
+  const EvidenceItem({
+    required this.layer,
+    required this.text,
+    this.weight = 0.5,
+    this.ts,
+  });
+  // 兼容旧 callsites
+  String get source => layer;
+  String get value => text;
   factory EvidenceItem.fromJson(Map<String, dynamic> j) => EvidenceItem(
-        source: j['source'] as String,
-        value: j['value'].toString(),
-        ts: j['ts'] != null ? DateTime.tryParse(j['ts'] as String) : null,
+        layer: (j['layer'] ?? j['source'] ?? '').toString(),
+        text: (j['text'] ?? j['value'] ?? '').toString(),
+        weight: (j['weight'] is num) ? (j['weight'] as num).toDouble() : 0.5,
+        ts: j['ts'] != null ? DateTime.tryParse(j['ts'].toString()) : null,
       );
 }
 

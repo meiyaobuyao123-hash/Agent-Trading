@@ -250,18 +250,10 @@ class _ChatTabState extends State<_ChatTab>
   bool get wantKeepAlive => true;
 
   bool _introAdded = false;
-  bool _autoDemoTriggered = false;  // R36 E2E: 自动触发 demo 一次,演示完撤回
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // R36 E2E: build 后 auto trigger thesis demo,看真后端响应
-    if (!_autoDemoTriggered) {
-      _autoDemoTriggered = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadDemoThesis();
-      });
-    }
     if (!_introAdded) {
       _introAdded = true;
       _messages.add(_ChatMessage(
@@ -501,8 +493,8 @@ class _ChatTabState extends State<_ChatTab>
         ],
         summary30w: '短期看涨,但建议小仓位试水,设硬止损 0.95',
         evidence: [
-          EvidenceItem(source: 'smart_money_signals', value: '+45000 USD net 24h', ts: DateTime.now().toUtc()),
-          EvidenceItem(source: 'hot_coins.score', value: '78', ts: DateTime.now().toUtc()),
+          EvidenceItem(layer: 'smart_money_signals', text: '+45000 USD net 24h', ts: DateTime.now().toUtc()),
+          EvidenceItem(layer: 'hot_coins.score', text: '78', ts: DateTime.now().toUtc()),
         ],
         similarPastCases: [
           SimilarCase(

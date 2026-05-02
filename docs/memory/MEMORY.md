@@ -269,6 +269,16 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - **L1 Prompt 全套 6/6 prompts / 38 case / 100% pass**
   - **真发现**:P11 + P18 examples 各 2 条 < 3 → 修补 Example 3(multi-chain hot coins / pro→intermediate)
   - **31 prompt_runner 自身测试全过**;pytest 全量 886/888(+31)
+- ✅ **W3 D5+ Prompt Library 18/18 完整**(commit `5cc65e6`):Phase 2 100% 闭环 + L1 Prompt 110/110
+  - 补 12 个 Prompt:P03 technical / P04 sentiment / P05 onchain(3 路 analyst 主)
+  - P06 dry_run / P07 confirm(共创剩余 2 阶段)+ P08 trade_strategy_builder(模式晋升)
+  - P09 review_weekly(S07 周报变体)
+  - P12/P14/P15 debate(Bull / Bear / Facilitator,L3 thesis 真辩论)
+  - P16 notify_compose(persona 适配 + CRISIS 强标 high)
+  - P17 abuse_detection(Output Filter C4 LLM-judge,6 维违规)
+  - 12 个 fixture × 6 case = 72 新 case → **L1 Prompt 全套 18/18 / 110/110 / 100% pass**
+  - 4 eval suite 联跑 112/112(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + prompt_loader)
+  - **Phase 2 100% 完整 ✅** Prompt Library 18/18 + 7 Skill + 5 Loop + 17 Tool 元数据
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

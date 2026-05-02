@@ -3158,3 +3158,54 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 6. **Safety AE 270 cases** — 红队对抗
 7. **剩余 4 Tool**(T01/T02/T03/T08)— 外部 API + KMS
 8. **62 Launch Criteria** 逐项 sign-off
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 21 — Prompt Library 18/18 完整
+
+### 做了什么(commit `5cc65e6`)
+
+**A. 补齐 12 个 Prompt**(每个 frontmatter.yaml + prompt.md + examples.md):
+- P03 technical_analysis(S01 主)— RSI/MACD/MA/BB/ATR/SR 解读 + JSON 输出 + null fallback
+- P04 sentiment_analysis(S02 主)— KOL 一致性 + hype_warning(无 KOL 但量爆涨)
+- P05 onchain_analysis(S03 主)— smart money / top10 / liquidity 硬门槛 + concentration_warning
+- P06 strategy_dry_run — 共创 dry_run 阶段,backtest summary → 80 字白话评估 + STAGE_TRANSITION
+- P07 strategy_confirm — confirming 阶段,确认/改/取消三选一,≤25 字
+- P08 trade_strategy_builder(S05 主)— paper→notify 30 笔 30d EV≥1% + notify→auto 用户确认率≥80% 门槛
+- P09 review_engine_weekly — 周报变体,本周 vs 上周趋势对比 + persistent issues 标记 + regime alert
+- P12 debate_bull — L3 thesis 看多论辩(基于 evidence 强化论据 + strength 评分)
+- P14 debate_bear — L3 红队挑战(必援引 evidence 反例 + concedes 一条 Bull 对的)
+- P15 debate_facilitator — 总结裁决(strength 差>0.4 决胜 + 0.5 红线 + CRISIS conviction cap 0.3)
+- P16 notify_compose — 推送文案(必含 token+方向+conviction + persona 适配 + CRISIS 强标 high)
+- P17 abuse_detection — Output Filter C4 LLM-judge(financial_promise 零容忍 / hype / data_fab / regulation_skirt)
+
+**B. 12 个新 fixture(72 case)** — 与 6 P 同结构(metadata_ok / render_ok / render_missing_vars /
+   examples_safe / examples_count_min ≥3 / version_select)
+
+**L1 Prompt 全套结果**:
+- **18/18 prompts ✅(从 6/18 → 18/18)**
+- **110/110 cases / 100% pass**
+- 4 eval suite 联跑 **112/112 全过**(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + prompt_loader 28)
+
+### Phase 进度(对齐 17-tech-plan.md)
+- Phase 0:safety ✅ / pending_approvals ✅ / Cost CB04 ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 100% ✅**
+- **Phase 2:100% 完整 ✅(5 Loop + 7 Skill + 18 Prompt + L3 debate + 4 cron)**
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- **Phase 4:L1 Tool 13/13 ✅ + L2 Skill 7/7 框架 ✅ + L1 Prompt 18/18 ✅(真 540 case + LLM judge 留 W7-W12)**
+
+### 累计本会话总计
+- 本轮新增:12 个 Prompt(36 文件)+ 12 个 fixture(72 case)
+- **L1 Prompt: 18/18 prompts / 110 case / 100%**(从上轮 6/18 / 38 → 18/18 / 110)
+- 4 eval suite 联跑 112/112
+- 42 commits 累计 deploy
+
+### 下次接手候选
+1. **L1 Prompt 真 540 case** — 18 P × ≥30,需 LLM judge 评估输出质量(冷启动需 100 条人工 + Pearson≥0.7)
+2. **L2 Skill 真执行 eval** — LLM cassette/VCR 录回放,扩到 ~50 case/Skill = 350
+3. **L3 Chain eval 40 cases** — 4 chain(thesis/notify/reflect/cocreation)× ≥10
+4. **L4 Trajectory 20 多轮场景** — 完整用户旅程(共创→运行→复盘→升级)
+5. **Safety AE 270 cases** — 红队对抗(SEV-0 零漏 / SEV-1 ≥99% / SEV-2 ≥95%)
+6. **剩余 4 Tool**(T01/T02/T03/T08)— 外部 API(Helius/OKX/CoinGecko)+ KMS
+7. **KMS AwsKmsProvider** — 需 AWS 账号
+8. **62 Launch Criteria** 逐项 sign-off — 12 Tech / 7 Product / 14 Safety / 12 Legal / 12 Cost-Ops / 5 HITL

@@ -171,6 +171,14 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
   - cold_start ≠ normal 直接走规则化(节省 token);body 超长强制裁剪 600 字
   - _log_prompt_invocation 异步写本地 PG prompt_invocations(schema 对齐 migration 038)
   - **12 v2 测试全过**(mock anthropic 覆盖 LLM 成功/失败/解析/裁剪);累计 review_engine 37 测试
+- ✅ **W3 D5+ 共创 chat_loop LLM 真实施**(commit `961554f` deploy):P01+P11+T12 端到端串通
+  - 新建 agent/loops/chat_loop.py(400+ 行)CocreationLoop 单 turn 处理:
+    1. load_or_create state + abort 词全局检测
+    2. stage handler 路由:clarifying(P01) → refining(P11→spec JSON) → dry_run(占位) → confirming(确认词→T12 save)
+    3. LLM 失败永远不抛错 → fallback_text 占位回复;source 字段透明区分
+  - 加 POST /api/agent/cocreation/chat 端点
+  - **26 chat_loop 测试全过**(mock anthropic 覆盖所有分支)
+  - **服务器 LLM 真调通**:curl POST /chat 返 source=llm + Claude Haiku 真澄清提问("确认一下:-10% 和 +30% 是百分比?")
 - 🆕 用户新规则：**长 session 每 10 分钟更新记忆三件套**（已写入 rules.md）
 - 📦 数据库决策：8 张新表迁本地 PG（agent_trading_local PG 14）+ 040 留 Supabase
 - 🐛 新踩坑：macOS sort 是 locale-aware，跨机器 SHA1 对比必须 `LC_ALL=C`（已记 pitfalls）

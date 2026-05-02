@@ -156,6 +156,21 @@ async def _make_summary_with_llm(
         log.warning("[review_engine v2] prompt_loader failed: %s,fallback", e)
         return _make_summary(period, metrics, cold_start), "rule_engine"
 
+    # cost_guard 检查(LLM 调用前)
+    try:
+        from agent.cost_guard import get_cost_guard
+        allowed, actual_model, cg_reason = await get_cost_guard().check_before_call(
+            intended_model=request.get("model", LLM_REVIEW_MODEL),
+            intended_level="L2",
+        )
+        if not allowed:
+            log.info("[review_engine v2] cost_guard blocked: %s,fallback", cg_reason)
+            return _make_summary(period, metrics, cold_start), "rule_engine"
+        if actual_model != request.get("model"):
+            request["model"] = actual_model
+    except Exception as e:
+        log.debug("[review_engine v2] cost_guard skipped: %s", e)
+
     # 调 Claude
     raw_text = ""
     tokens_used = 0

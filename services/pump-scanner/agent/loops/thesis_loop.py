@@ -334,6 +334,21 @@ class ThesisLoop:
         # L1 用 Haiku;L2/L3 用 Sonnet(P02 frontmatter 默认 sonnet)
         if level == "L1":
             req["model"] = HAIKU_MODEL_ID
+
+        # cost_guard:LLM 调用前检查预算 + 自动降级
+        try:
+            from agent.cost_guard import get_cost_guard
+            allowed, actual_model, cg_reason = await get_cost_guard().check_before_call(
+                intended_model=req.get("model", SONNET_MODEL_ID),
+                intended_level=level,
+            )
+            if not allowed:
+                return None, f"cost_guard_block: {cg_reason}", 0.0, 0
+            if actual_model != req.get("model"):
+                req["model"] = actual_model
+        except Exception as e:
+            log.debug("[thesis_loop] cost_guard skipped: %s", e)
+
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=self._api_key, timeout=CLAUDE_TIMEOUT_S)

@@ -317,6 +317,9 @@ class CocreationLoop:
     ) -> "tuple[str, str, Optional[str]]":
         """调 prompt_loader + Claude;失败返 fallback_text。
 
+        W3 D5+ 续 15:接 cost_guard 在 LLM 调用前检查预算,
+        HARD_STOP / BLOCKED → fallback;DEGRADE → 自动降 model。
+
         Returns: (text, source, error_or_None)
         """
         if not self._api_key:
@@ -328,6 +331,21 @@ class CocreationLoop:
         except Exception as e:
             log.warning("[chat_loop] prompt_loader %s failed: %s", prompt_id, e)
             return fallback_text, "rule_engine", f"prompt_loader_failed: {e}"
+
+        # cost_guard 检查
+        try:
+            from agent.cost_guard import get_cost_guard
+            allowed, actual_model, reason = await get_cost_guard().check_before_call(
+                intended_model=req.get("model", "claude-haiku-4-5-20251001"),
+                intended_level="L2",
+            )
+            if not allowed:
+                log.info("[chat_loop] cost_guard blocked: %s", reason)
+                return fallback_text, "rule_engine", f"cost_guard_block: {reason}"
+            if actual_model != req.get("model"):
+                req["model"] = actual_model  # 自动降级
+        except Exception as e:
+            log.debug("[chat_loop] cost_guard skipped: %s", e)
 
         try:
             import anthropic

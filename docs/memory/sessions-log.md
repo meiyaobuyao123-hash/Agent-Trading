@@ -2121,3 +2121,95 @@ source=llm 真接通 Claude Haiku 4.5。Agent v1 共创闭环打通!
 4. **WAL 真接入** — 关键写入路径
 5. **Eval golden 1660 条** L1-L4
 6. **KMS AwsKmsProvider**
+
+---
+
+## 会话 11 续 9(autonomous-loop:Thesis Loop,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第六轮
+
+### 实际产出(commit `19aeccb` deploy)
+
+**Agent v1 第二个 Loop — Thesis Loop 真实施**
+
+新建 agent/loops/thesis_loop.py(400+ 行):
+- ThesisLoop.generate(device_id, chain, token_address, level='auto', position_usd, score, regime, extra_context)
+- _select_level 决策:
+  * 'auto' + position<$30 + score<50 → L1
+  * 'auto' + score<70 → L2
+  * 'auto' + score≥70 → L3
+  * 'L3' 当前 fallback to L2(真 debate W7-W12)
+- _gather_evidence:并发调 3 路 analyst(技术/情绪/链上),
+  失败 layer 用 NEUTRAL_FALLBACK 不阻断
+- _gather_similar_cases:T04 recall_memory 拉 episodic top 3
+- L1 路径:_make_l1_thesis 规则化 thesis(0 LLM 成本)
+  * score≥70 bullish / score≤30 bearish / 否则 hold
+  * conviction 强制 < 0.5(避免 hold/avoid 硬约束冲突)
+  * risks 固定 2 条占位
+- L2 路径:_invoke_p02 → P02 prompt + Sonnet → JSON 解析
+  * LLM 失败 → 降级 L1(不抛错)
+- _normalize_and_validate(PRD 硬约束):
+  * direction long/short → bullish/bearish
+  * conviction clamp [0,1] + < 0.5 强制 direction=neutral + summary 加"低置信度"
+  * risks 不足 2 自动补占位
+  * summary_30w 截断 60 字
+- _persist_thesis 写本地 PG agent_thesis(schema 对齐 migration 039)
+  * 非 UUID device_id(如 "system")跳过(避免 NOT NULL 违规)
+  * direction enum 映射到表约束(bullish|bearish|neutral|hold|avoid)
+
+cost 估算:_estimate_cost_usd 按 anthropic 公开价
+  Haiku $1/M input + $5/M output / Sonnet $3/M + $15/M
+
+routes_thesis.py 重构 4 endpoint:
+  POST /api/thesis     接 ThesisLoop.generate(失败 fallback mock)
+  GET  /api/thesis/{id} 读本地 PG
+  GET  /api/thesis     列表(可按 token_address 过滤)
+  POST /api/thesis/{id}/feedback 写 user_feedback 字段
+
+### 测试 (tests/test_thesis_loop.py — 33 cases)
+- helpers (10):is_uuid / summarize_analyst / summarize_similar /
+  parse_json_block / cost estimates Haiku+Sonnet+unknown
+- _select_level (5):explicit / auto L1/L2/L3 / 高仓低分 → L2
+- _make_l1_thesis (3):high score bullish / low bearish /
+  mid → hold(避免硬约束)
+- _normalize_and_validate (6):低 conviction → neutral + 加低置信度 /
+  risks pad 2+ / long→bullish / short→bearish / clamp / summary 截断
+- generate 端到端 (5):L1 不调 LLM / L2 LLM 成功 / L2 失败降 L1 /
+  L3 fallback L2 / persist 失败仍返 ok
+- _persist_thesis 跳过非 UUID
+- _gather_similar_cases top3 / 失败返空
+- singleton
+
+**33/33 PASSED**;**累计本会话 218+33=251 后端测试全过**
+
+### 服务器实测
+```
+POST /api/thesis {chain:solana, address:SOL, level:L1, score:75, position_usd:50}
+→ {"level":"L1","direction":"bullish","conviction":0.4,
+   "summary_30w":"L1 规则信号:bullish (score=75)",
+   "risks":[..., ...], "evidence":[{"layer":"rule_engine","text":"score=75"}],
+   "cost_usd":0.0, "source":"rule_engine"}
+```
+L1 真接通(0 LLM 成本 + 规则化 thesis)。
+
+### Phase 2 Loop 进度
+- ✅ Chat Loop(P01+P11+T12 端到端)
+- ✅ Thesis Loop(L1 规则化 + L2 P02 LLM)
+- ⏸ Scout Loop(EventBus + 规则引擎,从 event_listener 重构)
+- ⏸ Notify Loop(strategy_triggered → RiskManager + 仓位 + push)
+- ⏸ Reflect Loop(cron 20:00 / 10 笔闭仓 / -25% 紧急)
+
+### 累计本会话总计(W3 D5 + 续 1-9)
+- 后端 Python:25+29+12+17+19+26+24+28+12+26+33 = **251 后端新测试**
+- Flutter widget:7+17 = **24 Flutter 新测试**
+- **session 共 275 新测试,100% PASSED**
+- 21 commits 全部 deploy
+
+### 下次接手候选
+1. **Scout Loop** — EventBus 订阅(已存)+ 规则引擎打分 + 触发策略
+2. **Notify Loop** — strategy_triggered 完整路径(RiskManager + 仓位 + 推送)
+3. **Reflect Loop** — cron 反思 + 写 episodic + JSON-diff dedupe
+4. **剩余 5 Tool**:T01/T02/T03/T08/T16(需外部 API + KMS)
+5. **剩余 12 Prompt** + Skill SKILL.md 化
+6. **WAL 真接入** + Eval golden 1660 / KMS

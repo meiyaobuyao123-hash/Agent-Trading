@@ -3413,3 +3413,61 @@ python3 -m pytest tests/test_eval_prompt_runner.py -v # 31/31
 4. **L2 Skill 真执行 eval** — LLM cassette/VCR
 5. **62 Launch Criteria** 逐项 sign-off
 6. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS
+
+---
+
+## 2026-05-01 W3 D5+ autonomous-loop 续 25 — L4 Trajectory eval(Phase 4 第六块完成)
+
+### 做了什么(commit `0987365`)
+
+**A. agent/eval/trajectory_runner.py(~340 行)**:
+- TrajectoryStep / GoldenTrajectoryCase / CategoryReport / TrajectoryEvalReport
+- 5 action_type:
+  - class_method      Loop 类的指定 method 存在(import + getattr)
+  - stage_transition  cocreation_state_machine.STAGE_TRANSITIONS 包含 from→to
+  - tool_call         指定 tool 在 Tool registry
+  - route_call        FastAPI 路径已注册(复用 chain_runner._check_route_registered)
+  - side_effect       指定模块的指定函数存在(push_service.send_push 等)
+- per-trajectory + per-step + per-category 三级报告
+- CLI exit code:trajectory_pass_rate < 85% → 1(对齐 17-tech-plan)
+
+**B. 4 个 category fixture(20 trajectory / 88 step)**:
+- cocreation (5)  — happy path / abort early / refine N 次 / dry_run zero / confirm-then-change
+  (用 STAGE_TRANSITIONS 验状态机正确性)
+- trading (5)     — paper open+close / notify HITL approve / notify HITL reject /
+  auto with HITL / auto direct(KMS pending fallback)
+- reflect (5)     — daily cron / count trigger / emergency loss / propose-then-promote / dedupe-skip
+- thesis (5)      — L1 fast / L2 single LLM / L3 full debate / L3 fallback to L1 / list+feedback
+
+**L4 Trajectory 全套结果**:
+- **20/20 trajectories ✅ / 88/88 steps / 100% pass**(超 85% 门槛 ✓)
+- 7 eval suite 联跑 **214/214**(L1 Tool 140 + L2 Skill 44 + L1 Prompt 110 + L3 Chain 46 +
+  Safety AE 129 + L4 Trajectory 88 + input_filter 45)
+
+**C. 测试**(tests/test_eval_trajectory_runner.py 30 用例):
+- dataclass(6)/ class_method(3)/ stage_transition 5(含 saved terminal / invalid jump / self-loop)/
+  tool_call(2)/ route_call(2 含 PEP604 fallback)/ side_effect(2)/ run_step 3(含 unknown action)/
+  golden loader(2)/ list_categories(1)/ 端到端 4(含 ≥85% 门槛 + ≥5/category)
+- 30/30 全过
+
+### Phase 4 完成度(全 6 块 100%)
+- L1 Tool 13/13 ✅ + L2 Skill 7/7 ✅ + L1 Prompt 18/18 ✅ + L3 Chain 5/5 ✅ +
+  Safety AE 10/10 ✅ + **L4 Trajectory 4/4 ✅**
+- 累计 7 eval suite golden **558 case 全 100% 真覆盖**
+- 剩 Quality Rubric 5 维评分 / LLM-as-judge 100 冷启动 / 62 Launch Criteria(可上线门槛收尾)
+
+### 累计本会话总计
+- 本轮新增:框架 1 + 4 fixture / 20 trajectory / 88 step + 30 tests
+- 7 eval suite 联跑 **214/214 全过**
+- pytest 全量 **1016/1018**(+29,2 pre-existing failures 与本轮无关)
+- 46 commits 累计 deploy
+
+### 下次接手候选(收尾上线门槛)
+1. **Quality Rubric 5 维评分骨架** — Relevance / Reasoning / Actionability / Risk / Calibration
+   (rubric_runner 静态契约 + 5 维 weights;真 LLM-judge 留 W17-W22)
+2. **LLM-as-judge 冷启动** — 100 条人工标注 + Pearson≥0.7 验证
+3. **62 Launch Criteria 逐项 sign-off** —
+   12 Tech / 7 Product / 14 Safety / 12 Legal / 12 Cost-Ops / 5 HITL
+4. **千分位 hype 扩展** — AE05 next_pepe `\d{1,3}(?:,\d{3})*x` 模式
+5. **C4 LLM-judge async** — persona / data fabrication 用 LLM 异步采样判
+6. **剩余 4 Tool**(T01/T02/T03/T08)+ KMS — 需外部 API + AWS 账号

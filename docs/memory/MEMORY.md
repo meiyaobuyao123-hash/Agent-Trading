@@ -300,6 +300,17 @@ flutter run -d DBC925B5-7657-4410-B770-F21E4605A9D6 \
     (避免假绿)。W7-W12 加 input_filter + LLM-judge 后切回 blocked 迫使升级
   - **Phase 4 5 块完成 ✅**:L1 Tool / L2 Skill / L1 Prompt / L3 Chain / Safety AE
     剩 L4 Trajectory 20 / Quality Rubric / LLM-as-judge 100 / 62 Launch Criteria
+- ✅ **W3 D5+ L4 Trajectory eval 框架 + 4 category × 5 trajectory**(commit `0987365`):Phase 4 第六块完成
+  - agent/eval/trajectory_runner.py(340 行)+ 4 fixture(20 trajectory / 88 step)
+  - 5 action_type:class_method / stage_transition / tool_call / route_call / side_effect
+  - per-trajectory + per-step + per-category 三级报告;exit code on < 85% 门槛
+  - 4 category:cocreation(5)/ trading(5)/ reflect(5)/ thesis(5)
+  - L4 Trajectory 全套 **20/20 / 88 step / 100% ≥ 85% 门槛 ✓**
+  - 30 self-tests;7 eval suite 联跑 214/214
+  - pytest 全量 1016/1018
+  - **Phase 4 6 块全 100% 真覆盖**:L1 Tool 13/13 + L2 Skill 7/7 + L1 Prompt 18/18 + L3 Chain 5/5 + Safety AE 10/10 + **L4 Trajectory 4/4 ✅**
+  - 累计 7 eval suite golden **558 case 全 100% 真覆盖**
+  - 剩 Quality Rubric 5 维评分 / LLM-as-judge 100 冷启动 / 62 Launch Criteria
 - ✅ **W3 D5+ input_filter v1.0 闭合 SEV-0 漏洞**(commit `1f68c95`):AE 从"标 gap"升级到"真覆盖"
   - agent/input_filter.py(210 行)+ 5 attack class regex
   - prompt_injection(13 子模式 包含 ignore prior / DAN / role swap / <system> / [ADMIN] / 越狱 / 忽略之前)

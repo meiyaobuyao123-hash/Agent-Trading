@@ -2486,3 +2486,93 @@ auto 模式 + 高 score 时,可以先调 thesis_loop 拿 conviction,
 6. **L3 thesis 真 debate** — debate.py 已存,接进 thesis_loop
 7. **conversation_states cleanup_expired cron** — 已写 helper,接 main.py scheduler
 8. **review_engine cron(daily 20:00)** — 接 ReflectLoop daily trigger
+
+---
+
+## 会话 11 续 13(autonomous-loop:T16 + cron 接入,2026-05-02)
+
+### 触发
+ScheduleWakeup 60s → autonomous-loop-dynamic 第十轮
+
+### 实际产出(commit `8d587ba` deploy)
+
+**Phase 1 Tool 13/17(只剩 T01/T02/T03/T08 需外部 API+KMS)+ cron 闭环**
+
+agent/tools/t16_run_backtest.py(150 行):
+- RunBacktestTool 包装 agent/backtester.backtest_strategy
+- days 1-90;输入 schema 强校验
+- 抽出 trigger_count / win_rate / avg_return_pct / max_drawdown_pct / sample_triggers
+- **规则化 warnings**(对齐 17-tech-plan.md C6 + PRD-003):
+  * sample_size_low(<10 触发)
+  * window_short(<7 天) / window_long(>30 天)
+  * avg_return_zero(token_performance 缺失)
+  * high_drawdown(<-20%)
+  * disclaimer(模拟收益,未计滑点)— 始终包含
+- permission=DEVICE_ONLY,side=NONE,idempotent
+
+agent/tools/__init__.py:
+- registry 13 Tool(T04/T05/T06/T07/T09/T10/T11/T12/T13/T14/T15/T16/T17)
+
+main.py 加 2 个 cron(scheduler.start() 之前):
+1. **reflect_daily**(CronTrigger UTC 12:00 = 北京 20:00):
+   跑 ReflectLoop.run_cycle(trigger='daily', device_id=None)
+   跨用户聚合反思,失败 swallow 不阻断 main
+2. **cocreation_cleanup**(每 5 分钟):
+   cocreation_state_machine.cleanup_expired() 标过期会话 aborted
+   保审计行不真删
+
+### 测试 (tests/test_t16_run_backtest.py — 13 cases)
+- registry 13 tools (1)
+- input schema:missing spec / 缺 conditions / days > 90 (3)
+- basic 成功返结果 (1)
+- warnings:sample_low / window_short / window_long / high_drawdown / disclaimer 始终在 (5)
+- backtester 抛错 → EXECUTE_ERROR (1)
+- metadata + anthropic_spec (2)
+
+修小:test_tools_t07_t09_t10_t12.py registry == 12 → >= 12
+
+**13/13 PASSED**;**累计本会话 294+13=307 后端测试全过**
+
+### 服务器 deploy 验证
+```
+$ journalctl -u pump-scanner | grep "Added job"
+... "Reflect Loop Daily 20:00 (UTC 12:00)" to job store "default"
+... "Cocreation State Cleanup (5min)" to job store "default"
+```
+两个 cron 都成功注册到 scheduler,等下次触发(reflect_daily 下次北京 20:00,
+cocreation_cleanup 5 分钟后)。
+
+### Agent v1 整体闭环现在跑得起来
+1. 用户 chat → CocreationLoop → 创建 paper 策略
+2. 数据采集 → EventBus → ScoutLoop.evaluate → 命中策略
+3. NotifyLoop:safety+risk+T17+mode 路由 → T07 paper / T13 push
+4. trades 累积 → **每天 20:00 reflect_daily cron 自动跑** → ReflectLoop
+5. ReflectLoop:反思 + dedupe + 5 硬晋升 → 14d Shadow Mode 写 agent_memory
+6. 共创会话过期 → **每 5min cocreation_cleanup cron 自动清理**
+7. 用户在 Flutter 记忆管理页可看到 active/shadow/dormant 规则状态
+
+**全自动 cron 闭环已建立,无需人工触发反思 / 清理。**
+
+### Phase 进度
+- Phase 0:safety_engine ✅ / pending_approvals ✅ / KMS ⏸
+- Phase 1:**13/17 Tool ✅** / **Memory 4 层 ✅** / WAL 真接入 ⏸
+  剩 T01 query_market / T02 query_holders / T03 query_onchain_activity /
+  T08 execute_swap(都需外部 API + KMS)
+- Phase 2:**5/5 Loop ✅** / **review_engine v2 LLM ✅** / **6/18 Prompt ✅** /
+  **2 cron 接入 ✅** / Skill SKILL.md ⏸
+- Phase 3:Flutter UI 4 组件 + 17 widget tests + iOS 4 截图 ✅
+- Phase 4:⏸
+
+### 累计本会话总计
+- 后端 Python:**307 后端新测试**
+- Flutter widget:**24 Flutter 新测试**
+- **session 共 331 新测试,100% PASSED**
+- 29 commits 全部 deploy
+
+### 下次接手候选
+1. **剩余 4 Tool**(T01/T02/T03/T08)— 需外部 API + KMS
+2. **剩余 12 Prompt** + Skill SKILL.md 化(S01-S08)
+3. **WAL 真接入** — 关键写入路径走 wal.py(memory_write_wal 表已存)
+4. **Eval golden 1660 条** L1-L4
+5. **L3 thesis 真 debate** — debate.py 已存
+6. **KMS AwsKmsProvider** — 需 AWS 账号

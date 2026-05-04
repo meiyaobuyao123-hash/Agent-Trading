@@ -42,7 +42,9 @@ log = logging.getLogger(__name__)
 
 VALID_SOURCES = ("pump", "hot", "all")
 VALID_CHAINS = ("solana", "eth", "bsc", "base", "all")
-VALID_WINDOWS = ("5m", "1h", "6h", "24h")
+# R39 v3:加 "7d" 让 LLM 能传(避免 schema 校验失败 narrate),
+# 但 hot_coins 表实际无 7d 字段 → 内部 fallback 到 24h + 在 output 加 note
+VALID_WINDOWS = ("5m", "1h", "6h", "24h", "7d")
 VALID_SORT = ("pct_change", "volume", "score")
 
 # window → hot_coins 字段名映射
@@ -51,12 +53,14 @@ WINDOW_TO_PCT_FIELD = {
     "1h": "price_change_1h",
     "6h": "price_change_6h",
     "24h": "price_change_24h",
+    "7d": "price_change_24h",   # 数据无 7d,fallback 24h
 }
 WINDOW_TO_VOL_FIELD = {
     "5m": "volume_5m_usd",
     "1h": "volume_1h_usd",
     "6h": None,            # hot_coins 无 6h volume,fallback 24h
     "24h": "volume_24h_usd",
+    "7d": "volume_24h_usd",
 }
 
 
@@ -143,6 +147,12 @@ class QueryTopMoversTool(Tool):
             except Exception as e:
                 log.warning("[T18] pump_signals query fail: %s", e)
 
+        # 7d window 实际 fallback 到 24h(数据没 7d 字段)
+        # 在 output 加 note 让 LLM 知道,不要 narrate "tool 失败"
+        note = None
+        if window == "7d":
+            note = "7d 数据当前不可用,已 fallback 到 24h(数据库未持久化 7d 维度)"
+
         if not items:
             return {
                 "ok": True,
@@ -151,6 +161,7 @@ class QueryTopMoversTool(Tool):
                 "total": 0,
                 "source_used": source,
                 "reason": "no data in window/source/chain filter",
+                **({"note": note} if note else {}),
             }
 
         # 全局排序
@@ -168,6 +179,7 @@ class QueryTopMoversTool(Tool):
             "window": window,
             "total": len(items),
             "source_used": source,
+            **({"note": note} if note else {}),
         }
 
     # ── helpers ────────────────────────────────────

@@ -141,3 +141,52 @@
 - **后果**:pump-scanner 主进程仍想启 FastAPI,跟 pump-scanner-api 进程抢 8000 端口,uvicorn import 卡死,整个 main event loop 阻塞 → dump loop 不动
 - **教训**:systemd Environment 不一定生效,要看代码加载顺序;改 .env 永远比改 systemd 更优先
 
+
+---
+
+## R38/R39(2026-05-04)新踩坑
+
+### 1. 关键词预触发 hack 永远不可能完美
+**症状**:为让 chat agent 调 query_top_movers,在 chat_loop / routes_agent 加关键词列表(涨幅/top/pump.fun ...)。结果:
+- "涨幅最高的代币" → 命中 ✅
+- "学习涨幅最高代币的特征,形成策略" → 命中(但应当不命中 — 用户意图是建策略)❌
+- "pump.fun 涨" → 命中 ✅
+- "把这 30 个代币..." → 不命中(指代上文,实际意图查涨幅)❌
+
+加了反向词、强意图词,仍漏召 / 误召。
+
+**根因**:意图识别本质是 NLU 任务,关键词不是答案。
+
+**正解**(R39 v4 已落):**Anthropic tool_use** — LLM 自己看 18 个 tool description 决定调哪个。
+- `messages.create(tools=ALL_TOOLS, ...)`,LLM 返 `stop_reason="tool_use"` 时 dispatch
+- 完全不需要任何关键词预筛
+- 改在 `agent/llm_parser.py`:`TOOLS = [...]` → `ALL_TOOLS = TOOLS + _get_extra_tool_specs()`(11 from registry)
+
+### 2. workspace API key 不一致(诡异 quota error)
+**症状**:Anthropic console 看 spend $0/$500(空),但 server 调 API 立刻报"workspace API usage limits reached"。
+**根因**:server `.env` 里的 `ANTHROPIC_API_KEY` 属于另一个 workspace,**那个 workspace 的 limit 被设到 $0** 或满了。Console 默认显示当前 active workspace 不一定是 key 所属。
+**确认方法**:`curl -H "x-api-key: $KEY" https://api.anthropic.com/v1/messages -d ...`,看 error 详情;Console → API Keys 页看每把 key 关联哪个 workspace。
+**解决**:在有额度的 workspace 创建新 key,替换 server `.env` 的 ANTHROPIC_API_KEY,restart pump-scanner-api。
+
+### 3. Google Fonts 国内 build 时常拉取失败
+**症状**:`next build` 报 `Failed to fetch 'Inter' from Google Fonts` / `module-not-found inter_xxxxx.module.css`。
+**原因**:`fonts.googleapis.com` 国内不稳。
+**解决**:layout.tsx 删 `next/font/google`,改用系统字体栈 `Inter / PingFang SC / SF Mono` (在 globals.css `--font-sans` / `--font-mono` 直接配)。视觉影响极小(中文字仍是 PingFang SC,英文字 macOS/iOS Safari 自带 Inter)。
+
+### 4. iOS 26.2 simulator + Flutter `objective_c` framework 路径错
+**症状**:`flutter run` 装到 iOS 26.2 模拟器后,App 启动炸:
+`Failed to load dynamic library 'objective_c.framework/objective_c': RuntimeRoot + objective_c.framework 拼接错(缺斜杠)`
+**根因**:Flutter SDK 跟 iOS 26.2 simulator runtime 的 dlopen 路径有 bug,Pods 重生成时 framework signing 拷错。
+**解决**:`brew reinstall cocoapods` + `LANG=en_US.UTF-8 pod install`(不加 LANG → Ruby 4.0.1 unicode normalize ASCII-8BIT 兼容错误)。然后 `flutter run` 通。
+
+### 5. scp 反复卡(stale processes 抢带宽)
+**症状**:scp 845KB 文件卡在 255KB 不动,重 scp 也卡。
+**根因**:之前失败的 scp / sshpass 进程 zombie 状态没退,占着 SSH 连接。
+**解决**:`killall -9 scp sshpass` + 找剩下的 zsh wrapper PID `kill -9` + 等 2-3s + 新 scp 立通。
+**预防**:用 `TaskStop` 真停 background task,不要只关 stdout 假以为停了。
+
+### 6. Process bug:"模块 ready, integration missing" 反复犯
+**症状**:R36 audit 早标了"chat_loop 没接 tool_use",R37 P0 punch list 没修,R39 v1 关键词 hack 又是 patch,直到 v4 才真根因。Memory 4 层、cost_guard、input_filter、prompt_loader 等都是同样问题:**模块按文档做了,但产品最关键入口(chat endpoint)没接**。
+**根因**:Eval L1 Tool 测的是"tool 自己能跑"(单元),L2 Skill 测"Skill 整合 tools",**但没有 end-to-end 测试"用户在 chat 框打字 → LLM 真调到 tool"**。
+**预防**:每加新 tool / 模块 → 必须立刻验证 "在 /api/agent/chat 实测真能调到 / 真生效"。这条加 dev process 强制。
+**audit 截止 2026-05-04**:8 项集成 7 项没接,详见 docs/agent-pm/IMPLEMENTATION-AUDIT.md + plan R39 v5 段。

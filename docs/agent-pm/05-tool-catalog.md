@@ -91,9 +91,9 @@ X 是否需要 LLM 做判断 / 推理 / 文本生成？
 
 ---
 
-## 2. Tools Inventory（17 个原子操作）
+## 2. Tools Inventory（18 个原子操作）
 
-### 2.1 查询类（5）
+### 2.1 查询类（6）
 
 | ID | Tool Name | I/O | Status | Version |
 |----|-----------|-----|--------|---------|
@@ -102,6 +102,7 @@ X 是否需要 LLM 做判断 / 推理 / 文本生成？
 | **T03** | `query_onchain_activity` | read | 🟢 | v0.1 |
 | **T04** | `recall_memory` | read | 🔴 新建 | v0.1 |
 | **T10** | `get_paper_performance` | read | 🟢 | v0.1 |
+| **T18** | `query_top_movers` 🆕 | read | 🟢 R39 | v0.1 |
 
 ### 2.2 CRUD 类（4）
 
@@ -951,6 +952,61 @@ failure_fallback: |
 }
 ```
 
+### 4.18 T18: query_top_movers 🆕 R39
+
+```json
+{
+  "name": "query_top_movers",
+  "description": "查询某窗口内涨幅 Top N 代币（支持 pump.fun BC 信号 / 多链热币 / 全部）。回答 '哪些币涨得好' / 'pump.fun top movers' / '近期表现优异的代币' 等问题。",
+  "input_schema": {
+    "type": "object",
+    "properties": {
+      "source": { "enum": ["pump", "hot", "all"], "default": "all" },
+      "chain":  { "enum": ["solana", "eth", "bsc", "base", "all"], "default": "all" },
+      "window": { "enum": ["5m", "1h", "6h", "24h"], "default": "24h" },
+      "limit":  { "type": "integer", "minimum": 1, "maximum": 50, "default": 10 },
+      "min_volume_usd": { "type": "number", "minimum": 0, "default": 1000 },
+      "sort_by": { "enum": ["pct_change", "volume", "score"], "default": "pct_change" }
+    },
+    "additionalProperties": false
+  },
+  "output_schema": {
+    "ok": "boolean",
+    "items": [
+      {
+        "rank": 1, "symbol": "TRUMP", "name": "...", "address": "...",
+        "chain": "solana", "source": "pump | hot",
+        "pct_change": 45.2, "volume_usd": 250000, "mcap_usd": 2000000,
+        "liquidity_usd": 50000, "score": 80.5, "price_usd": 0.00012
+      }
+    ],
+    "window": "24h", "total": 5, "source_used": "all"
+  },
+  "idempotent": true,
+  "side_effects": "none",
+  "p95_latency_ms": 400,
+  "cost_usd": 0,
+  "permission": "public",
+  "data_sources": "hot_coins(多链 5m/1h/6h/24h) + pump_signals(SOL only, BC 3-35%)",
+  "failure_modes": ["INPUT_SCHEMA_INVALID", "DB_ERROR", "EMPTY_RESULT"],
+  "owner": "agent-team",
+  "version": "0.1"
+}
+```
+
+**关键设计**：
+- `source=pump` 仅查 `pump_signals` 表（pump.fun BC 3-35% 信号，SOL only）
+- `source=hot` 查 `hot_coins` 表（多链 + 多时间帧 price_change 字段）
+- `source=all` union 两边 → 按 sort_by 全局排序
+- 每链各取 top 30 后再合并（避免 SOL 高分淹没其他链）
+- pump_signals 只 filter min_volume_usd（不应用 window，因为 BC 信号本身是分钟级时效）
+- 字段格式：`hot_coins.price_change_24h` 是 percentage（45 = 45%），不是比例（0.45）
+
+**调用方**：
+- chat_loop 关键词预触发（R39 MVP 实施）
+- 未来：S04 signal-strategy-builder（用户问"建监控"时先看 top movers）
+- 未来：S07 review-engine（每周大涨 top 跟反思关联）
+
 ---
 
 ## 5. Composition Rules（组合规则）
@@ -1180,3 +1236,11 @@ Cron UTC 23:55 或 累计 10 笔闭仓
   - § 4 每 Tool 完整 spec
   - § 5 4 条典型组合链
 - v0（2026-04-22）：初始骨架
+
+### v0.3（2026-05-04 R39）增量
+- **新增 T18 `query_top_movers`**（§ 2.1 + § 4.18）— 解决 chat agent 无法回答 "pump.fun 上近期表现优异的代币" 类问题
+- Tools Inventory 数量从 17 → **18**
+- 查询类从 5 → 6
+- 配套：chat_loop.py 加关键词预触发（命中 → 调 T18 → 直接返 markdown 列表，不走 LLM）
+- 实施代码：`services/pump-scanner/agent/tools/t18_query_top_movers.py`
+- 单元测试：`tests/test_t18_query_top_movers.py`（13 case 全过）

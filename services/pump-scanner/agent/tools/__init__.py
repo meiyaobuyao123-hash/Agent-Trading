@@ -38,10 +38,11 @@ from .t15_calc_risk_metrics import CalcRiskMetricsTool
 from .t16_run_backtest import RunBacktestTool
 from .t17_calc_position_size import CalcPositionSizeTool
 from .t08_execute_swap import ExecuteSwapTool
+from .t18_query_top_movers import QueryTopMoversTool
 
 
 def get_tool_registry() -> dict:
-    """返回 {tool_name: Tool 实例} 注册表(R35 后:17/17 全实施)。"""
+    """返回 {tool_name: Tool 实例} 注册表(R39 后:18/18 全实施 + T18)。"""
     return {
         "query_market": QueryMarketTool(),
         "query_holders": QueryHoldersTool(),
@@ -60,6 +61,7 @@ def get_tool_registry() -> dict:
         "calc_risk_metrics": CalcRiskMetricsTool(),
         "run_backtest": RunBacktestTool(),
         "calc_position_size": CalcPositionSizeTool(),
+        "query_top_movers": QueryTopMoversTool(),
     }
 
 
@@ -82,5 +84,6 @@ __all__ = [
     "CalcRiskMetricsTool",
     "RunBacktestTool",
     "CalcPositionSizeTool",
+    "QueryTopMoversTool",
     "get_tool_registry",
 ]

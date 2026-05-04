@@ -41,6 +41,18 @@ CLAUDE_TIMEOUT_S = 30
 ABORT_WORDS = ("算了", "取消", "不要了", "放弃", "abort", "cancel")
 CONFIRM_WORDS = ("确认", "确定", "保存", "ok", "yes", "好的", "可以", "对")
 
+# R39:T18 query_top_movers 触发关键词
+# 命中 → 调 T18 → 用数据直接返列表(不走 LLM,避免 P01 仍按澄清模板答)
+TOP_MOVER_KEYWORDS = (
+    "涨幅", "涨得好", "涨得多", "表现好", "表现优异", "近期表现",
+    "排行", "排行榜", "榜单", "top movers", "top gainers", "gainers",
+    "哪些币", "哪些代币", "哪个币", "trending", "trend",
+    "pump.fun", "pump fun", "pumpfun",
+    "热门币", "热门代币", "热门",
+)
+# pump 子源关键词(命中后 source=pump,否则 source=all)
+PUMP_HINT_KEYWORDS = ("pump.fun", "pump fun", "pumpfun", "内盘")
+
 
 @dataclass
 class ChatLoopResult:
@@ -127,6 +139,20 @@ class CocreationLoop:
     ) -> ChatLoopResult:
         from agent.orchestration import cocreation_state_machine as csm
         conv_id = state["conversation_id"]
+
+        # ── R39:T18 query_top_movers 快速路径 ────────────────
+        # 命中"涨幅 / top / pump.fun / 哪些币"等关键词 → 直接调 T18 返列表
+        # 不走 P01(P01 是澄清模板,看到数据也只会问"想监控啥条件")
+        if _matches_top_movers_intent(user_message):
+            answer = await self._answer_top_movers(user_message, state)
+            if answer is not None:
+                csm.append_message(conv_id, "assistant", answer)
+                return ChatLoopResult(
+                    ok=True, assistant_text=answer,
+                    stage="clarifying", conversation_id=conv_id,
+                    source="tool:query_top_movers",
+                    suggested_next_stage="clarifying",
+                )
 
         # 调 P01 prompt
         text, source, err = await self._invoke_llm(
@@ -448,6 +474,124 @@ def _collected_vars(state: Dict[str, Any]) -> Dict[str, Any]:
         "take_profit_pct": risk.get("take_profit_pct", ""),
         "persona": "intermediate",
     }
+
+
+# ── R39:T18 query_top_movers 快速路径 helpers ──────────
+
+
+def _matches_top_movers_intent(text: str) -> bool:
+    """检测用户是否在问"涨幅 top / pump.fun 表现优异"等问题。"""
+    if not text:
+        return False
+    t = text.lower()
+    return any(kw.lower() in t for kw in TOP_MOVER_KEYWORDS)
+
+
+def _detect_window(text: str) -> str:
+    """从用户文本里抽时间窗。"""
+    t = text.lower()
+    if any(k in t for k in ("5m", "5min", "5 分钟", "5分钟")):
+        return "5m"
+    if any(k in t for k in ("1h", "1 小时", "1小时", "一小时")):
+        return "1h"
+    if any(k in t for k in ("6h", "6 小时", "6小时", "六小时")):
+        return "6h"
+    if any(k in t for k in ("7d", "7天", "周", "week")):
+        # 暂无 7d 字段,用 24h 替代
+        return "24h"
+    return "24h"
+
+
+def _detect_chain(text: str) -> str:
+    """从用户文本里抽链。"""
+    t = text.lower()
+    if any(k in t for k in ("solana", "sol ", "sol\n", "索拉纳", "sol链")):
+        return "solana"
+    if any(k in t for k in ("eth", "ethereum", "以太")):
+        return "eth"
+    if any(k in t for k in ("bsc", "bnb")):
+        return "bsc"
+    if "base" in t:
+        return "base"
+    return "all"
+
+
+def _detect_source(text: str) -> str:
+    """如果用户提 pump.fun,source=pump;否则 all。"""
+    t = text.lower()
+    if any(k in t for k in PUMP_HINT_KEYWORDS):
+        return "pump"
+    return "all"
+
+
+def _format_top_movers(items: list, window: str, source: str) -> str:
+    """把 T18 输出 format 成中文 markdown 列表。"""
+    if not items:
+        src_label = {"pump": "pump.fun", "hot": "热币榜", "all": "全网"}.get(source, source)
+        return (
+            f"📊 当前 {src_label} {window} 内暂无明显涨幅数据。\n\n"
+            "可能原因:① 当前市场偏冷;② 数据同步延迟。\n"
+            "**建议**:稍后再试,或换个窗口(比如改 1h)。"
+        )
+
+    src_label = {"pump": "pump.fun 内盘", "hot": "多链热币", "all": "全网热门"}.get(source, source)
+    header = f"📈 **{src_label} · {window} 涨幅 Top {len(items)}**\n\n"
+    rows = []
+    for it in items:
+        sym = it.get("symbol", "?")
+        chain = it.get("chain", "?")
+        # hot_coins.price_change_24h 已是 percentage(45 = 45%),不再 ×100
+        # 但 pump_signals 历史数据可能是比例(0.45),做 heuristic:|pct|<=10 视为比例
+        raw_pct = it.get("pct_change") or 0
+        pct = raw_pct * 100 if abs(raw_pct) <= 10 else raw_pct
+        vol = it.get("volume_usd") or 0
+        mcap = it.get("mcap_usd") or 0
+        score = it.get("score") or 0
+        # 格式化 vol/mcap
+        vol_s = f"${vol/1e6:.1f}M" if vol >= 1e6 else f"${vol/1e3:.0f}K"
+        mcap_s = f"${mcap/1e6:.1f}M" if mcap >= 1e6 else f"${mcap/1e3:.0f}K"
+        addr = it.get("address", "")
+        addr_short = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
+        rows.append(
+            f"**{it.get('rank', '?')}. {sym}** ({chain}) · "
+            f"涨幅 **+{pct:.1f}%** · 量 {vol_s} · MC {mcap_s} · 评分 {score:.0f}\n"
+            f"   `{addr_short}`"
+        )
+    body = "\n\n".join(rows)
+    footer = (
+        "\n\n---\n"
+        "💡 想要监控其中某个?告诉我代币名 + 触发条件,我帮你建实时监控策略。"
+    )
+    return header + body + footer
+
+
+# CocreationLoop method 加在 class 内,但 Python 允许动态加 — 用 mixin 模式:
+async def _answer_top_movers(self, user_message: str, state: Dict[str, Any]) -> Optional[str]:  # noqa
+    """命中关键词时调 T18 + format。失败返 None(让 LLM 接管)。"""
+    try:
+        from agent.tools import QueryTopMoversTool
+        tool = QueryTopMoversTool()
+        payload = {
+            "source": _detect_source(user_message),
+            "chain": _detect_chain(user_message),
+            "window": _detect_window(user_message),
+            "limit": 5,
+            "min_volume_usd": 1000,
+            "sort_by": "pct_change",
+        }
+        res = await tool.run(payload)
+        if not res.ok:
+            log.warning("[chat_loop] T18 fail: %s", res.error)
+            return None
+        out = res.output or {}
+        items = out.get("items", [])
+        return _format_top_movers(items, payload["window"], payload["source"])
+    except Exception as e:
+        log.warning("[chat_loop] T18 wrap fail: %s", e)
+        return None
+
+# 把 _answer_top_movers 挂到 CocreationLoop class
+CocreationLoop._answer_top_movers = _answer_top_movers  # type: ignore[attr-defined]
 
 
 # ── singleton ────────────────────────────────────────────

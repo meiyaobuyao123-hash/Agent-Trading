@@ -176,6 +176,169 @@ class ChatResponse(BaseModel):
     conversation_id: Optional[str] = None  # R39 v5
 
 
+# ── R40: 接 cost_guard / input_filter / rollout_gate / audit_log ──
+# 参考 _check_safety_for_chat 的 helper-style;失败永远不阻断 chat(降级 + log)
+
+_NIL_UUID = "00000000-0000-0000-0000-000000000000"
+
+
+def _coerce_device_uuid(user_id: str) -> str:
+    """security_audit_log.device_id 是 UUID NOT NULL。
+    user_id 不一定是 UUID(DEV mode 下可能是任意字符串)→ 用 nil UUID 占位。
+    生产 Supabase JWT 的 user_id 是 UUID 时直接用。
+    """
+    import re as _re
+    if user_id and _re.match(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", user_id, _re.I):
+        return user_id
+    return _NIL_UUID
+
+
+def _audit_log_safety_event(
+    user_id: str,
+    event_type: str,
+    severity: str,
+    payload: Dict[str, Any],
+) -> None:
+    """写一条 security_audit_log。
+    event_type 必须是 schema enum 之一(safety_block / cb_trigger / hitl_decision 等)。
+    失败永不抛(catch all)。
+    """
+    try:
+        from local_db import _get_conn
+        conn = _get_conn()
+        device_uuid = _coerce_device_uuid(user_id)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO security_audit_log
+                  (device_id, event_type, severity, payload)
+                VALUES (%s, %s, %s, %s::jsonb)
+                """,
+                (device_uuid, event_type, severity, json.dumps(payload, ensure_ascii=False, default=str)),
+            )
+        conn.commit()
+    except Exception as e:
+        log.warning("[audit] insert fail event=%s sev=%s err=%s", event_type, severity, e)
+
+
+async def _check_guards_for_chat(
+    req: ChatRequest,
+    user_id: str,
+) -> Optional[str]:
+    """R40: chat pre-check 三合一(rollout_gate + input_filter + cost_guard)。
+    返 None = 通过;返 str = BLOCK 原因。
+
+    各步骤失败(import 失败 / DB down)→ 降级放行(不阻断 chat),只记 log。
+    BLOCK 命中 → 写 security_audit_log(safety_block,severity warn/critical)。
+    """
+    # ── 1. rollout_gate("agent_v1" feature 默认 100,实际不拦,埋点用)─
+    try:
+        from agent.rollout_gate import is_in_rollout
+        device_id = (req.context or {}).get("device_id") or user_id or ""
+        if not is_in_rollout(device_id, "agent_v1"):
+            _audit_log_safety_event(user_id, "safety_block", "warn", {
+                "stage": "rollout_gate",
+                "feature": "agent_v1",
+                "device_id": device_id,
+                "msg_head": (req.message or "")[:80],
+            })
+            return "Agent v1 未对当前设备开放(灰度)"
+    except Exception as e:
+        log.debug("[rollout_gate] skip: %s", e)
+
+    # ── 2. input_filter(prompt injection / hitl_bypass / regulation_skirt)──
+    try:
+        from agent.input_filter import filter_combined
+        res = filter_combined(req.message)
+        if not res.passed:
+            _audit_log_safety_event(user_id, "safety_block", "critical", {
+                "stage": "input_filter",
+                "matched_classes": res.matched_classes,
+                "violations": res.violations[:5],
+                "msg_head": (req.message or "")[:80],
+            })
+            return f"输入被安全过滤拦截({', '.join(res.matched_classes)})"
+    except Exception as e:
+        log.debug("[input_filter] skip: %s", e)
+
+    # ── 3. cost_guard(全局月预算 / model 降级)─────────────
+    try:
+        from agent.cost_guard import get_cost_guard
+        guard = get_cost_guard()
+        allowed, actual_model, reason = await guard.check_before_call(
+            intended_model="claude-haiku-4-5-20251001",
+            intended_level="L2",
+        )
+        if not allowed:
+            _audit_log_safety_event(user_id, "safety_block", "critical", {
+                "stage": "cost_guard",
+                "reason": reason,
+                "msg_head": (req.message or "")[:80],
+            })
+            return f"系统月度预算限制:{reason}"
+        # 通过 — 降级仅 log,不阻断
+        if actual_model and actual_model != "claude-haiku-4-5-20251001":
+            log.info("[cost_guard] model degraded → %s (%s)", actual_model, reason)
+    except Exception as e:
+        log.debug("[cost_guard] skip: %s", e)
+
+    return None
+
+
+def _enrich_context_with_memory_and_prompt(
+    base_context: Dict[str, Any],
+    user_id: str,
+) -> Dict[str, Any]:
+    """R40: 给 LLM context 注入 prompt_loader 灰度 meta + episodic_memory recall。
+
+    只在新会话第一轮(parse_strategy 看到 conversation_history 空)时生效 —
+    R39 v5 的 LLMParser 接到 history 时会跳过 context 注入。
+
+    失败永不抛(只是 enrichment,不影响主流程)。
+    """
+    ctx = dict(base_context) if base_context else {}
+
+    # ── prompt_loader 灰度 meta(P01 chat_clarify 当前选中版本)──
+    try:
+        from agent.prompt_loader import get_prompt_loader
+        loader = get_prompt_loader()
+        device_id = ctx.get("device_id") or user_id or ""
+        spec = loader.select_version("P01_chat_clarify", device_id)
+        if spec is not None:
+            ctx["prompt_meta"] = {
+                "id": "P01_chat_clarify",
+                "version": getattr(spec, "version", None),
+                "rollout_stage": getattr(spec, "rollout_stage", None),
+                "model": getattr(spec, "model", None),
+            }
+    except Exception as e:
+        log.debug("[prompt_loader] skip enrichment: %s", e)
+
+    # ── episodic_memory:user 最近 3 条历史案例 ─────────────
+    try:
+        from agent.memory import MemoryManager
+        mem = MemoryManager()
+        # 通用 chat 没有具体 trigger_source,用 search 拿 user 最近案例(无 filter)
+        episodes = mem.episodic.search(limit=3) if hasattr(mem, "episodic") else []
+        if episodes:
+            # 精简:只保留 token + chain + pnl 给 LLM 参考(避免 context 爆炸)
+            slim = []
+            for ep in episodes[:3]:
+                if isinstance(ep, dict):
+                    slim.append({
+                        "token": ep.get("token_symbol") or ep.get("token"),
+                        "chain": ep.get("chain"),
+                        "pnl_pct": ep.get("pnl_pct"),
+                        "outcome": ep.get("outcome"),
+                    })
+            if slim:
+                ctx["recent_episodes"] = slim
+    except Exception as e:
+        log.debug("[episodic_memory] skip enrichment: %s", e)
+
+    return ctx
+
+
 class StrategyCreateRequest(BaseModel):
     spec: Dict[str, Any] = Field(..., description="策略规范")
     source_prompt: Optional[str] = None
@@ -216,6 +379,16 @@ async def chat(
         )
     # ─────────────────────────────────────────────────────────────
 
+    # ── R40: rollout_gate + input_filter + cost_guard 三合一(BLOCK 不消耗 quota)─
+    guard_block = await _check_guards_for_chat(req, user_id)
+    if guard_block is not None:
+        return ChatResponse(
+            strategy=None,
+            message=f"⚠️ {guard_block}",
+            requires_confirmation=False,
+        )
+    # ─────────────────────────────────────────────────────────────
+
     # R39 root-cause:删掉关键词预触发 hack。
     # 现在 LLMParser 直接暴露 14 工具给 LLM(ALL_TOOLS),由 LLM 自己 route。
     # 见 agent/llm_parser.py — 用户问"涨幅 top"会自动调 query_top_movers,
@@ -240,6 +413,9 @@ async def chat(
                 context["last_strategy_name"] = last.data[0]["name"]
         except Exception:
             pass
+
+    # R40: 注入 prompt_loader 灰度 meta + episodic_memory recall(只第一轮生效)
+    context = _enrich_context_with_memory_and_prompt(context, user_id)
 
     # R39 v5: 接 4 层 memory(in-memory chat 对话历史)
     conv = _resolve_conv(req.conversation_id, user_id)
@@ -291,6 +467,18 @@ async def chat_stream(
         return StreamingResponse(_safety_error(), media_type="text/event-stream")
     # ─────────────────────────────────────────────────────────────
 
+    # ── R40: rollout_gate + input_filter + cost_guard ────────────
+    guard_block = await _check_guards_for_chat(req, user_id)
+    if guard_block is not None:
+        async def _guard_error():
+            payload = json.dumps({
+                'type': 'error',
+                'message': f'⚠️ {guard_block}',
+            }, ensure_ascii=False)
+            yield f"data: {payload}\n\n"
+        return StreamingResponse(_guard_error(), media_type="text/event-stream")
+    # ─────────────────────────────────────────────────────────────
+
     # R39 root-cause:删掉关键词预触发 hack(stream 同步删除)。
     # LLMParser.parse_strategy_stream 内部已暴露 14 工具,LLM 自主 route。
 
@@ -314,6 +502,9 @@ async def chat_stream(
                 context["last_strategy_name"] = last.data[0]["name"]
         except Exception:
             pass
+
+    # R40: 注入 prompt_loader 灰度 meta + episodic_memory recall
+    context = _enrich_context_with_memory_and_prompt(context, user_id)
 
     # R39 v5: 接 4 层 memory(in-memory chat 对话历史)
     conv = _resolve_conv(req.conversation_id, user_id)

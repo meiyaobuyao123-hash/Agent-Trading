@@ -524,6 +524,32 @@ def _detect_source(text: str) -> str:
     return "all"
 
 
+def _detect_limit(text: str, default: int = 10) -> int:
+    """从用户文本里抽数字("取前 30"/"top 5"/"前 20" 等)。
+    无明确数字 → 返 default。clamp 到 [1, 50]。
+    """
+    if not text:
+        return default
+    # 匹配:前 N / top N / Top N / N 个 / 取 N
+    import re as _re
+    patterns = [
+        r"前\s*(\d+)",
+        r"取\s*(\d+)",
+        r"top\s*(\d+)",
+        r"(\d+)\s*个",
+        r"(\d+)\s*只",
+    ]
+    for p in patterns:
+        m = _re.search(p, text, _re.IGNORECASE)
+        if m:
+            try:
+                n = int(m.group(1))
+                return max(1, min(50, n))
+            except ValueError:
+                pass
+    return default
+
+
 def _format_top_movers(items: list, window: str, source: str) -> str:
     """把 T18 输出 format 成中文 markdown 列表。"""
     if not items:
@@ -575,7 +601,7 @@ async def _answer_top_movers(self, user_message: str, state: Dict[str, Any]) -> 
             "source": _detect_source(user_message),
             "chain": _detect_chain(user_message),
             "window": _detect_window(user_message),
-            "limit": 5,
+            "limit": _detect_limit(user_message, default=5),
             "min_volume_usd": 1000,
             "sort_by": "pct_change",
         }

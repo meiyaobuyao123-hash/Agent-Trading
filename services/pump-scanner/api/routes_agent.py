@@ -133,39 +133,10 @@ async def chat(
         )
     # ─────────────────────────────────────────────────────────────
 
-    # ── R39:T18 query_top_movers 关键词快速路径 ──────────────────
-    # 命中"涨幅 / 哪些币 / pump.fun / top" → 直接调 T18 返列表
-    # 不消耗 LLM quota,不走 _llm_parser
-    try:
-        from agent.loops.chat_loop import (
-            _matches_top_movers_intent, _format_top_movers,
-            _detect_source, _detect_chain, _detect_window, _detect_limit,
-        )
-        if _matches_top_movers_intent(req.message):
-            from agent.tools import QueryTopMoversTool
-            tool = QueryTopMoversTool()
-            payload = {
-                "source": _detect_source(req.message),
-                "chain": _detect_chain(req.message),
-                "window": _detect_window(req.message),
-                "limit": _detect_limit(req.message, default=10),            # /chat 默认给 10 条(/cocreation 给 5)
-                "min_volume_usd": 1000,
-                "sort_by": "pct_change",
-            }
-            res = await tool.run(payload)
-            if res.ok:
-                items = (res.output or {}).get("items", [])
-                msg = _format_top_movers(items, payload["window"], payload["source"])
-                return ChatResponse(
-                    strategy=None,
-                    message=msg,
-                    requires_confirmation=False,
-                )
-    except Exception as _e:
-        # T18 失败不阻塞,继续走 LLM
-        import logging as _log
-        _log.getLogger(__name__).warning("[chat] T18 fast-path skipped: %s", _e)
-    # ─────────────────────────────────────────────────────────────
+    # R39 root-cause:删掉关键词预触发 hack。
+    # 现在 LLMParser 直接暴露 14 工具给 LLM(ALL_TOOLS),由 LLM 自己 route。
+    # 见 agent/llm_parser.py — 用户问"涨幅 top"会自动调 query_top_movers,
+    # 问"建策略"会自动调 create_strategy,无需关键词预筛。
 
     # ── 用户 API 配额检查 ──────────────────────────────────────────
     quota_ok, quota_resp = await _check_and_consume_quota(user_id)
@@ -225,38 +196,8 @@ async def chat_stream(
         return StreamingResponse(_safety_error(), media_type="text/event-stream")
     # ─────────────────────────────────────────────────────────────
 
-    # ── R39:T18 query_top_movers 关键词快速路径(stream) ─────────
-    # 命中 → 一次性 SSE 推 markdown 列表(不分 token,不调 LLM)
-    try:
-        from agent.loops.chat_loop import (
-            _matches_top_movers_intent, _format_top_movers,
-            _detect_source, _detect_chain, _detect_window, _detect_limit,
-        )
-        if _matches_top_movers_intent(req.message):
-            from agent.tools import QueryTopMoversTool
-            tool = QueryTopMoversTool()
-            payload = {
-                "source": _detect_source(req.message),
-                "chain": _detect_chain(req.message),
-                "window": _detect_window(req.message),
-                "limit": _detect_limit(req.message, default=10),
-                "min_volume_usd": 1000,
-                "sort_by": "pct_change",
-            }
-            res = await tool.run(payload)
-            if res.ok:
-                items = (res.output or {}).get("items", [])
-                msg = _format_top_movers(items, payload["window"], payload["source"])
-
-                async def _movers_event():
-                    yield f"data: {json.dumps({'type': 'delta', 'text': msg}, ensure_ascii=False)}\n\n"
-                    yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
-
-                return StreamingResponse(_movers_event(), media_type="text/event-stream")
-    except Exception as _e:
-        import logging as _log
-        _log.getLogger(__name__).warning("[chat/stream] T18 fast-path skipped: %s", _e)
-    # ─────────────────────────────────────────────────────────────
+    # R39 root-cause:删掉关键词预触发 hack(stream 同步删除)。
+    # LLMParser.parse_strategy_stream 内部已暴露 14 工具,LLM 自主 route。
 
     # 配额检查
     quota_ok, quota_resp = await _check_and_consume_quota(user_id)

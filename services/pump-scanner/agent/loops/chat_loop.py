@@ -479,12 +479,47 @@ def _collected_vars(state: Dict[str, Any]) -> Dict[str, Any]:
 # ── R39:T18 query_top_movers 快速路径 helpers ──────────
 
 
+_STRATEGY_INTENT_KEYWORDS = (
+    # 创建策略 / 监控 / 学习 / 形成 等明确表达"我要做策略"的词
+    "策略", "监控", "跟单", "建一", "建个", "建一个", "创建", "做一个", "做个",
+    "设计", "学习", "形成", "总结", "提炼", "归纳", "找规律", "找特征",
+    "帮我建", "帮我做", "帮我创建", "帮我设计", "帮我搞", "帮我搭",
+    "下单", "买入", "卖出", "止损", "止盈", "冷却",
+    # paper / live / 仓位
+    "模拟盘", "真盘", "仓位",
+)
+
+# 纯查询触发词(必须是问 / 列表类)
+_QUERY_HINT_KEYWORDS = (
+    "查询", "查一下", "查下", "看一下", "看下", "列出", "列表",
+    "排行", "排行榜", "榜单", "top", "前 ", "前几", "前几个", "取前",
+    "哪些", "哪个", "什么币",
+)
+
+
 def _matches_top_movers_intent(text: str) -> bool:
-    """检测用户是否在问"涨幅 top / pump.fun 表现优异"等问题。"""
+    """检测用户是否在**纯查询**涨幅榜(非策略创建意图)。
+
+    判定:
+      - 命中 TOP_MOVER_KEYWORDS(涨幅 / pump.fun / 哪些币...)
+      - 且 **不**命中 STRATEGY_INTENT_KEYWORDS(策略/监控/学习/形成 等)
+      - 或显式命中 QUERY_HINT_KEYWORDS(查询/列表/榜单)→ 强制走查询
+    """
     if not text:
         return False
     t = text.lower()
-    return any(kw.lower() in t for kw in TOP_MOVER_KEYWORDS)
+    has_mover = any(kw.lower() in t for kw in TOP_MOVER_KEYWORDS)
+    if not has_mover:
+        return False
+    has_strategy = any(kw in text for kw in _STRATEGY_INTENT_KEYWORDS)
+    has_explicit_query = any(kw.lower() in t for kw in _QUERY_HINT_KEYWORDS)
+    # 显式查询词总是走 T18(覆盖策略词)
+    if has_explicit_query:
+        return True
+    # 否则:有策略意图就不走 T18(让 P01 / P11 处理策略创建)
+    if has_strategy:
+        return False
+    return True
 
 
 def _detect_window(text: str) -> str:

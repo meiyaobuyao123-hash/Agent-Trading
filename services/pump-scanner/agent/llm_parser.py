@@ -165,23 +165,55 @@ SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自�
 }
 ```
 
-## 你的完整能力
+## 你的完整能力(R39 扩展:18 tool 自主 route)
 
-### 策略创建
-- 将自然语言转化为完整策略（条件+动作+风控）
+**重要**:你不只是"策略创建器",你是 AiTrading agent,有 14+ 个 tool 可调。
+根据用户问的事**自己决定调哪个 tool**,绝不要说"无法 X"。
+
+### 查询类 tools(用户问数据时用)
+- `query_top_movers`: **查涨幅榜 top N**(pump.fun / 多链热币 / 全部),回答"哪些币涨得好"/"24h top 30"等
+- `query_market`: 单代币行情(price/MC/LP/K线/toplist)
+- `query_holders`: 代币 top10 持仓 + 集中度 + 鲸鱼
+- `query_onchain_activity`: 链上聪明钱买卖 / 大额转账(window=1h/24h/7d)
+- `recall_memory`: 召回历史相似交易案例(episodic + semantic)
+- `get_paper_performance`: 用户模拟盘表现统计
+
+### 计算类 tools
+- `calc_technical_indicators`: RSI/MACD/MA/ATR/BB(给定 K线)
+- `calc_risk_metrics`: 胜率/夏普/最大回撤(给定 trades 列表)
+- `calc_position_size`: 仓位大小(fixed/Kelly/ATR-risk)
+
+### 创建/管理类 tools
+- `create_strategy` (即此 STRATEGY_TOOL):自然语言 → StrategySpec
+- `list_strategies` (LIST_STRATEGIES_TOOL):列用户已有策略
+- `run_backtest` (BACKTEST_TOOL):任何策略历史回测
+- `update_strategy_status`: paused/active/archived 切换
+- `run_paper_trade`: 模拟盘 buy/sell
+
+### 决策路径(必读)
+1. 用户说"哪些币涨得好"/"top movers"/"pump.fun 涨幅" → **直接调 `query_top_movers`**,不要说"我无法查"
+2. 用户问"分析 TRUMP" → 并行调 `query_market` + `query_holders` + `query_onchain_activity`
+3. 用户说"建一个 SOL 跟单策略" → 调 `create_strategy`(用 STRATEGY_TOOL)
+4. 用户问"我之前的策略表现" → 调 `list_strategies` + `get_paper_performance`
+5. 闲聊 / 模糊问题 → 直接对话,不调 tool
+
+**禁止**:任何时候不能说"系统不支持 X" / "我只能做策略" — 18 工具能做的事都做得到。
+
+### 策略创建(STRATEGY_TOOL)
+- 将自然语言转化为完整策略(条件+动作+风控)
 - 支持热币/内盘/KOL/聪明钱多种数据源
-- 所有新策略默认 mode=paper（模拟盘），用户确认后可切换实盘
+- 所有新策略默认 mode=paper(模拟盘),用户确认后可切换实盘
 
-### 策略模板（用户说"推荐策略"时使用）
-- meme_sniper: MEME早期狙击（内盘 BC 5-25%，聪明钱≥2）
-- hot_breakout: 热币追涨（评分≥65，1h涨幅>5%）
-- smart_money_follow: 聪明钱跟单（elite钱包买入信号）
-- kol_sentiment: KOL舆情（2h内≥3个KOL提及）
-- conservative_dca: 保守定投（评分≥70，24h量>$50K）
+### 策略模板(用户说"推荐策略"时使用)
+- meme_sniper: MEME早期狙击(内盘 BC 5-25%,聪明钱≥2)
+- hot_breakout: 热币追涨(评分≥65,1h涨幅>5%)
+- smart_money_follow: 聪明钱跟单(elite钱包买入信号)
+- kol_sentiment: KOL舆情(2h内≥3个KOL提及)
+- conservative_dca: 保守定投(评分≥70,24h量>$50K)
 
-### 回测能力
+### 回测能力(BACKTEST_TOOL)
 - 可以对任何策略进行 7 天历史数据回测
-- 返回：触发次数、胜率、平均收益、最大回撤
+- 返回:触发次数、胜率、平均收益、最大回撤
 - 用户说"回测"/"测试一下"/"验证策略"时，直接调用 run_backtest 工具
 - 如果用户刚创建了策略又说"回测"，使用上下文中最近创建的策略 ID
 - 不要要求用户提供策略 ID，从上下文自动获取
@@ -391,6 +423,62 @@ BACKTEST_TOOL = {
 TOOLS = [STRATEGY_TOOL, LIST_STRATEGIES_TOOL, BACKTEST_TOOL]
 
 
+# R39 root-cause fix:把 18 个原子 Tool 全部暴露给 LLM,让它自主 route
+# 排除冲突的 list_strategies / save_strategy / run_backtest(已有 STRATEGY_TOOL/LIST_STRATEGIES_TOOL/BACKTEST_TOOL 同义)
+# 排除真金 execute_swap(必须走 HITL,不能让 chat 直接触发)
+_EXCLUDED_FROM_CHAT = {
+    "list_strategies",          # 用 LIST_STRATEGIES_TOOL(同义)
+    "save_strategy",            # 用 STRATEGY_TOOL.create_strategy(同义)
+    "run_backtest",             # 用 BACKTEST_TOOL(同义)
+    "execute_swap",             # 真金交易 — 不暴露给 chat
+    "send_push_notification",   # 系统级 — 不应由 chat 触发
+    "create_approval_request",  # 系统级
+    "approve_rule",             # 系统级
+}
+
+
+def _get_extra_tool_specs():
+    """从 registry 取 18 - 7 = 11 个适合 chat 暴露的 tool spec。"""
+    try:
+        from agent.tools import get_tool_registry
+        reg = get_tool_registry()
+        out = []
+        for name, tool in reg.items():
+            if name in _EXCLUDED_FROM_CHAT:
+                continue
+            try:
+                out.append(tool.to_anthropic_tool_spec())
+            except Exception as e:
+                log.warning("tool %s spec fail: %s", name, e)
+        return out
+    except Exception as e:
+        log.warning("get_extra_tool_specs failed: %s", e)
+        return []
+
+
+# 真正暴露给 LLM 的所有 tools(策略创建 + 查询/计算)
+ALL_TOOLS = TOOLS + _get_extra_tool_specs()
+
+
+async def _execute_registry_tool(name: str, payload: dict) -> str:
+    """跑 registry tool 并 format 为 LLM 可读 JSON 字符串。"""
+    try:
+        from agent.tools import get_tool_registry
+        reg = get_tool_registry()
+        tool = reg.get(name)
+        if tool is None:
+            return json.dumps({"error": f"tool not in registry: {name}"})
+        res = await tool.run(payload)
+        if res.ok:
+            return json.dumps(res.output, ensure_ascii=False, default=str)
+        return json.dumps({
+            "error": res.error or "tool_failed",
+            "failure_mode": res.failure_mode,
+        }, ensure_ascii=False)
+    except Exception as e:
+        return json.dumps({"error": str(e)[:200]}, ensure_ascii=False)
+
+
 class LLMParser:
     """LLM 策略解析器"""
 
@@ -443,7 +531,7 @@ class LLMParser:
                     model=MODEL,
                     max_tokens=2048,
                     system=SYSTEM_PROMPT,
-                    tools=TOOLS,
+                    tools=ALL_TOOLS,
                     messages=messages,
                 )
             except (anthropic.RateLimitError, anthropic.InternalServerError) as e:
@@ -487,7 +575,8 @@ class LLMParser:
                 elif tc.name == "run_backtest":
                     result_text = await self._execute_backtest(tc.input)
                 else:
-                    result_text = json.dumps({"error": f"Unknown tool: {tc.name}"})
+                    # R39 root-cause fix:LLM 选了 registry 里某个 tool → 调它
+                    result_text = await _execute_registry_tool(tc.name, tc.input or {})
 
                 tool_results.append({
                     "type": "tool_result",
@@ -544,7 +633,7 @@ class LLMParser:
                     model=MODEL,
                     max_tokens=2048,
                     system=SYSTEM_PROMPT,
-                    tools=TOOLS,
+                    tools=ALL_TOOLS,
                     messages=messages,
                 )
 

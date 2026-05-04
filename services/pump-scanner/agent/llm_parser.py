@@ -521,23 +521,32 @@ class LLMParser:
         self,
         user_message: str,
         context: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[Optional[Dict[str, Any]], str]:
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> Tuple[Optional[Dict[str, Any]], str, List[Dict[str, Any]]]:
         """
         多轮 tool use 循环：Claude 可以连续调用多个工具（list→backtest→回复）
 
+        R39 v5: 加 conversation_history 参数。非空时把历史 messages 作为本次 LLM 起点
+        (LLM 可以看到 T1 的 tool_result 等)。返回追加完整轮次后的 messages 让 caller 持久化。
+
         Returns:
-            (strategy_spec_dict, ai_message)
+            (strategy_spec_dict, ai_message, full_messages)
         """
         if not self.api_key:
-            return None, "API 密钥未配置，无法解析策略。请设置 ANTHROPIC_API_KEY。"
+            return None, "API 密钥未配置，无法解析策略。请设置 ANTHROPIC_API_KEY。", list(conversation_history or [])
 
         client = self._get_client()
 
-        messages = [{"role": "user", "content": user_message}]
-        if context:
-            context_str = json.dumps(context, ensure_ascii=False, indent=2)
-            messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
-            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？"})
+        if conversation_history:
+            # R39 v5: 续接历史。不再注入 context(避免每轮重复污染历史);只追加新 user 消息
+            messages = list(conversation_history)
+            messages.append({"role": "user", "content": user_message})
+        else:
+            messages = [{"role": "user", "content": user_message}]
+            if context:
+                context_str = json.dumps(context, ensure_ascii=False, indent=2)
+                messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
+                messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。请告诉我您想创建什么样的交易策略？"})
 
         strategy_spec = None
         ai_message = ""
@@ -558,9 +567,9 @@ class LLMParser:
                 await asyncio.sleep(5)
                 continue
             except anthropic.APIError as e:
-                return None, f"AI 服务暂时不可用：{str(e)[:100]}"
+                return None, f"AI 服务暂时不可用：{str(e)[:100]}", messages
             except Exception as e:
-                return None, f"策略解析出错，请重新描述。"
+                return None, f"策略解析出错，请重新描述。", messages
 
             # 收集本轮的文本和工具调用
             tool_calls = []
@@ -614,34 +623,50 @@ class LLMParser:
         if not ai_message and not strategy_spec:
             ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
 
-        return strategy_spec, ai_message
+        # R39 v5: 把本轮 LLM 的 final 文本回复也追加进 messages,
+        # 让下一轮 caller 拿到完整 anthropic 历史(含本轮 user + tool 链 + 最终 assistant)
+        if ai_message and (not messages or messages[-1].get("role") != "assistant"
+                           or isinstance(messages[-1].get("content"), list)):
+            messages.append({"role": "assistant", "content": ai_message})
+
+        return strategy_spec, ai_message, messages
 
     async def parse_strategy_stream(
         self,
         user_message: str,
         context: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
     ):
         """
         流式版本：多轮 tool use + 最终回复流式输出
 
         策略：先用非流式完成多轮 tool use，然后最后一轮用流式输出文本。
         中间 tool 执行过程通过 delta 事件通知用户"正在执行..."
+
+        R39 v5: 加 conversation_history 参数。流末 yield {"type":"final_messages",...} 让
+        caller 拿到完整 messages 持久化。
         """
         if not self.api_key:
             yield {"type": "error", "message": "API 密钥未配置"}
             return
 
         client = self._get_client()
-        messages = [{"role": "user", "content": user_message}]
-        if context:
-            context_str = json.dumps(context, ensure_ascii=False, indent=2)
-            messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
-            messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。"})
+        if conversation_history:
+            messages = list(conversation_history)
+            messages.append({"role": "user", "content": user_message})
+        else:
+            messages = [{"role": "user", "content": user_message}]
+            if context:
+                context_str = json.dumps(context, ensure_ascii=False, indent=2)
+                messages.insert(0, {"role": "user", "content": f"上下文信息：\n{context_str}"})
+                messages.insert(1, {"role": "assistant", "content": "好的，我已了解上下文。"})
 
         yield {"type": "start"}
 
         strategy_spec = None
         MAX_TURNS = 5
+        # R39 v5: 累积本流的纯文本 LLM 回复,用于追加到 messages 末尾(给下轮 caller)
+        accumulated_assistant_text = ""
 
         try:
             for turn in range(MAX_TURNS):
@@ -666,6 +691,7 @@ class LLMParser:
 
                 # 有文本 → 逐字推送（模拟打字机效果）
                 for text in text_parts:
+                    accumulated_assistant_text += text
                     # 分成小块推送，模拟流式
                     chunk_size = 15  # 每次推 15 个字符
                     for i in range(0, len(text), chunk_size):
@@ -710,11 +736,24 @@ class LLMParser:
                 if response.stop_reason == "end_turn":
                     break
 
+            # R39 v5: 把 final text 追加到 messages 末尾,然后 yield 给 caller 持久化
+            if accumulated_assistant_text and (
+                not messages
+                or messages[-1].get("role") != "assistant"
+                or isinstance(messages[-1].get("content"), list)
+            ):
+                messages.append({
+                    "role": "assistant",
+                    "content": accumulated_assistant_text,
+                })
+            yield {"type": "final_messages", "messages": messages}
             yield {"type": "done"}
 
         except Exception as e:
             log.error("Stream error: %s", e)
             yield {"type": "error", "message": str(e)[:200]}
+            # 失败也要给 caller 一份 messages(可能用于诊断/不持久化)
+            yield {"type": "final_messages", "messages": messages}
 
     async def _execute_list_strategies(self) -> str:
         """列出所有策略"""

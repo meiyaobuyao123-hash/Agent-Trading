@@ -39,6 +39,85 @@ _llm_parser = LLMParser()
 _strategy_mgr = StrategyManager()
 
 
+# ── R39 v5:进程级 chat 对话历史(in-memory,30 min TTL) ──────
+# 用 conversation_id(或 user_id 兜底)作为 key,保留最近 20 轮 messages。
+# 前端发同一 conversation_id 即可保持上下文(LLM 看到完整历史)。
+# 进程重启 history 丢失(可接受 — 内测期);后续可换 Redis 持久化。
+import time as _time
+import uuid as _uuid
+
+_chat_conversations: Dict[str, "_ChatConv"] = {}  # noqa: F821
+_CHAT_CONV_TTL_S = 1800     # 30 min 不活跃就清
+_CHAT_CONV_MAX_MSGS = 40    # 最近 20 轮(每轮 user+assistant = 2 条)
+
+
+class _ChatConv:
+    """单个 chat 对话上下文。messages 是 anthropic API 格式 list。"""
+    __slots__ = ("conv_id", "messages", "last_seen")
+
+    def __init__(self, conv_id: str):
+        self.conv_id = conv_id
+        self.messages: List[Dict[str, Any]] = []
+        self.last_seen: float = _time.time()
+
+
+def _resolve_conv(req_conv_id: Optional[str], user_id: str) -> "_ChatConv":
+    """获取或新建 chat 对话。conv_id 缺则用 user_id 作 key 兜底(同一用户的 active 对话)。"""
+    _gc_chat_conversations()
+    key = req_conv_id or f"user:{user_id}"
+    conv = _chat_conversations.get(key)
+    if conv is None:
+        new_id = req_conv_id or str(_uuid.uuid4())
+        conv = _ChatConv(new_id)
+        # 同时按 conv_id 和 user_id key 存,便于下次查
+        _chat_conversations[new_id] = conv
+        if not req_conv_id:
+            _chat_conversations[f"user:{user_id}"] = conv
+    conv.last_seen = _time.time()
+    return conv
+
+
+def _append_chat_message(conv: "_ChatConv", role: str, content: Any) -> None:
+    """追加一条 message(role=user/assistant),超过 _CHAT_CONV_MAX_MSGS 截断老的。"""
+    conv.messages.append({"role": role, "content": content})
+    if len(conv.messages) > _CHAT_CONV_MAX_MSGS:
+        # 截到最近 N 条,但保证第一条是 user(anthropic 要求)
+        conv.messages = conv.messages[-_CHAT_CONV_MAX_MSGS:]
+        while conv.messages and conv.messages[0].get("role") != "user":
+            conv.messages.pop(0)
+
+
+def _gc_chat_conversations() -> None:
+    """清掉 30 min 不活跃的对话。每次有调用时顺便扫一下。"""
+    cutoff = _time.time() - _CHAT_CONV_TTL_S
+    expired = [k for k, c in _chat_conversations.items() if c.last_seen < cutoff]
+    for k in expired:
+        _chat_conversations.pop(k, None)
+
+
+def _truncate_history(
+    messages: List[Dict[str, Any]],
+    max_user_turns: int = 8,
+) -> List[Dict[str, Any]]:
+    """R39 v5: 按"真用户回合"截断 anthropic 历史,避免砍断 tool_use/tool_result 配对。
+
+    真用户回合 = role=="user" 且 content 是 str(普通用户输入)。
+    tool_result 包装在 role=user, content=list 里,不算真用户回合。
+
+    保留最近 max_user_turns 个真用户回合 + 它们之后的所有 LLM/tool 块。
+    """
+    if not messages:
+        return messages
+    user_turn_indices = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "user" and isinstance(m.get("content"), str)
+    ]
+    if len(user_turn_indices) <= max_user_turns:
+        return messages
+    cut_from = user_turn_indices[-max_user_turns]
+    return messages[cut_from:]
+
+
 # ── 请求/响应模型 ─────────────────────────────────────────────
 
 class ChatRequest(BaseModel):
@@ -47,6 +126,9 @@ class ChatRequest(BaseModel):
     # W3 D4: 可选 safety ctx,传入后跑 SafetyEngine.check_trade
     # 即使不传,全局 CB(任一 blocked 级 CB active)也会拦截所有 chat
     safety_ctx: Optional[Dict[str, Any]] = None
+    # R39 v5: 多轮对话保持上下文。Flutter App 拿到 response.conversation_id
+    # 下次发同一 ID,后端继续追加历史。空时后端用 user_id 维持当前 active 对话。
+    conversation_id: Optional[str] = None
 
 
 def _check_safety_for_chat(safety_ctx: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -91,6 +173,7 @@ class ChatResponse(BaseModel):
     strategy: Optional[Dict[str, Any]] = None
     message: str
     requires_confirmation: bool = True
+    conversation_id: Optional[str] = None  # R39 v5
 
 
 class StrategyCreateRequest(BaseModel):
@@ -158,14 +241,26 @@ async def chat(
         except Exception:
             pass
 
-    strategy_spec, ai_message = await _llm_parser.parse_strategy(
-        req.message, context if context else None
+    # R39 v5: 接 4 层 memory(in-memory chat 对话历史)
+    conv = _resolve_conv(req.conversation_id, user_id)
+    history_snapshot = list(conv.messages)  # immutable snapshot 喂给 parser
+
+    strategy_spec, ai_message, full_messages = await _llm_parser.parse_strategy(
+        req.message,
+        context if context else None,
+        conversation_history=history_snapshot if history_snapshot else None,
     )
+
+    # 把 parser 跑完的完整 messages(含 tool_use/tool_result + final assistant)写回 conv,
+    # 截断到最近 8 个真用户回合避免无限增长 + 避免砍断 tool 配对
+    conv.messages = _truncate_history(full_messages, max_user_turns=8)
+    conv.last_seen = _time.time()
 
     return ChatResponse(
         strategy=strategy_spec,
         message=ai_message,
         requires_confirmation=strategy_spec is not None,
+        conversation_id=conv.conv_id,
     )
 
 
@@ -220,13 +315,35 @@ async def chat_stream(
         except Exception:
             pass
 
+    # R39 v5: 接 4 层 memory(in-memory chat 对话历史)
+    conv = _resolve_conv(req.conversation_id, user_id)
+    history_snapshot = list(conv.messages)
+
     async def _event_generator():
         import json as _json
+        # 首条 yield meta 让 Flutter 拿到 conversation_id
+        meta_evt = {"type": "meta", "conversation_id": conv.conv_id}
+        yield f"data: {_json.dumps(meta_evt, ensure_ascii=False)}\n\n"
+
+        final_messages: List[Dict[str, Any]] = []
         try:
-            async for event in _llm_parser.parse_strategy_stream(req.message, context if context else None):
+            async for event in _llm_parser.parse_strategy_stream(
+                req.message,
+                context if context else None,
+                conversation_history=history_snapshot if history_snapshot else None,
+            ):
+                # 拦截 final_messages 不下发 SSE,只用于持久化
+                if event.get("type") == "final_messages":
+                    final_messages = event.get("messages") or []
+                    continue
                 yield f"data: {_json.dumps(event, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {_json.dumps({'type': 'error', 'message': str(e)[:200]})}\n\n"
+
+        # 流结束后写回 conv(截断到最近 8 个真用户回合)
+        if final_messages:
+            conv.messages = _truncate_history(final_messages, max_user_turns=8)
+            conv.last_seen = _time.time()
 
     return StreamingResponse(
         _event_generator(),

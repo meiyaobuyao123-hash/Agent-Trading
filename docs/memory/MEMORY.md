@@ -1,5 +1,36 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-04 R39 进行中)
+
+| 维度 | 状态 |
+|---|---|
+| 团队内测推送 | ✅ 可以(R37 P0 全过 + R38 官网上线 + R39 chat agent 大修) |
+| **真付费用户上线** | ⚠️ **接近** — 主功能 OK,但 chat 8 项集成 7 项没接(audit 已扫,memory 在做) |
+| 总对齐设计 | ~85%(R36 70% → R37 85%) |
+| Helix 官网 | ✅ http://www.ai100trading.cn 已上线(3002 + nginx 路径分流,portal 老路径保留) |
+| Anthropic API quota | ✅ 已切 $500/月 workspace key |
+
+**R38 — Helix 官网上线**(2026-05-04):
+- 独立 repo `~/Desktop/helix-marketing`(Next.js 16 + Tailwind v4 + WebGL warp field)
+- Claude Design 设计稿 → 完整搬代码 + 8 section 首页(Hero/TrustStrip/Capabilities/Developers/Security/Pricing/Customers/Footer)
+- 服务器部署:`/opt/helix-marketing/` 跑在 :3002,systemd unit `helix-marketing.service`
+- nginx 路径分流(方案 B):portal 路径保留 → :3000;`/` + `/helix-assets/*` 走 :3002
+- 域名 www.ai100trading.cn 已通,WebGL 深空星云 + 鼠标引力透镜真浏览器可见
+
+**R39 — chat agent 大修系列**(2026-05-04 进行中):
+- v1: T18 query_top_movers 工具(commit `79a90ce`)+ chat_loop 关键词预触发(后证 patch)
+- v2: P01 prompt 加 capabilities awareness(`dc2867c`)修自相矛盾"我无法 X 但能 Y"
+- v3: /api/agent/chat 也加快速路径(`7fd9dd0`)+ _detect_limit("取前 30")
+- **v4 root cause**(`6deab16`):**LLMParser 真暴露 14 工具给 LLM 自主 route**(legacy 3 + registry 11),删关键词 hack。这才是真根因 — R36 audit 早就标了 chat_loop 没接 tool_use,我直到 v4 才修
+- v5: T18 schema window 加 7d fallback + SYSTEM_PROMPT "Output Discipline" 段(`777927a`)— 禁 LLM narrate "让我使用工具/抱歉重新检查"
+- v6: parse_strategy_stream dispatch 接 registry tool(`d4a2cd5`)— stream 卡住 bug 修
+- + Anthropic API key 切到 $500 workspace(原 key 在另一个满了的 workspace)
+
+**R39 v5 半截**(下次 session 接):
+- routes_agent.py 已加 ChatRequest.conversation_id + _ChatConv 类 + helpers,但 _llm_parser / chat 函数体调用面没改完
+- 8 项集成 audit:7 项没接 chat(input_filter / cost_guard / prompt_loader / audit_log / rollout_gate / semantic / episodic)
+- 详见 docs/agent-pm/IMPLEMENTATION-AUDIT.md + plan 文件 R39 v5 段
+
 ## ⚠️ 上线状态(2026-05-03 R37 P0 全做完)
 
 | 维度 | 状态 |

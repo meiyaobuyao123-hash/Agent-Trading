@@ -4257,3 +4257,110 @@ sudo -u postgres psql -d agent_trading_local -f migrations/local_pg/040_agent_me
 4. WAL 接通 Episodic 关键写入
 5. Constitutional Rules C1-C5 注入 System Prompt
 6. LLM judge calibration(100 pair Pearson≥0.7)
+
+---
+
+## 会话 R38(2026-05-04 上半天)— Helix 官网开发 + 上线
+
+### 用户需求
+- 把 Claude Design 给的设计稿(Helix Website v1)开发成真实可访问的官网
+- 服务于 B(API/SDK)+ C(iOS App)双端
+- 部署在已买域名 www.ai100trading.cn
+
+### 决策
+- 完全独立新仓库 `~/Desktop/helix-marketing`(不进 monorepo)
+- Next.js 16 + Tailwind v4 + TypeScript strict
+- 部署方案 B(路径分流):主域名 `/` → Helix 官网 :3002,portal 老路径 `/tuning /picks /hot ...` → :3000
+
+### 干完了
+- Claude Design fetch 解压(/tmp/design-helix/),含 11 jsx 组件 + tokens.css + 30 轮 chat 历史
+- 完整搬 8 section 首页:Nav · Hero · TrustStrip · Capabilities · Developers · Security · Pricing · Customers · Footer
+- WebGL warp field shader(深空星云 + 鼠标引力透镜 + 6 层视差星点)直接搬
+- design tokens.css → globals.css(Deep Indigo + Aurora Blue + Mint + Coral)
+- standalone build → 845KB tar → scp 服务器 → npm install
+- systemd `helix-marketing.service` 跑 :3002(LISTEN 验证)
+- nginx /etc/nginx/sites-enabled/pump-scanner 改:portal 路径白名单 + `/helix-assets/*` → :3002 + `/` 默认 → :3002
+- helix `next.config.ts` 加 `assetPrefix='/helix-assets'` 解决 _next/ 跟 portal 冲突
+- iOS Safari 访问 `http://www.ai100trading.cn/` 真见 WebGL 星空 + 完整首页
+- 文案优化 Hero(删冗余"装进口袋,装进产品")
+
+### 踩坑
+- scp 反复卡 — zombie scp processes 抢带宽,killall + 重传才通
+- pod install Ruby 4.0.1 + cocoapods 1.16.2 → ASCII-8BIT unicode_normalize 报错。修:`LANG=en_US.UTF-8 pod install`
+- iOS 26.2 simulator + Flutter 跑 App `objective_c.framework` dlopen 路径错(RuntimeRoot 拼接缺斜杠)。`brew reinstall cocoapods` + `LANG=en_US.UTF-8 pod install` 修通
+- Google Fonts 国内 build 拉取不稳定 → 改用系统字体栈(`Inter / PingFang SC` fallback)
+
+### Commits
+- agent-v1: 8dd235f efff571(R36 收尾)
+- 新建独立仓库 `helix-marketing`(本地 ~/Desktop/helix-marketing,未 push GitHub,gh auth 没登)
+- main: 7018099 7061f59 8e3dd8a(memory 同步)
+
+---
+
+## 会话 R39(2026-05-04 下半天)— chat agent 大修 6 轮
+
+### 用户需求三阶段
+1. 模拟器实测 chat:"pump.fun 上近期表现优异的代币" → agent 装傻"我无法查历史"
+2. 用户:"为什么 14 工具没暴露给 LLM?"(深刻洞察,根因在此)
+3. 用户:"上下 2 个问题都不搞清楚"(发现 chat 没 conversation memory)
+
+### 干完了 6 轮(每轮一个 commit)
+
+**v1**(`79a90ce`):T18 query_top_movers 工具 + chat_loop 关键词预触发 hack
+- 用户问"涨幅" → 关键词命中 → 调 T18 直接返列表
+- **后证是 patch**:关键词宽误触发,关键词窄漏触发,绝不可能完美
+
+**v2**(`dc2867c`):P01 prompt 加 capabilities awareness
+- 修"我无法直接查询历史涨幅,但可以创建监控策略"自相矛盾
+- LLM 知道 18 工具能干啥,不再装傻"我只能建策略"
+
+**v3**(`7fd9dd0`):/api/agent/chat 也加快速路径(Flutter 真用的 endpoint)
+- 之前只改了 /cocreation/chat,Flutter 走 /chat 走老 stateless LLM
+- + `_detect_limit("取前 30")` 抽数字让 limit 精确
+
+**v4 ROOT CAUSE**(`6deab16`):LLMParser 真暴露 14 工具给 LLM 自主 route
+- legacy `TOOLS = [STRATEGY_TOOL, LIST_STRATEGIES_TOOL, BACKTEST_TOOL]`(3 个 hardcoded)
+- 加 `ALL_TOOLS = TOOLS + _get_extra_tool_specs()`(11 个 from registry,排除 system 级 + 重复)
+- dispatch else 分支调 `_execute_registry_tool()` 兜底
+- SYSTEM_PROMPT 加"你的完整能力(R39 扩展:18 tool 自主 route)"段 + 决策路径 5 条 + 禁止"我只能 X"
+- **删除 R39 v1-v3 关键词预触发 hack**(因为是 patch)
+- 4 场景实测全过:纯查询/混合 learn+建/纯建策略/闲聊"你能做什么"
+
+**v5**(`777927a`):T18 window 加 7d fallback + SYSTEM_PROMPT "Output Discipline"
+- 用户原话"7天内取前 30" → schema enum 没 7d → INPUT_SCHEMA_INVALID → LLM 在 final text 裸 narrate "让我重新检查工具名"
+- 修:T18 加 7d enum,内部 fallback 24h + 加 note;Output Discipline 禁 LLM narrate tool 尝试过程
+
+**v6**(`d4a2cd5`):parse_strategy_stream dispatch else 接 registry
+- stream 版的 dispatch 还是只处理 3 个 hardcoded tool,registry 工具被当 unknown
+- LLM 收到 unknown error 卡住,前端 SSE 死等不到 done
+- 修通后 stream curl 一行行打字机出 markdown table TOP 30,完整跑通
+
+### 中场关键事件
+- Anthropic API quota error: workspace API limit reached
+- 用户 console 显示 $0/$500,但 server 在用另一个满了 workspace 的 key
+- 用户提供 $500 workspace 新 key → ssh 替换 .env → restart → 真通
+
+### Audit:8 项集成漏洞扫(Explore agent)
+| 模块 | 接通? | 优先级 |
+|---|---|---|
+| safety_engine | ✅ 部分接 | P0 done |
+| audit_log | ❌ | P1 |
+| cost_guard | ❌ | **P0** |
+| rollout_gate | ❌ | P2 |
+| input_filter | ❌ | **P0** |
+| prompt_loader | ❌ | P1 |
+| semantic_memory | ❌ | P1 |
+| episodic_memory | ❌ | P2 |
+
+**1/8 接通 = 12.5%**。这是 R36 audit 早标的"模块 ready, integration missing" 反复犯的 process bug。
+
+### R39 v5 半截(下次 session 接)
+- routes_agent.py 已加 ChatRequest.conversation_id + _ChatConv 类 + helpers
+- 待改:_llm_parser.parse_strategy + _stream 接 history;chat 函数体调用面;部署;三轮验证
+- 用户 brief 已给(本 session 倒数第 2 条),粘到新 session 接续无缝
+
+### 下次接手优先级
+1. R39 v5 完结 — chat memory 真接通,三轮 conversation 验证
+2. P0 集成:input_filter + cost_guard 接 chat
+3. P1 集成:prompt_loader + audit_log + semantic_memory
+4. P2 集成:rollout_gate + episodic_memory

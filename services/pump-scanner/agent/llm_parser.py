@@ -695,7 +695,9 @@ class LLMParser:
                         result_text = await self._execute_backtest(tc.input)
                         yield {"type": "delta", "text": result_text}
                     else:
-                        result_text = json.dumps({"error": "unknown tool"})
+                        # R39 v3 fix:registry 里的 tool(query_top_movers / query_market 等)
+                        # 必须真调用,否则 LLM 收到 unknown tool 会卡住
+                        result_text = await _execute_registry_tool(tc.name, tc.input or {})
 
                     tool_results.append({
                         "type": "tool_result",

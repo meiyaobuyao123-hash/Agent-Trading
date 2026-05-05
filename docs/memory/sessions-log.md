@@ -4364,3 +4364,69 @@ sudo -u postgres psql -d agent_trading_local -f migrations/local_pg/040_agent_me
 2. P0 集成:input_filter + cost_guard 接 chat
 3. P1 集成:prompt_loader + audit_log + semantic_memory
 4. P2 集成:rollout_gate + episodic_memory
+
+---
+
+## 2026-05-04 / 2026-05-05 — R39 v5 + R40 完结
+
+### R39 v5:chat conversation memory(2 commit)
+- `d16b2c8` feat(R39 v5):chat conversation memory — /api/agent/chat 接 4 层 history
+- `d83a591` fix:llm_parser typing 缺 List import(NameError 热修)
+
+routes_agent.py +60 行:
+- `_ChatConv` 进程级 dict + 30min TTL + 40 messages 上限
+- `_resolve_conv` / `_append_chat_message` / `_gc_chat_conversations` / `_truncate_history`(按真用户回合 ≤ 8 截断,不切 anthropic tool_use/tool_result 配对)
+- `ChatRequest.conversation_id` / `ChatResponse.conversation_id`
+- `chat()` handler 接通:resolve → 传 history snapshot → 写回 → response 带 conv_id
+- `chat_stream()` 同样接通 + 首条 yield `{type:meta, conversation_id:...}`
+
+llm_parser.py +71 行:
+- `parse_strategy` 加 `conversation_history` 参数 + 三元组返回 `(spec, ai_message, full_messages)`
+- `parse_strategy_stream` 同样加参数,流末 yield `{type:final_messages, messages:[...]}`
+
+**3 轮 curl 验证全过**:T1 拉 7d top 30 → T2 不重新调 query_top_movers 直接分析特征 + create_strategy → T3 准确指认第 3 名 RUPT (市值 $203,308, 涨幅 15760.95%,Solana)。conv_id `77d231b6-...` 三轮共享。
+
+### R40:chat 接 6 模块(1 commit + 1 修)
+- `5010ca0` feat(R40):chat 接 6 个集成模块 — guards + audit + memory + prompt enrichment
+- (本会话补) prompt_loader bug 修(prompt_id="P01" 而非 "P01_chat_clarify" + 加 lazy load_from_disk)
+
+routes_agent.py +191 行:
+- `_coerce_device_uuid` security_audit_log.device_id UUID NOT NULL,DEV mode user_id 不是 UUID 时用 nil
+- `_audit_log_safety_event(user_id, event_type, severity, payload)` 写 security_audit_log,失败永不抛
+- `_check_guards_for_chat` 三合一:rollout_gate(`agent_v1` 默认 100% 埋点)+ input_filter(`filter_combined` 5 类 + c1)+ cost_guard(`check_before_call` BLOCKED/HARD_STOP 拦)
+- `_enrich_context_with_memory_and_prompt` 注 P01 prompt_meta(灰度 bucket)+ episodic_memory recent_episodes(3 条)
+- chat() / chat_stream() 顶部接 guards,context 注入 enrich
+
+**端到端验证**:
+- 正常 chat 通过(返完整回复)
+- "稳赚不赔/all in/跳过 HITL" 命中 input_filter `implicit_promise`,直接拒
+- security_audit_log 表写入 id=5,severity=critical,stage=input_filter,classes=`["implicit_promise"]`
+
+### R39 v5 + R40 单元测试
+- `tests/test_routes_chat_r40_guards.py` 新 20 测试覆盖 _truncate_history / _resolve_conv / _ChatConv / _coerce_device_uuid / _audit_log_safety_event / _check_guards_for_chat / _enrich_context_with_memory_and_prompt
+- **20/20 全过**(local Py3.9)
+
+### 部署事故记录(写 pitfalls 也加一条)
+1. **服务器 git pull 被 untracked t18 文件挡住**:R39 v1-v4 在服务器 hot-edit 没 commit,新 untracked 文件挡 pull。备份 `/tmp/r39v5-untracked-backup/` 后 rm 重 pull,验证和 origin 完全等价。
+2. **List 缺 import 一次冷启动失败**:`Optional[List[Dict[...]]]` 用了 List 但 typing 没 import。日志直接告 `NameError: name 'List' is not defined`,热修 push pull 二次重启 OK。
+3. **prompt_loader 半接入**:`get_prompt_loader()` singleton 创建后没人调 `load_from_disk()`,prompts dict 永远空,`select_version` 返 None。修法:在 `_enrich` 里 lazy load(检测 `list_prompts()` 空则触发 load)。
+
+### 接通状态对比
+| 模块 | R36 audit | 现在 |
+|---|---|---|
+| safety_engine | ✅ 部分接 | ✅ 接(W3 D4) |
+| audit_log | ❌ | ✅ 接 R40 |
+| cost_guard | ❌ | ✅ 接 R40 |
+| rollout_gate | ❌ | ✅ 接 R40 |
+| input_filter | ❌ | ✅ 接 R40 |
+| prompt_loader | ❌ | ✅ 接 R40(lazy load 修) |
+| episodic_memory | ❌ | ✅ 接 R40(数据空属内测期) |
+| semantic_memory | ❌ | ⏸ 待接(下轮) |
+
+**7/8 接通 = 87.5%**(从 12.5% → 87.5%)
+
+### 服务器状态
+- branch agent-v1,head `5010ca0`(R40)
+- pump-scanner-api active,port 8000 LISTEN,/health 200
+- pump-scanner active(scanner 主进程)
+- security_audit_log 表已被使用(id=5 写入测试拦截记录)

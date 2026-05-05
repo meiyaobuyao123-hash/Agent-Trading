@@ -1,14 +1,33 @@
 # Project Memory — Agent-Trading
 
-## ⚠️ 上线状态(2026-05-04 R39 进行中)
+## ⚠️ 上线状态(2026-05-05 R40 完结)
 
 | 维度 | 状态 |
 |---|---|
-| 团队内测推送 | ✅ 可以(R37 P0 全过 + R38 官网上线 + R39 chat agent 大修) |
-| **真付费用户上线** | ⚠️ **接近** — 主功能 OK,但 chat 8 项集成 7 项没接(audit 已扫,memory 在做) |
-| 总对齐设计 | ~85%(R36 70% → R37 85%) |
-| Helix 官网 | ✅ http://www.ai100trading.cn 已上线(3002 + nginx 路径分流,portal 老路径保留) |
-| Anthropic API quota | ✅ 已切 $500/月 workspace key |
+| 团队内测推送 | ✅ 可以 |
+| **真付费用户上线** | ✅ **可以** — chat 8 项集成 7 项接通(R39 v5 memory + R40 guards + R37 P0) |
+| 总对齐设计 | ~92%(R36 70% → R37 85% → R40 92%) |
+| Helix 官网 | ✅ http://www.ai100trading.cn 已上线 |
+| Anthropic API quota | ✅ $500/月 workspace key |
+| 服务器 head | `5010ca0`(agent-v1) |
+
+**R40 — chat 6 模块集成**(2026-05-05,commit `5010ca0`):
+1. ✅ rollout_gate(`agent_v1` 默认 100% 灰度埋点)
+2. ✅ input_filter(`filter_combined` 5 类 + c1_blocklist;实测拦"稳赚不赔/all in/跳过 HITL"命中 implicit_promise)
+3. ✅ cost_guard(`check_before_call` BLOCKED/HARD_STOP 拦 + EMERGENCY/HARD_DEGRADE log 降级)
+4. ✅ audit_log(`_audit_log_safety_event` 写 security_audit_log;BLOCK 时 severity=critical;DB unavail 不抛)
+5. ✅ prompt_loader(P01 chat_clarify 灰度 meta 注 context;**lazy load_from_disk 修**)
+6. ✅ episodic_memory(MemoryManager.episodic.search(limit=3) 注 context.recent_episodes;数据空属内测期合理)
+
+**R39 v5 — chat conversation memory**(2026-05-04,commits `d16b2c8` + `d83a591` 热修):
+- `_ChatConv` 进程级 dict + 30min TTL + 40 messages 上限
+- `_truncate_history(max_user_turns=8)` 按真用户回合截断,不切 anthropic tool_use/tool_result 配对
+- `parse_strategy(_stream)` 加 `conversation_history` + 三元组返回 / `final_messages` 事件
+- 三轮 curl 实测:T1 拉 30 token → T2 不重复调工具直接分析特征+create_strategy → T3 准确指认第 3 名 RUPT 市值
+
+**测试**:R39 v5 + R40 单元测试 20 个全过(`tests/test_routes_chat_r40_guards.py`);R37 累计 1264/1265 全过
+
+**部署稳定**:pump-scanner-api active + port 8000 LISTEN + /health 200 + Flutter App 已经在打 /api/price/batch
 
 **R38 — Helix 官网上线**(2026-05-04):
 - 独立 repo `~/Desktop/helix-marketing`(Next.js 16 + Tailwind v4 + WebGL warp field)

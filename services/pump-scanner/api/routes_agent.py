@@ -302,14 +302,19 @@ def _enrich_context_with_memory_and_prompt(
     try:
         from agent.prompt_loader import get_prompt_loader
         loader = get_prompt_loader()
+        # lazy load:singleton 没人启动调 load_from_disk,首次访问空时 load 一次
+        if not loader.list_prompts():
+            n = loader.load_from_disk()
+            log.info("[prompt_loader] lazy loaded %d prompt versions", n)
         device_id = ctx.get("device_id") or user_id or ""
-        spec = loader.select_version("P01_chat_clarify", device_id)
+        spec = loader.select_version("P01", device_id)  # frontmatter prompt_id="P01"
         if spec is not None:
             ctx["prompt_meta"] = {
-                "id": "P01_chat_clarify",
+                "id": "P01",
                 "version": getattr(spec, "version", None),
-                "rollout_stage": getattr(spec, "rollout_stage", None),
-                "model": getattr(spec, "model", None),
+                "status": getattr(spec, "status", None),
+                "rollout_pct": getattr(spec, "rollout_pct", None),
+                "model": (spec.frontmatter.get("model") if hasattr(spec, "frontmatter") else None),
             }
     except Exception as e:
         log.debug("[prompt_loader] skip enrichment: %s", e)

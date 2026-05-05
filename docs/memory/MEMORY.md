@@ -1,15 +1,22 @@
 # Project Memory — Agent-Trading
 
-## ⚠️ 上线状态(2026-05-05 R40 完结)
+## ⚠️ 上线状态(2026-05-05 R41 完结 — chat 8/8 全接)
 
 | 维度 | 状态 |
 |---|---|
 | 团队内测推送 | ✅ 可以 |
-| **真付费用户上线** | ✅ **可以** — chat 8 项集成 7 项接通(R39 v5 memory + R40 guards + R37 P0) |
-| 总对齐设计 | ~92%(R36 70% → R37 85% → R40 92%) |
+| **真付费用户上线** | ✅ **可以** — chat 8 项集成全接通(R39 v5 + R40 + R41) |
+| 总对齐设计 | ~95%(R36 70% → R37 85% → R40 92% → R41 95%) |
 | Helix 官网 | ✅ http://www.ai100trading.cn 已上线 |
 | Anthropic API quota | ✅ $500/月 workspace key |
-| 服务器 head | `5010ca0`(agent-v1) |
+| 服务器 head | `3065f6d`(agent-v1) |
+
+**R41 — chat 接最后 3 项**(2026-05-05,commit `3065f6d`):
+1. ✅ semantic_memory(`mem.semantic.get_all_active()` top 5 注 ctx.active_semantic_rules)
+2. ✅ output_filter(LLM 输出过 C1 blocklist;违规 sanitize + 写 audit warn;stream 路径 yield warning event)
+3. ✅ working_memory(chat 末尾 `mem.working.add({kind:chat, user_msg, ai_msg_head, has_strategy})`)
+- 同时改 R40 `MemoryManager()` → `get_memory_manager()` 单例(缓存生效)
+- 9 新测试覆盖,累计 29/29(R39v5+R40 20 + R41 9)
 
 **R40 — chat 6 模块集成**(2026-05-05,commit `5010ca0`):
 1. ✅ rollout_gate(`agent_v1` 默认 100% 灰度埋点)

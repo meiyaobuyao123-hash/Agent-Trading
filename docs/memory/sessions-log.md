@@ -4430,3 +4430,35 @@ routes_agent.py +191 行:
 - pump-scanner-api active,port 8000 LISTEN,/health 200
 - pump-scanner active(scanner 主进程)
 - security_audit_log 表已被使用(id=5 写入测试拦截记录)
+
+---
+
+## 2026-05-05 — R41 完结(chat 8/8 全接通)
+
+### Audit 之后用户问"还有没有没接的"
+系统性扫 `agent/` 目录,找出 3 项真该接但还没接 + 其余按设计就不该接 chat。
+
+### R41:接最后 3 项(commit `3065f6d`)
+- **semantic_memory** P0:`mem.semantic.get_all_active()` top 5 → ctx.active_semantic_rules(LLM 决策可参考已 graduated 规则)
+- **output_filter** P0:LLM **输出**(ai_message)过 C1 blocklist;chat() sanitize 替换违规词 + audit warn;chat_stream() 末尾对累积 assistant text 跑 filter,违规 yield {type:warning} 事件(流式不能 sanitize 已发出 token)
+- **working_memory** P1:chat 末尾 `mem.working.add({kind:chat, user_msg, ai_msg_head, has_strategy, summary, ts})`
+- 同时改 R40 `MemoryManager()` → `get_memory_manager()` 单例(缓存生效)
+
+### 按设计就不该接 chat 的(已确认合理)
+ab_test_manager / reflection / thesis_loop / chat_loop / cocreation_state_machine / backtester / push_service / strategy_manager / kms_client / monitor_job / regime_detector / decision_agent / debate / evaluator — 各自有独立路径或反向链。
+
+### 测试 29/29 全过
+新 9 测试:
+- TestSemanticMemoryEnrich(2)
+- TestFilterLlmOutput(4)
+- TestRecordChatToWorkingMemory(3)
+
+### 验证
+- "百倍暴涨" 用户输入侧被 input_filter c1_blocklist 拦截(audit log id=6 critical),反过来证明 input_filter 路径正常 — 这同时意味着 output_filter 触发只能等 LLM 自发说违规词(自然场景罕见,unit test 覆盖足)
+- 服务器 head=`3065f6d`,active,/health 200
+
+### 接通进度
+- R36 audit:1/8 = 12.5%
+- R39 v5:1/8(只加了 chat memory,不算 audit 模块)
+- R40:7/8 = 87.5%(+ rollout/input_filter/cost_guard/audit/prompt_loader/episodic)
+- **R41:8/8 = 100%**(+ semantic/output_filter/working)

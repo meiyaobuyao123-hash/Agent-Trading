@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 // 使用系统级加密存储保管私钥/助记词（iOS Keychain / Android Keystore）
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'agent_service.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  钱包管理服务 — 本地存储 + 多链支持
@@ -231,7 +233,49 @@ class WalletService extends ChangeNotifier {
     _wallets.add(wallet);
     await _persist();
     notifyListeners();
+
+    // R42 P1:同步到后端 AES 加密存 DB(异步,失败不阻断本地存储)
+    // 后端拿到才能在 trade_executor 里全自动签名
+    unawaited(_pushWalletToBackend(
+      chain: chain,
+      publicKey: address,
+      privateKey: trimmed,
+      label: name,
+      setDefault: wallet.isDefault,
+    ));
+
     return wallet;
+  }
+
+  /// R42 P1:推送私钥到后端(AES 加密存 DB),失败 log 不阻断
+  Future<void> _pushWalletToBackend({
+    required String chain,
+    required String publicKey,
+    required String privateKey,
+    required String label,
+    required bool setDefault,
+  }) async {
+    try {
+      final ready = await AgentService.instance.walletMasterReady();
+      if (!ready) {
+        debugPrint('[WalletService] 后端 master_key 未就绪,跳过推送');
+        return;
+      }
+      final resp = await AgentService.instance.importWalletToBackend(
+        chain: chain,
+        publicKey: publicKey,
+        privateKey: privateKey,
+        label: label,
+        setDefault: setDefault,
+      );
+      if (resp['success'] == true) {
+        debugPrint('[WalletService] 钱包已推送到后端 (encrypted)');
+      } else {
+        debugPrint('[WalletService] 推送失败: ${resp['error']}');
+      }
+    } catch (e) {
+      debugPrint('[WalletService] 推送异常: $e');
+    }
   }
 
   /// 获取钱包私密信息（助记词/私钥）— 从系统加密存储区读取

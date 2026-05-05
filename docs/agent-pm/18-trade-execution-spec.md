@@ -8,21 +8,74 @@
 
 ---
 
-## 1. 私钥管理 — WalletConnect(取代 KMS)
+## 1. 私钥管理 — AES-256-GCM 加密存 DB(R42 P1 最终方案)
 
-### 1.1 决策背景
+### 1.1 决策演化(三次推翻)
 
-**KMS 方案(原 R37 W3 设计)的问题**:
-- AWS/GCP KMS 都按调用次数收费(每月 20K 免费,超出 $0.03/10K + 每 key $1/月)
-- 需要后端持有用户私钥(即使在硬件里),仍是单点风险
-- 用户跑路 / 服务器被黑 → 仍可能丢币
+**v1 KMS 方案(R37 W3 原计划)的问题**:
+- AWS/GCP KMS 按调用次数收费,key 月费 $1
+- 即使在 KMS 里,服务器被黑仍可调 KMS API 用其身份解密
+- 接入复杂(需要 IAM role / IAM policy / encrypt context)
 
-**WalletConnect 方案(R42 决定)**:
-- 用户在自己手机的 **Phantom (Solana)** / **MetaMask (EVM)** 钱包里持有私钥
-- 我们后端**永不持有用户私钥**
-- 后端构造 unsigned tx → 通过 WalletConnect deep link 推给用户钱包 → 用户在自己 App 里点确认 → 签好的 tx 推回我们广播
-- **完全免费**(协议开源,SDK 开源,无 API 调用费)
-- **行业标准**(Jupiter / Raydium / Magic Eden 全这么做)
+**v2 WalletConnect 方案(2026-05-05 上午曾推荐,**已废弃**)的问题**:
+- WalletConnect 每笔交易需用户在 Phantom App 点确认
+- **跟 R42 P0.3 全自动化决策直接冲突**(用户希望真"自动驾驶",不要任何打断)
+- 适合"NFT 单次签名"场景,**不适合自动化交易**
+
+**v3 AES-256-GCM 加密存 DB(R42 P1 最终方案)**:
+- 用户在 Flutter "导入私钥"输入框粘贴一次
+- 后端 [agent/crypto_box.py](../../services/pump-scanner/agent/crypto_box.py) 用 master_key 加密 → 存 [user_wallets.encrypted_private_key](../../services/pump-scanner/migrations/local_pg/043_user_wallets.sql)
+- 私钥**永不返给前端**(即使 list-wallets 返也只含 public_key)
+- 每次交易 trade_executor → `routes_wallet.get_decrypted_wallet()` 解密 → 签名 → 立刻丢
+- **全自动化**:用户不用点任何确认
+- **完全免费**:本地 PG + cryptography Python 库
+
+### 1.2 安全分析
+
+| 攻击面 | 防御 |
+|---|---|
+| PG dump 单独泄漏 | 拿不出私钥(没 master_key) |
+| master_key 单独泄漏(env 文件) | 拿不出私钥(没 PG) |
+| **服务器被全黑**(同时拿到 PG + master_key) | 私钥可解 — 同 KMS / Vault 同问题 |
+| 篡改 encrypted_blob | AESGCM auth tag 校验失败,decrypt 抛 InvalidTag |
+| 重放攻击 | 每次加密用随机 nonce,blob 每次不同 |
+
+**对比 KMS**:KMS 多一层硬件保护,但同样情况下 attacker 可用服务器身份调 KMS API。差距没那么大。
+
+### 1.3 master_key 管理
+
+```bash
+# 生成新 master_key(32 字节 base64,只跑一次)
+python3 -c "from agent.crypto_box import generate_new_master_key_b64; print(generate_new_master_key_b64())"
+
+# 写入 .env(servers/.env;不入 git)
+WALLET_MASTER_KEY=<output>
+```
+
+⚠️ master_key **永远不入 git**;改 master_key 必须**重加密所有 user_wallets**。
+
+### 1.4 集成点
+
+**Flutter**:
+- [apps/app/lib/services/wallet_service.dart](../../apps/app/lib/services/wallet_service.dart) `importFromPrivateKey` → 本地 secure storage + 异步 `_pushWalletToBackend`
+- [apps/app/lib/services/agent_service.dart](../../apps/app/lib/services/agent_service.dart) `importWalletToBackend` 调 POST `/api/wallet/import`
+
+**后端**:
+- [services/pump-scanner/agent/crypto_box.py](../../services/pump-scanner/agent/crypto_box.py) AES-256-GCM helpers
+- [services/pump-scanner/api/routes_wallet.py](../../services/pump-scanner/api/routes_wallet.py) import / list / delete / set_default endpoints
+- [services/pump-scanner/agent/trade_executor.py](../../services/pump-scanner/agent/trade_executor.py) `_resolve_wallet` 优先从 DB 拉(fallback .env)
+
+**测试**:
+- [tests/test_crypto_box.py](../../services/pump-scanner/tests/test_crypto_box.py) 16 单测(round-trip / 篡改 / 错 master_key / 边界)
+
+### 1.5 异常处理
+
+| 异常 | 处理 |
+|---|---|
+| master_key 未配置 | encrypt/decrypt 抛 RuntimeError(明显错,用户能修) |
+| trade_executor 拉私钥失败 | fallback .env(过渡期);全失败 → trade 拒(返 success=False) |
+| 用户首次导入未连后端 | 本地仍存(secure storage),后端推送失败 log warning |
+| PG 不可用 | wallet/list 返空数组(不 crash);trade_executor 用 .env fallback |
 
 ### 1.2 集成方式
 

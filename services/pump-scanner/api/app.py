@@ -36,6 +36,7 @@ from api.routes_hot import router as hot_router
 from api.routes_thesis import router as thesis_router      # W3 D3
 from api.routes_audit import router as audit_router        # W3 D3
 from api.routes_admin import router as admin_router        # W3 D3
+from api.routes_wallet import router as wallet_router      # R42 P1 私钥加密
 
 log = logging.getLogger(__name__)
 
@@ -95,6 +96,7 @@ app.include_router(hot_router)
 app.include_router(thesis_router)
 app.include_router(audit_router)
 app.include_router(admin_router)
+app.include_router(wallet_router)  # R42 P1 钱包私钥加密管理
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

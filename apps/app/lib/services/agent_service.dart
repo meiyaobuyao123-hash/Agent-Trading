@@ -416,6 +416,71 @@ class AgentService {
     } catch (_) { return false; }
   }
 
+  /// R42 P1 检查后端 master_key 是否就绪(导入私钥前查一下)
+  Future<bool> walletMasterReady() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/wallet/master-status'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        return body['ready'] == true;
+      }
+      return false;
+    } catch (_) { return false; }
+  }
+
+  /// R42 P1 导入钱包到后端(AES 加密存 DB)
+  /// 返:{success, error?, wallet?{id,public_key,chain,...}}
+  Future<Map<String, dynamic>> importWalletToBackend({
+    required String chain,
+    required String publicKey,
+    required String privateKey,
+    String? label,
+    bool setDefault = false,
+  }) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/wallet/import'),
+        headers: _headers,
+        body: jsonEncode({
+          'chain': chain,
+          'public_key': publicKey,
+          'private_key': privateKey,
+          if (label != null) 'label': label,
+          'set_default': setDefault,
+        }),
+      ).timeout(_timeout);
+      if (resp.statusCode == 201 || resp.statusCode == 200) {
+        return {'success': true, 'wallet': jsonDecode(resp.body)};
+      }
+      // 解析错误体
+      String error = 'HTTP ${resp.statusCode}';
+      try {
+        final body = jsonDecode(resp.body) as Map<String, dynamic>;
+        error = body['detail']?.toString() ?? error;
+      } catch (_) {}
+      return {'success': false, 'error': error};
+    } catch (e) {
+      return {'success': false, 'error': e.toString()};
+    }
+  }
+
+  /// R42 P1 列出后端钱包(不含私钥)
+  Future<List<Map<String, dynamic>>> listBackendWallets() async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/wallet/list'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        return (jsonDecode(resp.body) as List).cast<Map<String, dynamic>>();
+      }
+      return [];
+    } catch (_) { return []; }
+  }
+
   /// R42 P0.4 合并交易记录(paper + live)
   Future<Map<String, dynamic>> getTradesMerged(String strategyId, {int limit = 50}) async {
     try {

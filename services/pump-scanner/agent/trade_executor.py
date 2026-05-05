@@ -491,17 +491,45 @@ class TradeExecutor:
                 chain=chain, token_address=token_address, action=action,
             )
 
-    # ── 钱包解析 ─────────────────────────────────────────────
+    # ── 钱包解析(R42 P1: 优先 DB user_wallets,fallback .env)─
 
     def _resolve_wallet(
         self, chain: str,
         wallet_address: Optional[str], private_key: Optional[str],
+        user_id: Optional[str] = None,
     ) -> Tuple[str, str]:
-        """从参数或环境变量解析钱包"""
-        addr = wallet_address or os.getenv("TRADE_WALLET_ADDRESS", "")
-        key = private_key or os.getenv("TRADE_WALLET_PRIVATE_KEY", "")
+        """解析钱包地址 + 私钥。
 
-        # 支持按链指定
+        R42 P1 优先级:
+          1. 函数入参 wallet_address + private_key(callers 显式传)
+          2. user_id 提供 → 查 user_wallets 表(AES 解密)
+          3. .env TRADE_WALLET_PRIVATE_KEY[_CHAIN](过渡期/dev 用)
+
+        永远不返私钥到 log / response。
+        """
+        # 1. 入参优先
+        if wallet_address and private_key:
+            return wallet_address, private_key
+        addr = wallet_address or ""
+        key = private_key or ""
+
+        # 2. R42 P1:从 DB 拉(user_id 提供时)
+        if not key and user_id:
+            try:
+                from api.routes_wallet import get_decrypted_wallet
+                w = get_decrypted_wallet(user_id, chain)
+                if w:
+                    return w["public_key"], w["private_key"]
+            except Exception as e:
+                log.debug("[trade_executor] user_wallets 拉失败,fallback env: %s", e)
+
+        # 3. fallback .env(过渡期 / dev 用)
+        if not addr:
+            addr = os.getenv("TRADE_WALLET_ADDRESS", "")
+        if not key:
+            key = os.getenv("TRADE_WALLET_PRIVATE_KEY", "")
+
+        # 支持按链指定 env
         if not addr:
             addr = os.getenv(f"TRADE_WALLET_ADDRESS_{chain.upper()}", "")
         if not key:

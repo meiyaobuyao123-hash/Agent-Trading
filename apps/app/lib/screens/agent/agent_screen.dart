@@ -6,6 +6,7 @@ import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
+import '../../widgets/wallet_import_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
 import '../../widgets/agent/cocreation_stepper.dart';
 import '../../models/thesis.dart';
@@ -1288,23 +1289,44 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               ),
             ] else ...[
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: c.warningLight,
+              // R42 P0.3.5 Fix 1:钱包未导入 → 可点击调出导入 sheet
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () async {
+                    final w = await showWalletImportSheet(context);
+                    if (w != null && mounted) {
+                      setState(() {
+                        _selectedWalletId = w.id;
+                      });
+                    }
+                  },
                   borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.warning_amber_rounded, color: c.warning, size: 16),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        S.of(context).notImported,
-                        style: TextStyle(color: c.warning, fontSize: 12),
-                      ),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: c.warningLight,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: c.warning.withValues(alpha: 0.3), width: 0.5),
                     ),
-                  ],
+                    child: Row(
+                      children: [
+                        Icon(Icons.account_balance_wallet_outlined, color: c.warning, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${S.of(context).notImported} · 点击导入',
+                            style: TextStyle(
+                              color: c.warning,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.arrow_forward_ios, color: c.warning, size: 11),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -1443,24 +1465,34 @@ class _ConfirmCardState extends State<_ConfirmCard> {
 
   Widget _slider(AppColorScheme c, String label, double value,
       double min, double max, ValueChanged<double> onChanged, String suffix) {
+    // R42 P0.3.5 Fix 2:数字 + 单位拆分,字号加大,Ripple 反馈,label 列加宽
+    final unit = suffix.trim();  // '%' / 'SOL'
+    final isPercent = unit == '%';
+    final numText = isPercent
+        ? value.toStringAsFixed(value < 1 ? 1 : 0)
+        : value.toStringAsFixed(4);
     return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
           SizedBox(
-            width: 52,
+            width: 64,  // 52 → 64,容下 "MEV 贿赂" 中文
             child: Text(label,
-                style: TextStyle(color: c.textSecondary, fontSize: 11)),
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                )),
           ),
           Expanded(
             child: SliderTheme(
               data: SliderThemeData(
-                trackHeight: 2,
-                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                trackHeight: 3,  // 2 → 3 触感更好
+                thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
                 activeTrackColor: c.primary,
                 inactiveTrackColor: c.border,
                 thumbColor: c.primary,
-                overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
               ),
               child: Slider(
                 value: value.clamp(min, max),
@@ -1470,23 +1502,49 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               ),
             ),
           ),
-          GestureDetector(
-            onTap: () => _showValueEditor(c, label, value, min, max, onChanged, suffix),
-            child: Container(
-              width: 68,
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-              decoration: BoxDecoration(
-                color: c.surfaceAlt,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: c.border, width: 0.5),
-              ),
-              child: Text(
-                suffix == '%'
-                    ? '${value.toStringAsFixed(value < 1 ? 1 : 0)}$suffix'
-                    : '${value.toStringAsFixed(4)}$suffix',
-                textAlign: TextAlign.right,
-                style: TextStyle(
-                    color: c.primary, fontSize: 11, fontWeight: FontWeight.w600),
+          // 数字框:Material+InkWell 提供 ripple,数字 + 单位拆开排版
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => _showValueEditor(c, label, value, min, max, onChanged, suffix),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                width: 88,  // 68 → 88
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: c.surfaceAlt,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: c.border, width: 0.5),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        numText,
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: c.primary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      unit,
+                      style: TextStyle(
+                        color: c.textTertiary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -1504,23 +1562,38 @@ class _ConfirmCardState extends State<_ConfirmCard> {
     );
     showDialog(
       context: context,
-      barrierColor: Colors.black87,
+      barrierColor: Colors.black54,  // R42 P0.3.5 Fix 3:black87 → black54 更柔和
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1A1F2E),
+        backgroundColor: c.surface,  // hardcoded 0xFF1A1F2E → 主题色,适配 light/dark
+        elevation: 8,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(label, style: TextStyle(color: c.textPrimary, fontSize: 15)),
+        title: Text(
+          label,
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
         content: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           autofocus: true,
-          style: TextStyle(color: c.textPrimary, fontSize: 16),
+          style: TextStyle(
+            color: c.textPrimary,
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
           decoration: InputDecoration(
             suffixText: suffix.trim(),
-            suffixStyle: TextStyle(color: c.textSecondary, fontSize: 14),
+            suffixStyle: TextStyle(
+              color: c.textSecondary, fontSize: 14, fontWeight: FontWeight.w500,
+            ),
             hintText: '${min.toStringAsFixed(suffix == '%' ? 0 : 4)} - ${max.toStringAsFixed(suffix == '%' ? 0 : 4)}',
             hintStyle: TextStyle(color: c.textTertiary, fontSize: 13),
             enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.border)),
-            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.primary)),
+            focusedBorder: UnderlineInputBorder(borderSide: BorderSide(color: c.primary, width: 1.5)),
           ),
           onSubmitted: (v) {
             final parsed = double.tryParse(v);
@@ -1535,7 +1608,13 @@ class _ConfirmCardState extends State<_ConfirmCard> {
             onPressed: () => Navigator.of(ctx).pop(),
             child: Text(S.of(context).cancel, style: TextStyle(color: c.textTertiary)),
           ),
-          TextButton(
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: c.primary,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
             onPressed: () {
               final parsed = double.tryParse(controller.text);
               if (parsed != null) {
@@ -1543,7 +1622,7 @@ class _ConfirmCardState extends State<_ConfirmCard> {
               }
               Navigator.of(ctx).pop();
             },
-            child: Text('OK', style: TextStyle(color: c.primary)),
+            child: const Text('确认', style: TextStyle(fontWeight: FontWeight.w600)),
           ),
         ],
       ),

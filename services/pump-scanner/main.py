@@ -634,6 +634,26 @@ async def main():
     asyncio.create_task(event_bus.start())
     log.info("EventBus started")
 
+    # ══════════════════════════════════════════════════════════
+    # R42 P0.1:启动 position_monitor 常驻 loop(止盈止损真触发)
+    # 每 30s 扫一次所有 open 持仓 + 从 price_feed 拿当前价 + 触发
+    # stop_loss/take_profit/trailing_stop。失败不阻断 main loop。
+    # ══════════════════════════════════════════════════════════
+    async def _position_monitor_loop():
+        from agent.position_monitor import get_position_monitor
+        monitor = get_position_monitor()
+        log.info("[position_monitor_loop] 已启动 — 30s tick")
+        while True:
+            try:
+                count = await monitor.scan_and_check_now()
+                if count > 0:
+                    log.debug("[position_monitor_loop] tick scanned %d positions", count)
+            except Exception as e:
+                log.warning("[position_monitor_loop] tick fail: %s", e)
+            await asyncio.sleep(30)
+    asyncio.create_task(_position_monitor_loop())
+    log.info("position_monitor 常驻 loop 已启动 (R42 P0.1)")
+
     # 启动 Agent 事件驱动监听（毫秒级策略评估）
     try:
         from agent.event_listener import start_event_listener

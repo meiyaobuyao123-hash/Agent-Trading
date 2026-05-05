@@ -302,6 +302,53 @@ class PositionMonitor:
         finally:
             self._selling.discard(eid)
 
+    async def scan_and_check_now(self) -> int:
+        """R42 P0.1:常驻 loop 每 30s 调一次 — 拉所有 open 持仓 + 从 price_feed
+        拿当前价 + 跑 check_all 触发止盈止损/追踪止损。
+
+        Returns:
+            int — 本次扫描的 position 数量(用于 log)
+
+        失败永不抛(catch all),保证 loop 不会因为单次错误中断。
+        """
+        try:
+            await self.load_positions()
+        except Exception as e:
+            log.warning("[PositionMonitor] load_positions failed: %s", e)
+            return 0
+
+        if not self._positions:
+            return 0
+
+        # 从 price_feed 拿每个 position 的当前价
+        try:
+            from price_feed import price_feed
+        except Exception as e:
+            log.warning("[PositionMonitor] price_feed import failed: %s", e)
+            return len(self._positions)
+
+        prices: Dict[str, float] = {}
+        for eid, pos in self._positions.items():
+            addr = (pos.token_address or "").lower()
+            if not addr:
+                continue
+            p = price_feed.get_token_price(addr)
+            if p and p > 0:
+                # 同时支持 "chain:address" 和纯 address 两种 key
+                prices[f"{pos.chain}:{addr}"] = p
+                prices[addr] = p
+
+        if not prices:
+            log.debug("[PositionMonitor] %d positions but 0 prices from feed", len(self._positions))
+            return len(self._positions)
+
+        try:
+            await self.check_all(prices)
+        except Exception as e:
+            log.warning("[PositionMonitor] check_all failed: %s", e)
+
+        return len(self._positions)
+
     async def execute_crisis_close_all(self) -> int:
         """PRD-006: CRISIS 清仓 — 按金额大到小逐个卖出
 

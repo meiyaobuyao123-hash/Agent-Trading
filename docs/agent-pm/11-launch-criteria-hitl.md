@@ -3,19 +3,21 @@
 > **v1 上线决策单一事实源**：整合 03-10 所有文档的上线门槛，一份清单说清"什么时候能 ship"。
 > 每条门槛必可验证、必有责任人、必有结论。
 
-> ⚠️ **R42 修订（2026-05-05）— HITL 阈值表(取代 5/15/60min 统一审批)**
+> ⚠️ **R42 修订（2026-05-05）— HITL 全废,改为完全全自动化**
 >
-> 触发档位由 **三维度** 自动判定:
+> 用户对齐 2026-05-05:
+> - **不要分层 auto/semi/manual**,所有交易直接执行
+> - **不要紧急停止开关**(用户单笔/单日上限 + 策略级 pause 已足够)
+> - **单日 cap = $50,000**(全 App 合计,明天 0 点重置)
 >
-> | 维度 | auto 档 | semi 档(默认) | manual 档 |
-> |---|---|---|---|
-> | 单笔金额 | < `auto_max_amount_usd`($20) | $20 - $200 | > $200 |
-> | 策略 graduated | ≥ 30 天 | 任意 | < 30 天 / 标 `is_high_risk` |
-> | 用户体验 | 直接下单 + 事后通知 | 推送 + 30s 撤销窗口 | 必须点确认 + 5/15/60min 审批 |
->
-> 用户可在策略层 `automation_level` 字段强制覆盖系统判定(超出限制时拒绝 + 提示)。
->
-> 全自动兜底:`daily_auto_cap_usd` 默认 $500/天,见 [08-safety-policy.md HR32](./08-safety-policy.md)。
+> **7 条兜底防线**(任一触发拒,见 [08-safety-policy.md HR35](./08-safety-policy.md)):
+> 1. paper mode → 直接通过(不消耗 daily cap)
+> 2. status archived/paused → 拒
+> 3. 单笔 > strategy.max_position_usd(默认 $5,000) → 拒
+> 4. sell 不受 daily cap / 连亏 / 回撤限制(让止损能正常出货)
+> 5. 全 App 单日累计 > $50,000 → 拒
+> 6. 该策略连续亏损 ≥ 3 笔 → 拒
+> 7. 该策略 30 天最大回撤 > 30% → 拒(锁回 paper)
 >
 > 详见 [18-trade-execution-spec.md §3](./18-trade-execution-spec.md)
 

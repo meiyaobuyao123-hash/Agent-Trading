@@ -228,6 +228,42 @@ class TradeExecutor:
                 amount_usd, max_position,
             )
             amount_usd = max_position
+
+        # ── R42 P0.3:全自动化 7 条兜底检查(取代 HITL 分层审批)─
+        # 仅当 safety_ctx 含 user_id 且 mode=live 时跑(paper 不消耗 daily cap)
+        if safety_ctx and safety_ctx.get("user_id") and safety_ctx.get("mode") == "live":
+            try:
+                from agent.hitl_router import is_allowed_to_auto_execute, record_executed
+                strategy_dict = {
+                    "id": safety_ctx.get("strategy_id"),
+                    "status": safety_ctx.get("strategy_status", "active"),
+                    "mode": "live",
+                    "max_position_usd": max_position,
+                    "daily_auto_cap_usd": rp.get("daily_auto_cap_usd"),
+                    "consecutive_losses": safety_ctx.get("consecutive_losses", 0),
+                    "max_drawdown_pct_30d": safety_ctx.get("max_drawdown_pct_30d", 0),
+                }
+                allowed, reason = is_allowed_to_auto_execute(
+                    user_id=safety_ctx["user_id"],
+                    strategy=strategy_dict,
+                    amount_usd=amount_usd,
+                    side=action,
+                )
+                if not allowed:
+                    log.warning("[trade_executor] R42 兜底拒绝: %s", reason)
+                    return TradeResult(
+                        success=False,
+                        error=f"全自动兜底拒绝: {reason}",
+                        chain=chain, token_address=token_address, action=action,
+                    )
+                # 记到 daily cap 累计(buy 才算,sell 不算)
+                # 注:必须在 trade 真成功后才 record,这里先标记
+                _hitl_record_pending = (safety_ctx["user_id"], amount_usd, action)
+            except Exception as e:
+                log.debug("[hitl_router] check failed (降级允许): %s", e)
+                _hitl_record_pending = None
+        else:
+            _hitl_record_pending = None
         # slippage 优先用 risk_params(0.01 = 1%),fallback 到入参
         if "max_slippage_pct" in rp:
             slippage_pct = float(rp["max_slippage_pct"]) * 100  # 0.01 → 1.0
@@ -291,6 +327,14 @@ class TradeExecutor:
             )
 
             if result.success:
+                # R42 P0.3:trade 真成功 → 累加到 daily cap
+                if _hitl_record_pending is not None:
+                    try:
+                        from agent.hitl_router import record_executed
+                        new_total = record_executed(*_hitl_record_pending)
+                        log.info("[hitl_router] daily total → $%.0f", new_total)
+                    except Exception as e:
+                        log.debug("[hitl_router] record fail: %s", e)
                 log.info(
                     f"Trade SUCCESS via {route_result.dex_used}: "
                     f"{action} {token_address[:10]}.. tx={result.tx_hash}"

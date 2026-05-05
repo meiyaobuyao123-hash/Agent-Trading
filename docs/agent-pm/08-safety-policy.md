@@ -3,19 +3,31 @@
 > **文档即代码**：本文件定义的规则会同步生成 `safety_policy.yaml`，Agent **每次决策前读取并强制执行**。
 > 违反本 Policy 的 PR 一律打回。运行时违规事件全部入 `security_audit_log`（180d 保留）。
 
-> ⚠️ **R42 修订（2026-05-05）— 新增 HR31 / HR32 + position_monitor 常驻**
+> ⚠️ **R42 修订（2026-05-05）— HR31~HR35 全自动化兜底**
+>
+> 用户决策:**完全无审批的全自动化** + **不要紧急开关**。所有交易直接执行,7 条硬兜底防线拦截异常。
 >
 > **HR31:实盘解锁条件**(paper → live promotion)
-> 必须全部满足:① 已连接钱包(WalletConnect / 过渡期允许填私钥) ② 已读 + 同意《免责声明》 ③ 单笔金额 ≤ $50(可调到 $500) ④ 已勾选"我知道会亏钱"。任一缺失 → 拒绝 promote。
+> 必须全部满足:① 已连接钱包(WalletConnect 出来前可填私钥过渡) ② 已读 + 同意《免责声明》 ③ 已勾选"我知道会亏钱"。任一缺失 → 拒绝 promote。
 >
-> **HR32:全自动模式日累计上限**
-> `automation_level=auto` 的策略,单日累计交易额 ≤ `daily_auto_cap_usd`(默认 $500)。超出强制冷却 1 小时,期间所有 auto 交易降级为 manual 审批。
+> **HR32:全自动模式日累计上限**(取代旧 $500 设计)
+> 全 App 所有 live 策略**合计**单日累计 ≤ `daily_auto_cap_usd`(默认 **$50,000**),超出当天剩余时间停,**第二天 0 点重置**。可在策略层覆盖 daily_auto_cap_usd。
 >
 > **HR33:止盈止损常驻执行**(R42 P0.1)
-> `position_monitor` 必须以常驻 loop 启动(30s tick),触达 stop_loss/take_profit/trailing_stop 时**真调** `trade_executor.execute_trade(side="sell")`。R42 之前是 schema-only,无人触发,被认定为产品级缺陷。
+> `position_monitor` 必须以常驻 loop 启动(30s tick),触达 stop_loss/take_profit/trailing_stop 时**真调** `trade_executor.execute_trade(side="sell")`。
 >
 > **HR34:trade_executor 必须读 risk_params**(R42 P0.2)
 > `slippage / priority_fee_sol / mev_bribe_sol / max_position_usd / stop_loss_pct / take_profit_pct` 全部从策略 `risk_params` 字段读取,不得 hardcoded。
+>
+> **HR35:全自动 7 条兜底**(R42 P0.3)
+> 见 [agent/hitl_router.py](../../services/pump-scanner/agent/hitl_router.py) `is_allowed_to_auto_execute()`:
+> 1. paper mode → 直接通过(不消耗 daily cap)
+> 2. status archived/paused → 拒
+> 3. 单笔 > strategy.max_position_usd(默认 $5,000) → 拒
+> 4. sell 不受 daily cap / 连亏 / 回撤限制(让止损能正常出货)
+> 5. 全 App 单日累计 > daily_auto_cap_usd → 拒
+> 6. 该策略连续亏损 ≥ 3 笔 → 拒(策略已自动暂停)
+> 7. 该策略 30 天最大回撤 > 30% → 拒(已锁回 paper)
 >
 > 详见 [18-trade-execution-spec.md](./18-trade-execution-spec.md)
 

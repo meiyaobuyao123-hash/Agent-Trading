@@ -3,13 +3,22 @@
 > 定义 Agent 本体：身份、能力、边界、Loop、状态机、失败模式、版本。
 > 本 Spec 是 [01 Vision](./01-product-vision.md) + [03 PRD](./03-prd.md) 的**工程实现契约**。
 
-> ⚠️ **R42 修订（2026-05-05）— HITL 改为分层自动化**
+> ⚠️ **R42 修订（2026-05-05）— HITL 全废,改为完全全自动化 + 7 条兜底**
 >
-> §HITL 的"5/15/60min 统一审批"已废弃。R42 改为按 **金额 + 策略类型 + 历史记录** 自动判定为 `auto` / `semi` / `manual` 三档,用户可在策略层覆盖。
+> §HITL 的"5/15/60min 统一审批"和"分层 auto/semi/manual 三档"全部废弃。R42 改为**完全无审批的全自动化**(用户对齐 2026-05-05 决策)。
 >
-> - **auto**:金额 < $20 + 已 graduated 30d → 直接下单 + 事后通知
-> - **semi**(默认):$20-$200 → 推送 + **30s 撤销窗口**(无操作即下单)
-> - **manual**:> $200 / 高风险策略 → **必须点确认**,才走 5/15/60min 审批
+> **流程**:AI 找到机会 → 7 条兜底检查 → 通过则直接执行 → 推送通知用户。
+>
+> **7 条兜底防线**(任一触发拒交易,见 [agent/hitl_router.py](../../services/pump-scanner/agent/hitl_router.py)):
+> 1. 单笔金额 > `strategy.max_position_usd`(默认 $5,000) → 拒
+> 2. 全 App 单日累计 > `daily_auto_cap_usd`(默认 **$50,000**) → 拒(明天 0 点重置)
+> 3. 该策略连续亏损 ≥ 3 笔 → 自动暂停
+> 4. 该策略 30 天最大回撤 > 30% → 强制锁回 paper
+> 5. 单笔持仓亏 > 50% → 自动平仓 + 暂停(由 position_monitor 触发)
+> 6. safety_engine 30 HR + 13 CB(已有,trade_executor 内 wire)
+> 7. input_filter / cost_guard / output_filter(R40+R41 chat 路径已 wire)
+>
+> **不要紧急停止开关**(用户决策):用户单笔/单日上限 + 策略级 pause 已足够。
 >
 > 详见 [18-trade-execution-spec.md §3](./18-trade-execution-spec.md)
 

@@ -82,51 +82,77 @@
 
 ---
 
-## 3. HITL 分层自动化(取代统一 5/15/60min 审批)
+## 3. 全自动化 + 7 条兜底(取代 HITL 审批)
 
-### 3.1 设计背景
+### 3.1 设计背景 + 用户决策
 
 **原设计问题**:所有真金交易都强制 5/15/60min 审批。但 pump.fun 秒级机会等 5 分钟早飞了。
 
-**R42 改为分层**:按"金额 + 策略类型 + 历史记录"自动判 + 用户可在策略层覆盖。
+**R42 v1 (2026-05-05 上午)**:曾设计三档分层(auto/semi/manual),按金额自动判 + 用户覆盖。
 
-### 3.2 三档自动化
+**R42 v2 (2026-05-05 下午,与用户对齐)**:**完全废弃分层 + 不要紧急开关**。理由:
+- 用户希望真"自动驾驶"体验,不要任何打断
+- 三档过度复杂,用户决策成本高
+- 只要兜底足够强,全自动是最佳产品形态
 
-| 档位 | 触发条件(自动判) | 用户体验 |
-|---|---|---|
-| **auto** | 金额 < `auto_max_amount_usd`(默认 $20) **且** 策略已 graduated 30 天 | 直接下单,事后推送通知 |
-| **semi**(默认) | $20 ≤ 金额 ≤ $200 **或** 策略 graduated < 30 天 | **推送 + 30s 撤销窗口**(用户不操作 → 自动下单) |
-| **manual** | 金额 > $200 **或** 高风险策略(标 `is_high_risk=true`) | **必须点确认**,5/15/60min 审批 |
+### 3.2 流程(4 步,无审批)
 
-### 3.3 用户覆盖
-
-策略详情 UI 暴露 `automation_level` 三档手动选择,用户可强制覆盖系统判定:
-- 如选 `auto` 但金额 > `auto_max_amount_usd` → 拒绝设置 + 提示
-- 如选 `manual`,所有交易都走全审批
-
-### 3.4 全自动模式的兜底保护
-
-- `daily_auto_cap_usd`(默认 $500/天):全自动模式日累计上限,超出强制冷却 1 小时
-- 单笔亏损 > 50% → 强制平仓 + 暂停该策略
-- 写 `security_audit_log` event_type=`hitl_decision` severity=`info`,事后可审
-
-### 3.5 hitl_router 接口
-
-新建 [agent/hitl_router.py](../../services/pump-scanner/agent/hitl_router.py):
-
-```python
-def decide_hitl_level(
-    amount_usd: float,
-    strategy: Dict,
-    daily_auto_used_usd: float,
-) -> Literal["auto", "semi", "manual"]:
-    # 1. 用户强制 manual / auto → 检查约束后直接返
-    # 2. 否则按金额 + graduated 自动判
-    # 3. 全自动日累计超 cap → 降级 semi
-    ...
+```
+AI 找到机会 → 7 条兜底检查 → 通过则 trade_executor.execute_trade → 推送通知用户
 ```
 
-trade_executor 每次 trade 前调一次 → 决定走哪条流程。
+### 3.3 7 条兜底防线
+
+实现:[agent/hitl_router.py](../../services/pump-scanner/agent/hitl_router.py) `is_allowed_to_auto_execute()`
+
+| # | 防线 | 触发 | 动作 |
+|---|---|---|---|
+| 1 | paper mode | mode == "paper" | **直接通过**(不消耗 daily cap) |
+| 2 | 策略状态 | status in (archived, paused) | 拒,推送 "策略已暂停" |
+| 3 | 单笔上限 | amount > strategy.max_position_usd(默认 $5,000) | 拒,推送 "单笔超限" |
+| 4 | sell 豁免 | side == "sell" | **跳过 daily cap / 连亏 / 回撤检查**(止损必须能出货) |
+| 5 | 单日累计 | 全 App 累计 > daily_auto_cap_usd(默认 **$50,000**) | 拒,明天 0 点重置 |
+| 6 | 连续亏损 | strategy.consecutive_losses ≥ 3 | 策略自动暂停,推送 "已暂停" |
+| 7 | 30 天回撤 | strategy.max_drawdown_pct_30d > 30% | 强制锁回 paper |
+
+**额外继承**(已有,无需新加):
+- `safety_engine` 30 HR + 13 CB(trade_executor 内部已 wire)
+- `input_filter / cost_guard / output_filter`(R40+R41 chat 路径已 wire)
+- `position_monitor`(R42 P0.1)单笔亏 > 50% 自动平仓
+
+### 3.4 hitl_router 接口
+
+```python
+from agent.hitl_router import is_allowed_to_auto_execute, record_executed
+
+# trade 之前 check
+allowed, reason = is_allowed_to_auto_execute(
+    user_id=user_id,
+    strategy=strategy_dict,  # {id, status, mode, max_position_usd, ...}
+    amount_usd=amount,
+    side="buy",  # or "sell"
+)
+if not allowed:
+    push_user(f"自动交易被拦: {reason}")
+    return
+
+# trade 真成功后 record(buy 才累计,sell 跳过)
+record_executed(user_id, amount, side="buy")
+```
+
+### 3.5 不要紧急开关(用户决策)
+
+不实现"全 App 一键停所有交易"按钮。理由:
+- 用户单笔上限 + 单日上限 + 策略级 pause 已足够
+- 紧急开关增加按钮 + UI 状态复杂度
+- 出事时用户可逐策略 pause(承担多 30 秒延迟)
+
+### 3.6 daily cap 实现说明
+
+- **进程级内存** dict `_daily_totals[user_id][date_iso]`
+- 失败降级:DB 不可用不阻断 trade(只 log warning)
+- 进程重启 cap 清零(可接受 — 内测期;R43 改 Redis 持久化)
+- **GC**:每次 record 自动清掉非今天的 entry,内存占用 O(N user)
 
 ---
 

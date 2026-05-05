@@ -250,6 +250,115 @@ class TestEnrichContext:
     def test_handles_episodic_failure(self):
         """MemoryManager 抛错 → 静默,只是不注 recent_episodes"""
         from api.routes_agent import _enrich_context_with_memory_and_prompt
-        with patch("agent.memory.MemoryManager", side_effect=RuntimeError("DB down")):
+        with patch("agent.memory.get_memory_manager", side_effect=RuntimeError("DB down")):
             ctx = _enrich_context_with_memory_and_prompt({}, "user_g")
             assert "recent_episodes" not in ctx
+            assert "active_semantic_rules" not in ctx
+
+
+# ============================================================
+# R41 P0: semantic_memory 注入
+# ============================================================
+
+class TestSemanticMemoryEnrich:
+
+    def test_active_rules_injected_into_ctx(self):
+        from api.routes_agent import _enrich_context_with_memory_and_prompt
+        fake_mem = type("M", (), {})()
+        fake_mem.episodic = type("E", (), {"search": lambda self, **kw: []})()
+        fake_mem.semantic = type("S", (), {
+            "get_all_active": lambda self: [
+                {"id": "r1", "content": "高 RSI 时减仓 50%", "chain": "sol", "trigger_source": "rsi"},
+                {"id": "r2", "content": "honeypot 不进", "chain": None, "trigger_source": "scan"},
+            ],
+        })()
+        with patch("agent.memory.get_memory_manager", return_value=fake_mem):
+            ctx = _enrich_context_with_memory_and_prompt({}, "user_h")
+        assert "active_semantic_rules" in ctx
+        assert len(ctx["active_semantic_rules"]) == 2
+        assert ctx["active_semantic_rules"][0]["id"] == "r1"
+        assert ctx["active_semantic_rules"][0]["chain"] == "sol"
+
+    def test_caps_at_5_rules(self):
+        from api.routes_agent import _enrich_context_with_memory_and_prompt
+        fake_mem = type("M", (), {})()
+        fake_mem.episodic = type("E", (), {"search": lambda self, **kw: []})()
+        fake_mem.semantic = type("S", (), {
+            "get_all_active": lambda self: [
+                {"id": f"r{i}", "content": f"rule {i}"} for i in range(20)
+            ],
+        })()
+        with patch("agent.memory.get_memory_manager", return_value=fake_mem):
+            ctx = _enrich_context_with_memory_and_prompt({}, "user_i")
+        assert len(ctx["active_semantic_rules"]) == 5
+
+
+# ============================================================
+# R41 P0: _filter_llm_output(LLM 输出 C1-C5 防御)
+# ============================================================
+
+class TestFilterLlmOutput:
+
+    def test_clean_text_passes_unchanged(self):
+        from api.routes_agent import _filter_llm_output
+        text = "建议查看一下 RSI 指标,当前市场震荡为主"
+        assert _filter_llm_output("user_j", text) == text
+
+    def test_blocklist_word_sanitized(self):
+        """'百倍' / '稳的' 等 C1 词触发 sanitize"""
+        from api.routes_agent import _filter_llm_output
+        text = "这个币稳的,大概率百倍"
+        result = _filter_llm_output("user_k", text)
+        # sanitized_text 把违规词替换为 [禁用]
+        assert "[禁用]" in result
+        assert "稳的" not in result
+        assert "百倍" not in result
+
+    def test_empty_returns_empty(self):
+        from api.routes_agent import _filter_llm_output
+        assert _filter_llm_output("user_l", "") == ""
+        assert _filter_llm_output("user_l", None) is None  # type: ignore
+
+    def test_filter_failure_returns_original(self):
+        """output_filter 抛错 → 静默返原文(降级,不阻断)"""
+        from api.routes_agent import _filter_llm_output
+        with patch("agent.output_filter.filter_output", side_effect=RuntimeError("regex broken")):
+            text = "原文"
+            assert _filter_llm_output("user_m", text) == text
+
+
+# ============================================================
+# R41 P1: working_memory 埋点
+# ============================================================
+
+class TestRecordChatToWorkingMemory:
+
+    def test_normal_chat_recorded(self):
+        from api.routes_agent import _record_chat_to_working_memory
+        added = []
+        fake_mem = type("M", (), {})()
+        fake_mem.working = type("W", (), {"add": lambda self, ev: added.append(ev)})()
+        with patch("agent.memory.get_memory_manager", return_value=fake_mem):
+            _record_chat_to_working_memory("user_n", "查涨幅榜", "TOP30 给你了", False)
+        assert len(added) == 1
+        ev = added[0]
+        assert ev["kind"] == "chat"
+        assert ev["user_id"] == "user_n"
+        assert "查涨幅榜" in ev["user_msg"]
+        assert ev["has_strategy"] is False
+
+    def test_with_strategy_flag(self):
+        from api.routes_agent import _record_chat_to_working_memory
+        added = []
+        fake_mem = type("M", (), {})()
+        fake_mem.working = type("W", (), {"add": lambda self, ev: added.append(ev)})()
+        with patch("agent.memory.get_memory_manager", return_value=fake_mem):
+            _record_chat_to_working_memory("user_o", "建一个策略", "已建", True)
+        assert added[0]["has_strategy"] is True
+
+    def test_failure_silent(self):
+        """working.add 抛错 → 静默"""
+        from api.routes_agent import _record_chat_to_working_memory
+        with patch("agent.memory.get_memory_manager", side_effect=RuntimeError("mem down")):
+            # 不应抛
+            _record_chat_to_working_memory("user_p", "msg", "ai", False)

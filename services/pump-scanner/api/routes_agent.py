@@ -319,14 +319,14 @@ def _enrich_context_with_memory_and_prompt(
     except Exception as e:
         log.debug("[prompt_loader] skip enrichment: %s", e)
 
-    # ── episodic_memory:user 最近 3 条历史案例 ─────────────
+    # ── episodic_memory + semantic_memory(R40+R41:用单例,缓存生效)──
     try:
-        from agent.memory import MemoryManager
-        mem = MemoryManager()
-        # 通用 chat 没有具体 trigger_source,用 search 拿 user 最近案例(无 filter)
+        from agent.memory import get_memory_manager
+        mem = get_memory_manager()
+
+        # episodic:user 最近 3 条历史案例(R40)
         episodes = mem.episodic.search(limit=3) if hasattr(mem, "episodic") else []
         if episodes:
-            # 精简:只保留 token + chain + pnl 给 LLM 参考(避免 context 爆炸)
             slim = []
             for ep in episodes[:3]:
                 if isinstance(ep, dict):
@@ -338,10 +338,77 @@ def _enrich_context_with_memory_and_prompt(
                     })
             if slim:
                 ctx["recent_episodes"] = slim
+
+        # R41 P0:semantic 已 graduated 规则 top 5 注入,LLM 决策可参考
+        active_rules = mem.semantic.get_all_active() if hasattr(mem, "semantic") else []
+        if active_rules:
+            ctx["active_semantic_rules"] = [
+                {
+                    "id": r.get("id"),
+                    "summary": (r.get("content") or "")[:200],
+                    "chain": r.get("chain"),
+                    "trigger_source": r.get("trigger_source"),
+                }
+                for r in active_rules[:5]
+            ]
     except Exception as e:
-        log.debug("[episodic_memory] skip enrichment: %s", e)
+        log.debug("[memory] skip enrichment: %s", e)
 
     return ctx
+
+
+# ── R41 P0/P1: output_filter LLM 输出 + working_memory 埋点 ──
+
+def _filter_llm_output(
+    user_id: str,
+    ai_message: str,
+) -> str:
+    """R41 P0:LLM 输出过 output_filter (C1-C5)。
+    检测到违规话术(稳赚不赔/百倍/all in 等)→ 写 audit + 用 sanitized_text 替换。
+    失败永不抛(降级返原文)。
+    """
+    if not ai_message:
+        return ai_message
+    try:
+        from agent.output_filter import filter_output
+        res = filter_output(ai_message, persona="中级")
+        if not res.passed:
+            _audit_log_safety_event(user_id, "safety_block", "warn", {
+                "stage": "output_filter",
+                "violations": (res.violations or [])[:5],
+                "ai_msg_head": ai_message[:80],
+            })
+            return res.sanitized_text or "[输出被安全过滤]"
+    except Exception as e:
+        log.debug("[output_filter] skip: %s", e)
+    return ai_message
+
+
+def _record_chat_to_working_memory(
+    user_id: str,
+    user_message: str,
+    ai_message: str,
+    has_strategy: bool,
+) -> None:
+    """R41 P1:把本轮 chat 写进 working_memory(24h 滑动窗口)。
+    给 reflection_loop 提供原料。失败永不抛。
+    """
+    try:
+        from agent.memory import get_memory_manager
+        mem = get_memory_manager()
+        if not hasattr(mem, "working"):
+            return
+        mem.working.add({
+            "kind": "chat",
+            "user_id": user_id,
+            "user_msg": (user_message or "")[:200],
+            "ai_msg_head": (ai_message or "")[:200],
+            "has_strategy": bool(has_strategy),
+            "summary": f"chat: {(user_message or '')[:50]} → {(ai_message or '')[:50]}",
+            "ts": _time.time(),
+        })
+    except Exception as e:
+        log.debug("[working_memory] skip add: %s", e)
 
 
 class StrategyCreateRequest(BaseModel):
@@ -436,6 +503,12 @@ async def chat(
     # 截断到最近 8 个真用户回合避免无限增长 + 避免砍断 tool 配对
     conv.messages = _truncate_history(full_messages, max_user_turns=8)
     conv.last_seen = _time.time()
+
+    # R41 P0:output_filter 过 LLM 输出(C1-C5);违规则 sanitized + 写 audit
+    ai_message = _filter_llm_output(user_id, ai_message)
+
+    # R41 P1:写 working_memory(24h 滑动窗口,给 reflection_loop 用)
+    _record_chat_to_working_memory(user_id, req.message, ai_message, strategy_spec is not None)
 
     return ChatResponse(
         strategy=strategy_spec,
@@ -540,6 +613,37 @@ async def chat_stream(
         if final_messages:
             conv.messages = _truncate_history(final_messages, max_user_turns=8)
             conv.last_seen = _time.time()
+
+        # R41 P0:对累积的 assistant text 跑一次 output_filter;违规则 yield warning event
+        # (流式不能 sanitize 已发出 token,只能事后告警 + 写 audit)
+        try:
+            assistant_text = ""
+            for m in final_messages or []:
+                if m.get("role") == "assistant" and isinstance(m.get("content"), str):
+                    assistant_text = m["content"]  # 末尾那条
+            if assistant_text:
+                from agent.output_filter import filter_output
+                fres = filter_output(assistant_text, persona="中级")
+                if not fres.passed:
+                    _audit_log_safety_event(user_id, "safety_block", "warn", {
+                        "stage": "output_filter_stream",
+                        "violations": (fres.violations or [])[:5],
+                        "ai_msg_head": assistant_text[:80],
+                    })
+                    warning = {"type": "warning", "message": "本次回复含违规话术,请审慎参考"}
+                    yield f"data: {_json.dumps(warning, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            log.debug("[output_filter stream] skip: %s", e)
+
+        # R41 P1:写 working_memory(同非流式)
+        try:
+            assistant_for_mem = ""
+            for m in final_messages or []:
+                if m.get("role") == "assistant" and isinstance(m.get("content"), str):
+                    assistant_for_mem = m["content"]
+            _record_chat_to_working_memory(user_id, req.message, assistant_for_mem, False)
+        except Exception as e:
+            log.debug("[working_memory stream] skip: %s", e)
 
     return StreamingResponse(
         _event_generator(),

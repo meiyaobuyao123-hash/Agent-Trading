@@ -334,7 +334,7 @@ class AgentService {
     } catch (_) { return {}; }
   }
 
-  /// 切换到实盘
+  /// [deprecated R37 path] 切换到实盘 — 走 R37 5 项门槛(新策略切不动)
   Future<bool> goLive(String strategyId) async {
     try {
       final resp = await _client.post(
@@ -343,6 +343,93 @@ class AgentService {
       ).timeout(_timeout);
       return resp.statusCode == 200;
     } catch (_) { return false; }
+  }
+
+  /// R42 P0.4 用户主动 promote → live(取代 goLive)
+  /// 4 项解锁条件全满足后,bypass R37 5 项硬门槛
+  Future<Map<String, dynamic>> promoteToLive(
+    String strategyId, {
+    required bool hasWallet,
+    required bool disclaimerAccepted,
+    required bool riskAcknowledged,
+    double? maxPositionUsd,
+  }) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/strategies/$strategyId/promote-to-live'),
+        headers: _headers,
+        body: jsonEncode({
+          'has_wallet': hasWallet,
+          'disclaimer_accepted': disclaimerAccepted,
+          'risk_acknowledged': riskAcknowledged,
+          if (maxPositionUsd != null) 'max_position_usd': maxPositionUsd,
+        }),
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+      return {'promoted': false, 'error': 'HTTP ${resp.statusCode}'};
+    } catch (e) {
+      return {'promoted': false, 'error': e.toString()};
+    }
+  }
+
+  /// R42 P0.4 一键降回 paper(无条件成功)
+  Future<bool> demoteToPaper(String strategyId) async {
+    try {
+      final resp = await _client.post(
+        Uri.parse('$_apiBase/api/agent/strategies/$strategyId/demote-to-paper'),
+        headers: _headers,
+      ).timeout(_timeout);
+      return resp.statusCode == 200;
+    } catch (_) { return false; }
+  }
+
+  /// R42 P0.5 更新策略风控参数(滑点/止盈止损/MEV/Gas Fee)
+  /// 传 null 字段不改;传值就更新
+  Future<bool> updateRiskParams(
+    String strategyId, {
+    double? maxSlippagePct,
+    double? stopLossPct,
+    double? takeProfitPct,
+    double? maxPositionUsd,
+    double? trailingStopPct,
+    double? priorityFeeSol,
+    double? mevBribeSol,
+  }) async {
+    try {
+      final body = <String, dynamic>{};
+      if (maxSlippagePct != null) body['max_slippage_pct'] = maxSlippagePct;
+      if (stopLossPct != null) body['stop_loss_pct'] = stopLossPct;
+      if (takeProfitPct != null) body['take_profit_pct'] = takeProfitPct;
+      if (maxPositionUsd != null) body['max_position_usd'] = maxPositionUsd;
+      if (trailingStopPct != null) body['trailing_stop_pct'] = trailingStopPct;
+      if (priorityFeeSol != null) body['priority_fee_sol'] = priorityFeeSol;
+      if (mevBribeSol != null) body['mev_bribe_sol'] = mevBribeSol;
+      if (body.isEmpty) return true;
+      final resp = await _client.patch(
+        Uri.parse('$_apiBase/api/agent/strategies/$strategyId/risk-params'),
+        headers: _headers,
+        body: jsonEncode(body),
+      ).timeout(_timeout);
+      return resp.statusCode == 200;
+    } catch (_) { return false; }
+  }
+
+  /// R42 P0.4 合并交易记录(paper + live)
+  Future<Map<String, dynamic>> getTradesMerged(String strategyId, {int limit = 50}) async {
+    try {
+      final resp = await _client.get(
+        Uri.parse('$_apiBase/api/agent/trades-merged/$strategyId?limit=$limit'),
+        headers: _headers,
+      ).timeout(_timeout);
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body) as Map<String, dynamic>;
+      }
+      return {'trades': [], 'paper_count': 0, 'live_count': 0, 'total': 0};
+    } catch (_) {
+      return {'trades': [], 'paper_count': 0, 'live_count': 0, 'total': 0};
+    }
   }
 
   /// 模拟 vs 实盘对比

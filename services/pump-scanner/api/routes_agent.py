@@ -1135,11 +1135,13 @@ async def backtest(
         try:
             spec = json.loads(msg)
         except (json.JSONDecodeError, TypeError):
-            # 不是 JSON，先用 LLM 解析
-            result = await _llm_parser.parse_strategy(msg)
-            if result is None:
+            # 不是 JSON，先用 LLM 解析(R39 v5 改 3 元组,R42 修 unpacking bug)
+            parsed = await _llm_parser.parse_strategy(msg)
+            if not parsed or len(parsed) < 1:
                 return {"error": "无法解析策略", "trigger_count": 0}
-            spec, _ = result
+            spec = parsed[0]  # (spec, ai_message, full_messages) → 取 spec
+            if spec is None:
+                return {"error": "LLM 解析失败", "trigger_count": 0}
 
     result = await backtest_strategy(spec, days=days)
     return result
@@ -1342,7 +1344,9 @@ async def go_live(
     strategy_id: str,
     user_id: str = Depends(get_current_user),
 ):
-    """将策略从 paper 切换到 live 模式"""
+    """[deprecated R37 path] 将策略从 paper 切换到 live 模式 — 走 R37 5 项硬门槛。
+    新代码请用 POST /strategies/{id}/promote-to-live。
+    """
     strategy = _strategy_mgr.get_strategy(strategy_id)
     if not strategy:
         raise HTTPException(status_code=404, detail="策略不存在")
@@ -1356,6 +1360,233 @@ async def go_live(
         raise HTTPException(status_code=400, detail="切换失败：策略状态不允许")
 
     return {"strategy": result, "message": "已切换到实盘模式"}
+
+
+# ── R42 P0.4: 用户主动 promote 流程 — 跳过 R37 5 项门槛,改为解锁条件 ──
+
+class PromoteToLiveRequest(BaseModel):
+    """R42 P0.4 用户主动 promote 请求体 — 解锁条件 4 项 checklist"""
+    has_wallet: bool = Field(..., description="已连接钱包(WalletService.wallets 非空)")
+    disclaimer_accepted: bool = Field(..., description="已读 + 同意《免责声明》")
+    risk_acknowledged: bool = Field(..., description="已勾选'我知道会亏钱'")
+    max_position_usd: Optional[float] = Field(None, description="单笔金额上限(默认 50,可调到 500)")
+
+
+@router.post("/strategies/{strategy_id}/promote-to-live")
+async def promote_to_live(
+    strategy_id: str,
+    req: PromoteToLiveRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """R42 P0.4 用户主动 promote → live。
+
+    取代 /go-live 的 R37 5 项硬门槛(30 天 30 笔 EV 回撤),改为:
+    - 用户主动决策 + 4 项解锁条件 checklist
+    - 通过 force=True bypass R37 门槛
+    - 写 audit log: event_type=admin_action(用户级 promote 也算 admin action)
+    - 在策略 risk_params 写入 max_position_usd(用户选 $50/$500)
+    """
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+    if strategy.get("mode") == "live":
+        return {
+            "strategy": strategy,
+            "message": "策略已在实盘模式",
+            "promoted": False,
+        }
+
+    # R42 P0.4 HR31 解锁条件硬检查
+    missing = []
+    if not req.has_wallet:
+        missing.append("钱包未连接")
+    if not req.disclaimer_accepted:
+        missing.append("免责声明未同意")
+    if not req.risk_acknowledged:
+        missing.append("风险确认未勾选")
+    if missing:
+        return {
+            "promoted": False,
+            "error": "解锁条件不满足",
+            "missing": missing,
+        }
+
+    # 单笔金额上限校验(默认 $50 / 用户可调至 $500)
+    max_position = float(req.max_position_usd or 50)
+    max_position = max(10, min(500, max_position))
+
+    # 先写 max_position_usd 到策略,再 force=True go_live
+    try:
+        _strategy_mgr.update_strategy(strategy_id, {
+            "max_position_usd": max_position,
+        })
+    except Exception as e:
+        log.warning("[promote_to_live] 写 max_position 失败: %s", e)
+
+    # R37 force=True 跳过 5 项门槛(用户主动决策免门槛)
+    result = _strategy_mgr.go_live(strategy_id, force=True, actor="user")
+    if not result:
+        raise HTTPException(status_code=400, detail="切换失败:策略状态不允许(非 active 或非 paper)")
+
+    # 写审计 log
+    try:
+        _audit_log_safety_event(user_id, "admin_action", "info", {
+            "stage": "promote_to_live",
+            "strategy_id": strategy_id,
+            "max_position_usd": max_position,
+            "disclaimer_accepted": True,
+        })
+    except Exception:
+        pass
+
+    return {
+        "strategy": result,
+        "message": f"已切换到实盘模式,单笔上限 ${max_position:.0f}",
+        "promoted": True,
+    }
+
+
+# ── R42 P0.4: 一键降回 paper(无条件成功)──
+
+@router.post("/strategies/{strategy_id}/demote-to-paper")
+async def demote_to_paper(
+    strategy_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """一键降回 paper 模式 — 立即生效,无审批"""
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+    if strategy.get("mode") == "paper":
+        return {"strategy": strategy, "message": "策略已在模拟盘模式"}
+
+    result = _strategy_mgr.update_strategy(strategy_id, {"mode": "paper"})
+    if not result:
+        raise HTTPException(status_code=500, detail="降级失败")
+
+    try:
+        _audit_log_safety_event(user_id, "admin_action", "info", {
+            "stage": "demote_to_paper",
+            "strategy_id": strategy_id,
+        })
+    except Exception:
+        pass
+
+    return {"strategy": result, "message": "已降回模拟盘模式"}
+
+
+# ── R42 P0.5: 策略 risk_params 编辑 ──
+
+class RiskParamsUpdateRequest(BaseModel):
+    """R42 P0.5 用户从 Flutter 改 risk_params"""
+    max_slippage_pct: Optional[float] = Field(None, ge=0.001, le=0.5, description="0.01 = 1%")
+    stop_loss_pct: Optional[float] = Field(None, ge=0.05, le=0.50, description="0.30 = 30%")
+    take_profit_pct: Optional[float] = Field(None, ge=0.10, le=10.0, description="1.0 = 100%")
+    max_position_usd: Optional[float] = Field(None, ge=10, le=5000, description="单笔上限")
+    trailing_stop_pct: Optional[float] = Field(None, ge=0, le=0.5, description="追踪止损")
+    priority_fee_sol: Optional[float] = Field(None, ge=0.0001, le=0.1, description="Solana 优先 Gas")
+    mev_bribe_sol: Optional[float] = Field(None, ge=0, le=0.1, description="Jito MEV 贿赂")
+
+
+@router.patch("/strategies/{strategy_id}/risk-params")
+async def update_risk_params(
+    strategy_id: str,
+    req: RiskParamsUpdateRequest,
+    user_id: str = Depends(get_current_user),
+):
+    """R42 P0.5 更新策略风控参数(滑点/止盈止损/MEV/Gas Fee)。
+    Flutter 详情页"风控设置"折叠区调用。
+
+    传 None 的字段不改;传值的写 strategies 表对应字段。
+    """
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+
+    updates = req.model_dump(exclude_none=True)
+    if not updates:
+        return {"strategy": strategy, "message": "无字段更新"}
+
+    result = _strategy_mgr.update_strategy(strategy_id, updates)
+    if not result:
+        raise HTTPException(status_code=500, detail="更新失败")
+
+    return {"strategy": result, "message": "风控参数已更新", "updated_fields": list(updates.keys())}
+
+
+# ── R42 P0.4: 合并交易记录(paper + live)──
+
+@router.get("/trades-merged/{strategy_id}")
+async def list_trades_merged(
+    strategy_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    user_id: str = Depends(get_current_user),
+):
+    """R42 P0.4 同时拉 paper + live 交易记录,按时间倒序合并。
+
+    返:
+      {"trades": [...], "paper_count": N, "live_count": M, "total": N+M}
+    每条带 mode 字段("paper"/"live")让 UI 区分。
+    """
+    strategy = _strategy_mgr.get_strategy(strategy_id)
+    if not strategy:
+        raise HTTPException(status_code=404, detail="策略不存在")
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
+
+    from database import get_db
+    db = get_db()
+
+    paper_rows: List[Dict[str, Any]] = []
+    live_rows: List[Dict[str, Any]] = []
+
+    # paper trades
+    try:
+        res = (
+            db.table("agent_paper_trades").select("*")
+            .eq("user_id", user_id).eq("strategy_id", strategy_id)
+            .order("created_at", desc=True).limit(limit).execute()
+        )
+        for r in (res.data or []):
+            r["mode"] = "paper"
+            paper_rows.append(r)
+    except Exception as e:
+        log.warning("[trades-merged] paper fetch fail: %s", e)
+
+    # live executions(R42 P0.1 position_monitor 写,真实交易记录)
+    try:
+        res = (
+            db.table("agent_executions").select("*")
+            .eq("strategy_id", strategy_id)
+            .order("created_at", desc=True).limit(limit).execute()
+        )
+        for r in (res.data or []):
+            # 兼容字段:agent_executions 有 amount_usd / token_address / action
+            r["mode"] = "live"
+            r["asset"] = r.get("asset") or r.get("token_symbol") or (r.get("token_address", "")[:8])
+            r["side"] = r.get("side") or r.get("action")
+            live_rows.append(r)
+    except Exception as e:
+        log.warning("[trades-merged] live fetch fail: %s", e)
+
+    merged = sorted(
+        paper_rows + live_rows,
+        key=lambda r: r.get("created_at", ""),
+        reverse=True,
+    )[:limit]
+
+    return {
+        "trades": merged,
+        "paper_count": len(paper_rows),
+        "live_count": len(live_rows),
+        "total": len(merged),
+    }
 
 
 @router.put("/strategies/{strategy_id}/rename")

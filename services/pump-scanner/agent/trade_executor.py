@@ -191,6 +191,7 @@ class TradeExecutor:
         wallet_address: Optional[str] = None,
         private_key: Optional[str] = None,
         safety_ctx: Optional[Dict[str, Any]] = None,
+        risk_params: Optional[Dict[str, Any]] = None,
     ) -> TradeResult:
         """
         执行买入或卖出交易 — PRD-009: 通过 DexRouter 多 DEX 路由
@@ -210,10 +211,31 @@ class TradeExecutor:
                         任何 BLOCK 直接返回失败，不调 DEX。
                         最小 ctx：{amount_usd, action, mode, agent_global_state, ...}
                         完整字段见 docs/agent-pm/08-safety-policy.md
+            risk_params: R42 P0.2 — 策略级风控参数(覆盖默认值)
+                         {max_slippage_pct, max_position_usd, priority_fee_sol, mev_bribe_sol}
+                         详见 docs/agent-pm/18-trade-execution-spec.md §4 (HR34)
 
         Returns:
             TradeResult（safety BLOCK 时 success=False, error="safety: <rule_id> <reason>"）
         """
+        # ── R42 P0.2:risk_params 真用(取代 hardcoded)─────────
+        rp = risk_params or {}
+        # max_position_usd 强制限仓(超出截断 + log)
+        max_position = float(rp.get("max_position_usd", 1000.0))
+        if amount_usd > max_position:
+            log.warning(
+                "[trade_executor] amount_usd %.2f > max_position %.2f → 截断",
+                amount_usd, max_position,
+            )
+            amount_usd = max_position
+        # slippage 优先用 risk_params(0.01 = 1%),fallback 到入参
+        if "max_slippage_pct" in rp:
+            slippage_pct = float(rp["max_slippage_pct"]) * 100  # 0.01 → 1.0
+        # priority_fee + MEV bribe 透传给 dex_router(SOL 链 Jito 用)
+        priority_fee_sol = float(rp.get("priority_fee_sol", 0.0005))
+        mev_bribe_sol = float(rp.get("mev_bribe_sol", 0.0))
+        # ─────────────────────────────────────────────────────
+
         # ── W3 D3 Safety pre-check ──────────────────────────────
         if safety_ctx is not None:
             block = check_safety_for_trade(
@@ -250,6 +272,8 @@ class TradeExecutor:
                 slippage_pct=slippage_pct,
                 wallet_address=wallet_address,
                 private_key=private_key,
+                priority_fee_sol=priority_fee_sol,   # R42 P0.2
+                mev_bribe_sol=mev_bribe_sol,         # R42 P0.2
             )
 
             # 转换 RouteResult → TradeResult

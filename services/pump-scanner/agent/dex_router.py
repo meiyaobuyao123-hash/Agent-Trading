@@ -124,6 +124,8 @@ class DexRouter:
         slippage_pct: float = 1.0,
         wallet_address: Optional[str] = None,
         private_key: Optional[str] = None,
+        priority_fee_sol: float = 0.0005,    # R42 P0.2:Solana 优先 Gas Fee
+        mev_bribe_sol: float = 0.0,          # R42 P0.2:Solana Jito MEV 贿赂(0=不走 Jito)
     ) -> RouteResult:
         """
         多 DEX 路由执行
@@ -133,7 +135,19 @@ class DexRouter:
         3. 选最优报价
         4. 执行 → 失败自动 fallback
         5. 记录路由决策
+
+        R42 P0.2:priority_fee_sol / mev_bribe_sol 从 strategy.risk_params 透传。
+        - SOL 链 + mev_bribe_sol > 0 → 走 Jito bundle(P1 WalletConnect 后真接入)
+        - 其他场景 → 仅设 priority_fee 字段
+        当前版本:参数已透传 + log,真实 Jito tip tx 构造留 P1。
         """
+        # R42 P0.2:log 收到的 risk_params(给运维/审计追溯)
+        if chain == "solana" and (priority_fee_sol > 0.0005 or mev_bribe_sol > 0):
+            log.info(
+                "[dex_router] R42 risk_params: priority_fee=%.4f SOL, mev_bribe=%.4f SOL "
+                "(%s)", priority_fee_sol, mev_bribe_sol,
+                "Jito bundle (P1 待接)" if mev_bribe_sol > 0 else "公共 mempool + 高优先",
+            )
         try:
             # 确定交易方向
             if action == "buy":

@@ -4493,3 +4493,69 @@ ab_test_manager / reflection / thesis_loop / chat_loop / cocreation_state_machin
 - EVM(其他):>0 启用 1inch 路由(待接 bloXroute / 1inch Fusion)
 
 **不在范围**:bloXroute BSC、1inch Fusion limit order、Arbitrum Express Lane、Base Flashblocks(留 R46)
+
+---
+
+## 2026-05-06 — R46 账户体系(邮箱 + Google + 多钱包)
+
+### 用户决策
+"在 APP 和 WEB 端支持注册登录,目前支持邮箱登录,也支持 Google 邮箱登录,...邮箱账户 → 导入多钱包"
+
+### Audit 现状
+- 后端 [api/auth.py](services/pump-scanner/api/auth.py) 仅做 JWT decode(SUPABASE_JWT_SECRET 未设 → DEV bypass)
+- 没自己的 users 表(migration 017 引用 Supabase auth.users 但 LOCAL_POSTGREST 没这表)
+- 无 register/login/oauth endpoint
+- Flutter 没 login 页
+- Web R43.1 简化 login 只是本地昵称占位
+- user_wallets 已 user_id 归属(R42 P1 现成)
+
+### R46 实施
+
+**后端**(commit `517e4d0` + `809bdd4`):
+- [migrations/local_pg/044_users.sql](services/pump-scanner/migrations/local_pg/044_users.sql) — users 表(id UUID/email UNIQUE/password_hash bcrypt/google_id/display_name)+ CHECK email_format + must_have_login
+- [agent/auth_service.py](services/pump-scanner/agent/auth_service.py)(217 行)— hash_password / verify_password (bcrypt cost 12) / create_jwt / verify_jwt (HS256 7d) / verify_google_id_token (google-auth 公钥验证)
+- [api/routes_auth.py](services/pump-scanner/api/routes_auth.py)(257 行)— POST /register /login /google + GET /me + POST /logout
+- [api/auth.py](services/pump-scanner/api/auth.py) — JWT_SECRET 改用 AUTH_JWT_SECRET,fallback SUPABASE_JWT_SECRET 向后兼容;自建 JWT 不强制 audience
+- requirements.txt 加 bcrypt==4.1.2 + google-auth==2.30.0
+- [tests/test_auth.py](services/pump-scanner/tests/test_auth.py) — 14 单测全过
+
+**Web**(helix-marketing):
+- [src/app/app/login/page.tsx](helix-marketing/src/app/app/login/page.tsx) 重写 — 邮箱/密码登录注册 切换 + GoogleLogin 按钮(@react-oauth/google)+ 错误显示 + persist token
+- [src/lib/api.ts](helix-marketing/src/lib/api.ts) — 加 authLogin/authRegister/authGoogle/authMe/persistAuth/authLogout + axios 拦截器优先 helix_token
+- [src/lib/store.ts](helix-marketing/src/lib/store.ts) — useUser 加 token/displayName + hydrate/logout actions
+- [src/components/app/AppShell.tsx](helix-marketing/src/components/app/AppShell.tsx) — 启动 hydrate
+- [src/components/app/SubNav.tsx](helix-marketing/src/components/app/SubNav.tsx) — 右侧加 user info + 登出按钮 + 未登录显示"登录 →"
+
+**部署踩坑** + 修:
+1. EmailStr 需要 email-validator 包 → 改 str + regex 自验
+2. 服务器 venv `/opt/venv` ≠ 系统 pip → 用 `/opt/venv/bin/pip install` 重装
+
+**E2E 验证**:`curl POST http://www.ai100trading.cn/api/auth/register` → 返 token + user_id `b32b3dad-...`,`/me` 返 user info,`/login` 同 user_id 新 token ✅
+
+### 多钱包归属
+R42 P1 user_wallets.user_id 现成,登录后导入钱包自动按 user_id 隔离。无需改 routes_wallet。
+
+### Flutter 留下次会话
+- pubspec.yaml 加 google_sign_in
+- 新建 lib/services/auth_service.dart + login_page.dart + register_page.dart
+- iOS Info.plist 配 GOOGLE_CLIENT_ID + URL scheme
+- Android google-services.json 从 Firebase 下载
+- main.dart 启动 token check + 跳转
+
+### GA 配置(运维)
+```
+# 服务器 .env
+AUTH_JWT_SECRET=<openssl rand -base64 32>
+GOOGLE_CLIENT_ID=<Google Cloud Console OAuth Web Client ID>
+
+# Web build env
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=<同上>
+```
+
+### 不在范围(R47+)
+- 邮箱验证(发激活邮件)
+- 密码重置
+- Apple Sign In(iOS App Store 强制)
+- 2FA / 短信验证码
+- 头像上传 / profile 编辑
+- refresh token

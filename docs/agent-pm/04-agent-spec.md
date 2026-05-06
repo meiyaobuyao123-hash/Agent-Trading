@@ -724,3 +724,42 @@ PR 改动 agent/ 下代码 → 自动触发对应 Eval。失败不得合入。�
   - § 13 **13 条 Gap**（v1 要补齐的）
   - § 14 Launch Gate
 - v0（2026-04-22）：骨架创建
+
+---
+
+## §账户体系 (R46 — 2026-05-06)
+
+### 鉴权方式
+- **自建 JWT**(HS256,7 天有效)+ env `AUTH_JWT_SECRET`
+- 不依赖 Supabase Cloud
+- DEV mode bypass 保留(secret 未配 → 进 dev-user)
+
+### 注册/登录流程
+- 邮箱+密码注册 → `POST /api/auth/register`(bcrypt cost 12 加密 + upsert + 返 JWT)
+- 邮箱+密码登录 → `POST /api/auth/login`(bcrypt verify + 更新 last_login_at + 返 JWT)
+- Google ID token 登录 → `POST /api/auth/google`(google-auth 验签 + upsert user + 返 JWT)
+- `GET /api/auth/me` 验 Bearer token → 返当前 user info
+
+### 数据表
+- `users`(migration 044):id UUID/email UNIQUE/password_hash bcrypt/google_id/display_name/avatar_url
+- 必须有 password 或 google(CHECK must_have_login)
+
+### 多钱包归属
+- `user_wallets`(R42 P1 已存在)按 `user_id` 外键归属
+- 用户登录后导入的钱包自动绑定 user_id
+- 切换用户 → list 只返自己的钱包(SQL WHERE user_id 隔离)
+
+### 配置(GA 必须)
+```
+AUTH_JWT_SECRET=$(openssl rand -base64 32)
+GOOGLE_CLIENT_ID=<Google Cloud Console OAuth Web Client ID>
+```
+Web 端:`NEXT_PUBLIC_GOOGLE_CLIENT_ID`(同上但 NEXT_PUBLIC 前缀)
+
+### 文件
+- 后端:[agent/auth_service.py](../../services/pump-scanner/agent/auth_service.py) + [api/routes_auth.py](../../services/pump-scanner/api/routes_auth.py) + [migrations/local_pg/044_users.sql](../../services/pump-scanner/migrations/local_pg/044_users.sql)
+- Web:[helix-marketing/src/app/app/login/page.tsx](../../helix-marketing/src/app/app/login/page.tsx) + [src/lib/api.ts](../../helix-marketing/src/lib/api.ts) auth helpers
+- Flutter:R46 留下次实施(google_sign_in 包 + 真机配置)
+
+### 测试
+- [tests/test_auth.py](../../services/pump-scanner/tests/test_auth.py) 14 单测全过

@@ -1,5 +1,18 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-06 R46 — 账户体系上线)
+
+**R46 — 邮箱/Google 登录 + 多钱包归属**(2026-05-06):
+- 后端:migration 044_users + agent/auth_service.py(bcrypt 12 + JWT HS256 + Google ID token verify)+ api/routes_auth.py(register/login/google/me/logout)+ api/auth.py 改用 AUTH_JWT_SECRET(向后兼容 SUPABASE_JWT_SECRET)
+- 14 单测全过(密码 round trip / JWT 过期错 secret / Google mock verify)
+- 服务器配 AUTH_JWT_SECRET + 跑 migration 044 + venv install bcrypt+google-auth
+- 公网 E2E:`curl POST /api/auth/register` 返 token + user_id + `/me` 返 user info ✅
+- Web:@react-oauth/google 集成 + login 页改邮箱/密码登录注册 + Google button + lib/api 加 authLogin/authRegister/authGoogle/authMe/persistAuth + lib/store hydrate/logout + SubNav 显示 user + 登出
+- 多钱包归属:R42 P1 user_wallets.user_id 已就绪,登录后自动按 user_id 隔离
+- Flutter:留下次会话(google_sign_in 包 + iOS Info.plist + Android google-services.json 配置)
+
+GA 配置:`AUTH_JWT_SECRET` + `GOOGLE_CLIENT_ID`(后端)+ `NEXT_PUBLIC_GOOGLE_CLIENT_ID`(Web)
+
 ## ⚠️ 上线状态(2026-05-06 R45 — EVM MEV 全接通)
 
 **R45 — EVM MEV 接通 + Web/App 同步**(2026-05-06):

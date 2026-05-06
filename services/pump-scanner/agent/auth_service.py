@@ -34,6 +34,43 @@ def _get_google_client_id() -> str:
     return os.getenv("GOOGLE_CLIENT_ID", "")
 
 
+def _get_google_client_secret() -> str:
+    """R46.1 — 后端 OAuth code-exchange 用(redirect flow)"""
+    return os.getenv("GOOGLE_CLIENT_SECRET", "")
+
+
+async def exchange_google_code(code: str, redirect_uri: str) -> Dict[str, Any]:
+    """R46.1 — Authorization Code Flow:用 code + client_secret 换 ID token + access_token。
+
+    返 dict:{id_token, access_token, expires_in, token_type, scope, ...}
+    任何错误抛 ValueError(caller 拦截返 401)。
+    """
+    client_id = _get_google_client_id()
+    client_secret = _get_google_client_secret()
+    if not client_id or not client_secret:
+        raise RuntimeError("GOOGLE_CLIENT_ID 或 GOOGLE_CLIENT_SECRET env 未配")
+
+    import aiohttp
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            data = await resp.json()
+            if resp.status != 200 or "error" in data:
+                raise ValueError(
+                    f"Google token exchange 失败: {data.get('error_description') or data.get('error') or resp.status}"
+                )
+            return data
+
+
 # ── bcrypt 密码 ─────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:

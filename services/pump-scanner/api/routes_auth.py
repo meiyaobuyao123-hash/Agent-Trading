@@ -21,6 +21,7 @@ from agent.auth_service import (
     hash_password, verify_password,
     create_jwt, verify_jwt,
     verify_google_id_token,
+    exchange_google_code,
 )
 from api.auth import get_current_user
 
@@ -63,6 +64,12 @@ class LoginRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     id_token: str = Field(..., min_length=10)
     display_name: Optional[str] = Field(None, max_length=64)
+
+
+class GoogleCodeRequest(BaseModel):
+    """R46.1 — Auth Code Flow(redirect)请求体"""
+    code: str = Field(..., min_length=4)
+    redirect_uri: str = Field(..., min_length=8)
 
 
 class AuthResponse(BaseModel):
@@ -247,6 +254,74 @@ async def google_login(req: GoogleLoginRequest):
         conn.commit()
     except Exception as e:
         log.error("[auth/google] DB error: %s", e)
+        raise HTTPException(500, f"Google 登录失败: {str(e)[:200]}")
+
+    user_id = str(row[0])
+    try:
+        token = create_jwt(user_id, email, provider="google")
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+
+    return AuthResponse(
+        success=True,
+        token=token,
+        user_id=user_id,
+        email=email,
+        display_name=row[2],
+    )
+
+
+@router.post("/google-code", response_model=AuthResponse)
+async def google_code_login(req: GoogleCodeRequest):
+    """R46.1 Authorization Code Flow(redirect):
+    Web 用户跳 Google 授权后回调带 code → 调本接口 → 后端用 code+client_secret 换 ID token → 验证 → 返 JWT。
+    """
+    try:
+        token_data = await exchange_google_code(req.code, req.redirect_uri)
+    except RuntimeError as e:
+        raise HTTPException(503, str(e))
+    except Exception as e:
+        log.warning("[auth/google-code] exchange fail: %s", e)
+        raise HTTPException(401, f"Google code 兑换失败: {str(e)[:120]}")
+
+    id_token_str = token_data.get("id_token")
+    if not id_token_str:
+        raise HTTPException(401, "Google 返无 id_token")
+
+    try:
+        google_info = verify_google_id_token(id_token_str)
+    except Exception as e:
+        log.warning("[auth/google-code] id_token verify fail: %s", e)
+        raise HTTPException(401, f"Google ID token 验证失败: {str(e)[:120]}")
+
+    google_id = google_info.get("sub")
+    email = (google_info.get("email") or "").lower()
+    name = google_info.get("name")
+    picture = google_info.get("picture")
+
+    if not google_id or not email:
+        raise HTTPException(401, "Google ID token 缺 sub/email")
+
+    conn = _get_local_db_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO users (email, google_id, display_name, avatar_url, email_verified, last_login_at)
+                VALUES (%s, %s, %s, %s, TRUE, now())
+                ON CONFLICT (email) DO UPDATE SET
+                  google_id     = COALESCE(users.google_id, EXCLUDED.google_id),
+                  display_name  = COALESCE(users.display_name, EXCLUDED.display_name),
+                  avatar_url    = COALESCE(users.avatar_url, EXCLUDED.avatar_url),
+                  last_login_at = now()
+                RETURNING id, email, display_name, avatar_url
+                """,
+                (email, google_id, name, picture),
+            )
+            row = cur.fetchone()
+        conn.commit()
+    except Exception as e:
+        log.error("[auth/google-code] DB error: %s", e)
         raise HTTPException(500, f"Google 登录失败: {str(e)[:200]}")
 
     user_id = str(row[0])

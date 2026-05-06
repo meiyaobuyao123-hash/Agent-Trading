@@ -63,6 +63,15 @@ EVM_RPC = {
     "base": os.getenv("BASE_RPC", "https://mainnet.base.org"),
 }
 
+# R45 — EVM MEV 保护 RPC(开启时 broadcast 走这些 URL,不进公共 mempool)
+# Flashbots Protect:免费 + 0 配置 + 自动防三明治
+# bloXroute / 1inch Fusion 等留 R46 接入
+EVM_RPC_MEV_PROTECTED = {
+    "eth": os.getenv("ETH_FLASHBOTS_RPC", "https://rpc.flashbots.net/fast"),
+    "bsc": "",   # 第一版无 Protect URL,fallback 公共 RPC + log warning
+    "base": "",  # 同上,后续可接 1inch Fusion 自带保护
+}
+
 # 代币精度
 TOKEN_DECIMALS_NATIVE = {
     "solana": 9,   # SOL = 9 decimals
@@ -785,13 +794,34 @@ class TradeExecutor:
             log.info(f"Solana tx broadcast: {tx_hash}")
             return tx_hash
 
-    async def _broadcast_evm(self, chain: str, signed_tx_hex: str) -> Optional[str]:
-        """通过 EVM RPC 广播"""
+    async def _broadcast_evm(self, chain: str, signed_tx_hex: str,
+                              mev_protected: bool = False) -> Optional[str]:
+        """通过 EVM RPC 广播
+
+        R45: mev_protected=True 时优先走 Flashbots Protect / bloXroute 等私有 mempool,
+              防三明治攻击。无 Protect URL 的链 → 降级公共 RPC + log warning。
+        """
         session = await self._get_session()
-        rpc_url = EVM_RPC.get(chain, "")
+        # R45 优先 Protect URL
+        rpc_url = ""
+        used_mev = False
+        if mev_protected:
+            rpc_url = EVM_RPC_MEV_PROTECTED.get(chain, "")
+            if rpc_url:
+                used_mev = True
+                log.info(f"[broadcast] {chain} 走 MEV Protect: {rpc_url}")
+            else:
+                log.warning(
+                    f"[broadcast] {chain} 启用 MEV 但无 Protect URL,降级公共 RPC(后续可接 bloXroute / 1inch Fusion)"
+                )
+        if not rpc_url:
+            rpc_url = EVM_RPC.get(chain, "")
         if not rpc_url:
             log.error(f"No RPC URL for chain: {chain}")
             return None
+        # 标记给 audit 追溯
+        if not used_mev:
+            log.debug(f"[broadcast] {chain} 走公共 mempool: {rpc_url}")
 
         if not signed_tx_hex.startswith("0x"):
             signed_tx_hex = "0x" + signed_tx_hex

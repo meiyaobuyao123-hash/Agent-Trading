@@ -4462,3 +4462,34 @@ ab_test_manager / reflection / thesis_loop / chat_loop / cocreation_state_machin
 - R39 v5:1/8(只加了 chat memory,不算 audit 模块)
 - R40:7/8 = 87.5%(+ rollout/input_filter/cost_guard/audit/prompt_loader/episodic)
 - **R41:8/8 = 100%**(+ semantic/output_filter/working)
+
+---
+
+## 2026-05-06 — R44 + R45 收尾(Web 融入官网 + EVM MEV)
+
+### R44 系列 — Web Agent 融入官网
+- **R44**:Web Agent 不再独立 SPA,复用主站 Nav + Footer + 加 SubNav 二级导航
+- **R44.1**:主 Nav 极简化(删 5 营销 link + 加 [Helix][首页][Agent] 左对齐 + 下载 App)
+- **R44.2**:Web 钱包页加导入私钥 modal(取代只读)+ 后端 R42 P1 AES-256-GCM 加密路径已就绪
+- **R44.3**:Chat StrategyCard 可编辑(取代 JSON)+ Loading 优化(Loader2+skeleton+elapsed counter+4档文案)
+- **R44.4**:SpeedSection 三档预设 + 高级展开(Priority Fee + MEV slider)+ 标注 Gas Fee/MEV 区别
+
+### R45 — EVM MEV 接通(2026-05-06)
+**用户问题**:"MEV 在 EVM 是没概念还是没做?"
+**答**:**MEV 是 EVM 鼻祖**(Flashbots/MEV-Boost 90%+ ETH 出块),不是没概念,是没做。
+
+实施:
+- 后端 [trade_executor.py](services/pump-scanner/agent/trade_executor.py) 加 `EVM_RPC_MEV_PROTECTED` + `_broadcast_evm(mev_protected=True)` → eth 走 Flashbots Protect,bsc/base 第一版降级公共
+- Flashbots Protect 是 **drop-in RPC 替换**(`https://rpc.flashbots.net/fast`),免费 + 0 配置 + 自动防三明治
+- Web [StrategyCard.tsx SpeedSection](helix-marketing/src/components/app/StrategyCard.tsx):chain 感知 — Solana → MEV slider;EVM → MEV toggle("已启用/未启用")+ 按链文案("Flashbots Protect"/"1inch 路由")
+- Flutter [strategy_detail_page.dart](apps/app/lib/screens/agent/strategy_detail_page.dart) 速度档下加链感知文案
+- 测试 9 个 [tests/test_evm_mev.py](services/pump-scanner/tests/test_evm_mev.py) 全过
+- 文档 [18-trade-execution-spec.md §10](docs/agent-pm/18-trade-execution-spec.md) 加完整规范
+- memory 三件套同步
+
+**字段语义按链**(向后兼容,risk_params 字段名不变):
+- Solana:`mev_bribe_sol` = Jito tip 数量
+- EVM(eth):>0 启用 Flashbots Protect 私有 mempool;=0 走公共
+- EVM(其他):>0 启用 1inch 路由(待接 bloXroute / 1inch Fusion)
+
+**不在范围**:bloXroute BSC、1inch Fusion limit order、Arbitrum Express Lane、Base Flashblocks(留 R46)

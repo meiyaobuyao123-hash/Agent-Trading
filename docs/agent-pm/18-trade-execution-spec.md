@@ -395,3 +395,64 @@ asyncio.create_task(position_monitor_loop())
 - 多账号 / 多钱包管理
 - 跨链 swap(Solana → ETH 桥)
 - AI 自动调 priority_fee / mev_bribe(根据网络拥塞动态)— R44+ 智能化方向
+
+---
+
+## 10. EVM MEV 接通 (R45 — 2026-05-06)
+
+### 10.1 决策背景
+
+R44.4 之前 SpeedSection 在 EVM 链上把 MEV slider 灰掉,标"EVM 暂未接通"。用户问"EVM 是没 MEV 概念还是没做" — **MEV 是 EVM 鼻祖(Flashbots/MEV-Boost 90%+ ETH 出块)**,不是没概念,是我们没做。R45 接通。
+
+### 10.2 各链 MEV 方案
+
+| 链 | MEV 基础设施 | R45 方案 |
+|---|---|---|
+| Solana | Jito | ✅ 已接(R42 P0.2) |
+| **Ethereum** | Flashbots / MEV-Boost | **Flashbots Protect RPC**(`https://rpc.flashbots.net/fast`),drop-in 替换 RPC URL,免费 + 0 配置 |
+| **BSC** | bloXroute / 48 Club | 第一版 fallback 公共 RPC + log warning,后续接 bloXroute |
+| **Base** | Flashblocks(beta) | 暂用公共 RPC + 1inch Fusion 兜底 |
+| Polygon / Arb / OP | 各自 builder 生态 | 1inch 路由(自带 MEV 保护) |
+
+### 10.3 后端实施
+
+[services/pump-scanner/agent/trade_executor.py:60-78](services/pump-scanner/agent/trade_executor.py:60) 加:
+
+```python
+EVM_RPC_MEV_PROTECTED = {
+    "eth": "https://rpc.flashbots.net/fast",
+    "bsc": "",   # 第一版无,fallback 公共
+    "base": "",
+}
+```
+
+`_broadcast_evm(chain, signed_tx, mev_protected=False)` — `mev_protected=True` + 该链有 Protect URL → 走 Protect;否则降级公共 + log warning。
+
+### 10.4 字段语义按链解释
+
+`risk_params.mev_bribe_sol` 字段名不变(向后兼容),但**含义按链区分**:
+- **Solana**:实际 SOL 数量(给 Jito tip)
+- **EVM(eth)**:`> 0` 启用 Flashbots Protect 私有 mempool;`= 0` 走公共
+- **EVM(bsc/base/polygon/arb/op)**:`> 0` 启用(第一版 fallback 公共 + log,等接 bloXroute / 1inch Fusion)
+
+### 10.5 UI 适配(Web + App 同步)
+
+- **Web**:[helix-marketing/src/components/app/StrategyCard.tsx](../../helix-marketing/src/components/app/StrategyCard.tsx) `<SpeedSection chain={chain} />`
+  - Solana → MEV slider(0-0.01 SOL)
+  - EVM → MEV toggle(✓ 已启用 / 未启用)+ 文案随 chain 变(Flashbots Protect / 1inch 路由)
+- **App**:[apps/app/lib/screens/agent/strategy_detail_page.dart:472-481](../../apps/app/lib/screens/agent/strategy_detail_page.dart:472) 加链感知文案
+
+### 10.6 测试
+
+[services/pump-scanner/tests/test_evm_mev.py](../../services/pump-scanner/tests/test_evm_mev.py) — 9 测试:
+- Flashbots URL 配置
+- mev_protected=True/False 路径分别走对 RPC
+- bsc 无 Protect URL → fallback 公共 + log warning
+- 默认参数兼容旧 caller
+
+### 10.7 不在 R45 范围(R46+)
+
+- bloXroute BSC 真接入(替代 fallback)
+- 1inch Fusion limit order 完整改造
+- Arbitrum Express Lane 拍卖
+- Base Flashblocks 接通

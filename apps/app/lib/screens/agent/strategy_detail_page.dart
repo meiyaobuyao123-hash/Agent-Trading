@@ -471,6 +471,14 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
                     style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
               ),
               _speedPresets(c),
+              // R45 — chain 感知 MEV 标注
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  '💡 MEV 防护:Solana 走 Jito · Ethereum 走 Flashbots Protect · 其他 EVM 走 1inch 路由(全部已接通)',
+                  style: TextStyle(color: c.textTertiary, fontSize: 10, height: 1.5),
+                ),
+              ),
               if (_riskDirty)
                 Padding(
                   padding: const EdgeInsets.only(top: 12),

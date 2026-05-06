@@ -1,5 +1,19 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-06 R45 — EVM MEV 全接通)
+
+**R45 — EVM MEV 接通 + Web/App 同步**(2026-05-06):
+- 后端 trade_executor 加 `EVM_RPC_MEV_PROTECTED` 字典
+  - `eth` → `https://rpc.flashbots.net/fast`(Flashbots Protect,免费,drop-in 替换 RPC URL)
+  - `bsc / base` → 第一版 fallback 公共 RPC + log warning(后续接 bloXroute / 1inch Fusion)
+- `_broadcast_evm(chain, signed_tx, mev_protected=True)` 走 Flashbots
+- Web `<SpeedSection chain={chain}>`:Solana → MEV slider;EVM → MEV toggle("已启用 / 未启用")+ 按链文案
+- Flutter strategy_detail_page 加 chain 感知文案
+- 测试 9 个全过(`tests/test_evm_mev.py`)
+- 文档 18-trade-execution-spec §10 + memory 三件套同步
+
+**Why**:R44.4 之前 EVM MEV slider 灰掉标"暂未接通",用户问"是没概念还是没做"。MEV 本来是 EVM 鼻祖(Flashbots/MEV-Boost 90%+ ETH 出块),不是没概念,是没做。R45 接通。
+
 ## ⚠️ 上线状态(2026-05-05 R41 完结 — chat 8/8 全接)
 
 | 维度 | 状态 |

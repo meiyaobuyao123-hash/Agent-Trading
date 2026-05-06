@@ -40,6 +40,7 @@ LLM_PRICES: Dict[str, Dict[str, float]] = {
     "claude-haiku-4-5-20251001": {"in": 0.25,  "out": 1.25},
     "claude-sonnet-4-6":         {"in": 3.0,   "out": 15.0},
     "claude-sonnet-4-6-20251022":{"in": 3.0,   "out": 15.0},
+    "claude-sonnet-4-20250514":  {"in": 3.0,   "out": 15.0},  # 当前线上 chat 用
     "claude-opus-4-6":           {"in": 15.0,  "out": 75.0},
     "claude-opus-4-6-20251022":  {"in": 15.0,  "out": 75.0},
     # Claude 3.5 / Sonnet 兼容(老 model id)

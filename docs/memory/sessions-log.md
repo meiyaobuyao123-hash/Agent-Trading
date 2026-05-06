@@ -4,6 +4,40 @@
 
 ---
 
+## 2026-05-07 R47 — Credit 算力体系
+
+### 做了什么
+- migration 045_credits(user_credits + credit_transactions + recharge_orders)
+- agent/credit_service.py(完整 API)+ api/routes_credit.py(5 endpoints)
+- chat handler 接 pre-call gate + post-call deduct(stream + 非 stream 都改)
+- LLMParser._last_usage 累加器(每轮 messages.create 后从 response.usage 累加 token)
+- 16 单测 + 43 历史测试(R40+R46)不回归
+- 服务器 git pull + 跑 migration + restart pump-scanner-api(active);公网 E2E 验证通
+- Web /app/credit 页(余额卡 + 充值 modal + 订单 + 交易历史)
+- SubNav 加余额胶囊(全页可见,余额低/0 高亮 + 30s 自动刷新)
+- 文档 docs/agent-pm/19-credit-system-spec.md
+- R45 Flashbots Protect RPC 真发请求 verify(返 block 0x17e0b2f ≈25.16M)
+- R46 register/login/me/wrong-password 全 E2E 通
+
+### 讨论结论
+- 充值通道 USDT/USDC 链上(用户自己钱包转),不接 Stripe(KYC 麻烦 + 手续费高)
+- 计费成本 + 万分之五(几乎透传,只覆盖 RPC 监听成本)
+- HTTPS 暂不上(用户决策),会话告知 8 项风险(明文密码 / OAuth testing 模式 / iOS ATS / PWA / SEO / 第三方 API / Web Push 等)
+- LLMParser 用 `_last_usage` 属性累加(避免改返回值破坏 13 处 caller)
+- DEV bypass 仍保留(测试期不强扣,用 user_id=000...001 跳过)
+
+### 被否定的方案
+- 改 parse_strategy 返 4-tuple 含 usage(破坏现有 caller,工程量大)
+- 字符数估算 token(精度差,会引发用户不满)
+- balance 用 INTEGER 存(Decimal NUMERIC(14,8) 才是 money 类型应有的精度)
+
+### 风险待 R48 处理
+- USDC 充值监听 cron 未上(用户充值无法自动 confirm,只能 admin 手动 grant)
+- HTTPS(必须 GA 前)
+- Flutter R46+R47(下一会话)
+
+---
+
 ## 2026-03-11
 
 ### 做了什么

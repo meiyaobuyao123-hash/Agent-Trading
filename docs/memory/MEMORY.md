@@ -1,5 +1,25 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 — Credit 算力体系上线)
+
+**R47 — Credit 算力 + Token 计费**(2026-05-07,commits `3b9f10f` + `b2f633b`):
+- 后端:migration 045_credits(user_credits / credit_transactions / recharge_orders 三表)+ agent/credit_service.py(calc_cost 成本+万分之五 markup / deduct/add/can_proceed / recharge order CRUD / estimate_remaining_messages)+ api/routes_credit.py(5 endpoints:/balance, /recharge-orders POST/GET, /transactions, /admin/grant)
+- chat handler 接 gate:pre-call `can_proceed` 拒余额<$0.0001 用户 + post-call 用 `_llm_parser._last_usage` 真 token 数 deduct(stream + 非 stream 都改)
+- LLMParser 加 `_last_usage = {"in":0, "out":0, "model":MODEL}` 累加器,parse 顶部 reset,每轮 messages.create 后从 `response.usage.input_tokens`/`output_tokens` 累加
+- 16 单测全过;R40+R46 43 测试不回归
+- 服务器:跑 migration 045 + git pull + restart pump-scanner-api(active)
+- 公网 E2E 验证通:新用户 $0 → chat 拒(返"余额不足");种 $1 → chat 成功扣 $0.0381(11594 in / 218 out × sonnet 价 × 1.0005);余额 $0.9619;tx 流水正确
+- Web:`/app/credit` 页(余额卡 + 充值 modal + 订单列表 + 交易历史)+ SubNav 余额胶囊(余额低/0 高亮警告)+ /app/credit 加 SubNav nav;helix-marketing 重 build active
+- DEV bypass:user_id=00000000-0000-0000-0000-000000000001 不扣费
+
+定价:Haiku $0.25/$1.25,Sonnet $3/$15,Opus $15/$75 per MTok × 1.0005 markup
+
+延后 R48:USDC 充值监听 cron(Solana)+ Flutter R46+R47 + HTTPS
+
+**R47 风险公告**(用户已知):暂不上 HTTPS = HTTP 明文密码/JWT 中间人风险 + Google OAuth 必须 testing 模式 + iOS App ATS 默认禁 HTTP — GA 前必须做(Let's Encrypt 1 小时配完)
+
+文档:`docs/agent-pm/19-credit-system-spec.md`(完整规范)
+
 ## ⚠️ 上线状态(2026-05-06 R46 — 账户体系上线)
 
 **R46 — 邮箱/Google 登录 + 多钱包归属**(2026-05-06):

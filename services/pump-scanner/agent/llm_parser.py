@@ -508,6 +508,9 @@ class LLMParser:
         if anthropic is None:
             log.warning("anthropic SDK not installed, LLM parser disabled")
         self.client = None  # type: Optional[Any]
+        # R47: 累计本次 parse 的 LLM token 用量(用于 credit_service.deduct)
+        # 每次 parse_strategy / parse_strategy_stream 顶部 reset,每次 messages.create 后累加
+        self._last_usage: Dict[str, Any] = {"in": 0, "out": 0, "model": MODEL}
 
     def _get_client(self) -> Any:
         """惰性初始化 Anthropic 客户端"""
@@ -536,6 +539,8 @@ class LLMParser:
             return None, "API 密钥未配置，无法解析策略。请设置 ANTHROPIC_API_KEY。", list(conversation_history or [])
 
         client = self._get_client()
+        # R47: reset usage 累加器
+        self._last_usage = {"in": 0, "out": 0, "model": MODEL}
 
         if conversation_history:
             # R39 v5: 续接历史。不再注入 context(避免每轮重复污染历史);只追加新 user 消息
@@ -570,6 +575,15 @@ class LLMParser:
                 return None, f"AI 服务暂时不可用：{str(e)[:100]}", messages
             except Exception as e:
                 return None, f"策略解析出错，请重新描述。", messages
+
+            # R47: 累计本轮 token usage
+            try:
+                u = getattr(response, "usage", None)
+                if u is not None:
+                    self._last_usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
+                    self._last_usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+            except Exception:
+                pass
 
             # 收集本轮的文本和工具调用
             tool_calls = []
@@ -651,6 +665,8 @@ class LLMParser:
             return
 
         client = self._get_client()
+        # R47: reset usage 累加器
+        self._last_usage = {"in": 0, "out": 0, "model": MODEL}
         if conversation_history:
             messages = list(conversation_history)
             messages.append({"role": "user", "content": user_message})
@@ -680,6 +696,15 @@ class LLMParser:
                     tools=ALL_TOOLS,
                     messages=messages,
                 )
+
+                # R47: 累计本轮 token usage
+                try:
+                    u = getattr(response, "usage", None)
+                    if u is not None:
+                        self._last_usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
+                        self._last_usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+                except Exception:
+                    pass
 
                 tool_calls = []
                 text_parts = []

@@ -461,6 +461,20 @@ async def chat(
         )
     # ─────────────────────────────────────────────────────────────
 
+    # ── R47: Credit 算力检查(余额 < $0.0001 拒)─
+    try:
+        from agent import credit_service
+        ok, reason = credit_service.can_proceed(user_id)
+        if not ok:
+            return ChatResponse(
+                strategy=None,
+                message=f"⚠️ {reason}。请先充值算力 → /app/credit",
+                requires_confirmation=False,
+            )
+    except Exception as e:
+        log.debug("[credit gate] skip: %s", e)
+    # ─────────────────────────────────────────────────────────────
+
     # R39 root-cause:删掉关键词预触发 hack。
     # 现在 LLMParser 直接暴露 14 工具给 LLM(ALL_TOOLS),由 LLM 自己 route。
     # 见 agent/llm_parser.py — 用户问"涨幅 top"会自动调 query_top_movers,
@@ -509,6 +523,21 @@ async def chat(
 
     # R41 P1:写 working_memory(24h 滑动窗口,给 reflection_loop 用)
     _record_chat_to_working_memory(user_id, req.message, ai_message, strategy_spec is not None)
+
+    # R47: 按实际 LLM token 用量扣 credit
+    try:
+        from agent import credit_service
+        usage = getattr(_llm_parser, "_last_usage", None) or {}
+        if (usage.get("in") or 0) > 0 or (usage.get("out") or 0) > 0:
+            credit_service.deduct(
+                user_id,
+                usage.get("model", "claude-sonnet-4-6"),
+                int(usage.get("in", 0)),
+                int(usage.get("out", 0)),
+                request_id=conv.conv_id,
+            )
+    except Exception as e:
+        log.debug("[credit deduct] skip: %s", e)
 
     return ChatResponse(
         strategy=strategy_spec,
@@ -644,6 +673,21 @@ async def chat_stream(
             _record_chat_to_working_memory(user_id, req.message, assistant_for_mem, False)
         except Exception as e:
             log.debug("[working_memory stream] skip: %s", e)
+
+        # R47: stream 路径也按 LLM token 用量扣 credit
+        try:
+            from agent import credit_service
+            usage = getattr(_llm_parser, "_last_usage", None) or {}
+            if (usage.get("in") or 0) > 0 or (usage.get("out") or 0) > 0:
+                credit_service.deduct(
+                    user_id,
+                    usage.get("model", "claude-sonnet-4-6"),
+                    int(usage.get("in", 0)),
+                    int(usage.get("out", 0)),
+                    request_id=conv.conv_id,
+                )
+        except Exception as e:
+            log.debug("[credit deduct stream] skip: %s", e)
 
     return StreamingResponse(
         _event_generator(),

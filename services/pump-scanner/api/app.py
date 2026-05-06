@@ -38,6 +38,7 @@ from api.routes_audit import router as audit_router        # W3 D3
 from api.routes_admin import router as admin_router        # W3 D3
 from api.routes_wallet import router as wallet_router      # R42 P1 私钥加密
 from api.routes_auth import router as auth_router          # R46 邮箱/Google 登录
+from api.routes_credit import router as credit_router      # R47 算力体系
 
 log = logging.getLogger(__name__)
 
@@ -99,6 +100,7 @@ app.include_router(audit_router)
 app.include_router(admin_router)
 app.include_router(wallet_router)  # R42 P1 钱包私钥加密管理
 app.include_router(auth_router)    # R46 邮箱/Google 登录
+app.include_router(credit_router)  # R47 算力体系
 
 
 # ── 健康检查 ──────────────────────────────────────────────────

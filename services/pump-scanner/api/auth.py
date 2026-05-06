@@ -22,14 +22,15 @@ load_dotenv(override=True)
 
 log = logging.getLogger(__name__)
 
-# Supabase JWT Secret（从环境变量或 config 获取）
-JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "")
+# R46 — 自建 JWT(取代 Supabase JWT;SUPABASE_JWT_SECRET 兼容旧 deploy)
+# 优先 AUTH_JWT_SECRET,fallback SUPABASE_JWT_SECRET(向后兼容,未来可删)
+JWT_SECRET = os.getenv("AUTH_JWT_SECRET") or os.getenv("SUPABASE_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 
-# 开发模式：JWT Secret 未配置时跳过验证
+# 开发模式:JWT Secret 未配置时跳过验证
 DEV_MODE = not JWT_SECRET
 if DEV_MODE:
-    log.warning("SUPABASE_JWT_SECRET not set — running in DEV mode (auth bypassed)")
+    log.warning("AUTH_JWT_SECRET not set — running in DEV mode (auth bypassed)")
 
 # FastAPI 安全方案
 security = HTTPBearer(auto_error=False)
@@ -64,17 +65,20 @@ async def get_current_user(
     token = credentials.credentials
 
     try:
-        # 解码 Supabase JWT
-        payload = jwt.decode(
-            token,
-            JWT_SECRET,
-            algorithms=[JWT_ALGORITHM],
-            audience="authenticated",
-            options={
-                "verify_exp": True,
-                "verify_aud": True,
-            },
-        )
+        # R46 自建 JWT 不强制 audience(payload 用 {sub, email, exp, iat, provider})
+        # Supabase JWT 兼容路径:audience='authenticated'
+        # 先按自建 JWT(无 aud)解,失败 fallback Supabase 风格
+        try:
+            payload = jwt.decode(
+                token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
+                options={"verify_exp": True, "verify_aud": False},
+            )
+        except jwt.InvalidTokenError:
+            payload = jwt.decode(
+                token, JWT_SECRET, algorithms=[JWT_ALGORITHM],
+                audience="authenticated",
+                options={"verify_exp": True, "verify_aud": True},
+            )
 
         user_id = payload.get("sub")
         if not user_id:

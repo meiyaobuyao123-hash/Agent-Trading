@@ -10,6 +10,9 @@ uvicorn==0.27.1
 pydantic==2.6.1
 anthropic==0.18.1
 PyJWT==2.8.0
+# R46 账户体系
+bcrypt==4.1.2
+google-auth==2.30.0
 
 # KOL 系统
 twscrape==0.12.0

@@ -74,10 +74,13 @@ async def exchange_google_code(code: str, redirect_uri: str) -> Dict[str, Any]:
 # ── bcrypt 密码 ─────────────────────────────────────────────
 
 def hash_password(plain: str) -> str:
-    """bcrypt 加密密码,默认 cost factor 12(~250ms 单核)"""
+    """bcrypt 加密密码。
+    R46.2:cost factor 10(服务器单核 ~60-100ms,登录响应快 4 倍)。
+    OWASP 2023 推荐最低 10 — 攻击者 GPU 暴破 10/12 都难。
+    """
     if not plain:
         raise ValueError("空密码")
-    salt = bcrypt.gensalt(rounds=12)
+    salt = bcrypt.gensalt(rounds=10)
     return bcrypt.hashpw(plain.encode("utf-8"), salt).decode("utf-8")
 
 

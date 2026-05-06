@@ -14,7 +14,8 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, Field
+import re as _re
+from pydantic import BaseModel, Field, validator
 
 from agent.auth_service import (
     hash_password, verify_password,
@@ -30,15 +31,33 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 # ── 请求/响应 ─────────────────────────────────────────────
 
+_EMAIL_RE = _re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _validate_email(v: str) -> str:
+    v = (v or "").strip().lower()
+    if not _EMAIL_RE.match(v):
+        raise ValueError("邮箱格式不正确")
+    return v
+
+
 class RegisterRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str = Field(..., min_length=6, max_length=128)
     display_name: Optional[str] = Field(None, max_length=64)
 
+    @validator("email")
+    def _email(cls, v):
+        return _validate_email(v)
+
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str = Field(..., min_length=1, max_length=128)
+
+    @validator("email")
+    def _email(cls, v):
+        return _validate_email(v)
 
 
 class GoogleLoginRequest(BaseModel):

@@ -253,14 +253,16 @@ class TradeExecutor:
 
         # ── R42 P0.2:risk_params 真用(取代 hardcoded)─────────
         rp = risk_params or {}
-        # max_position_usd 强制限仓(超出截断 + log)
-        max_position = float(rp.get("max_position_usd", 1000.0))
-        if amount_usd > max_position:
-            log.warning(
-                "[trade_executor] amount_usd %.2f > max_position %.2f → 截断",
-                amount_usd, max_position,
-            )
-            amount_usd = max_position
+        # R47 P7 max_position_usd:策略显式设了才截断,没设则尊重入参 amount_usd 不动
+        _max_pos = rp.get("max_position_usd")
+        if _max_pos is not None:
+            max_position = float(_max_pos)
+            if amount_usd > max_position:
+                log.warning(
+                    "[trade_executor] amount_usd %.2f > strategy.max_position %.2f → 截断",
+                    amount_usd, max_position,
+                )
+                amount_usd = max_position
 
         # ── R42 P0.3:全自动化 7 条兜底检查(取代 HITL 分层审批)─
         # 仅当 safety_ctx 含 user_id 且 mode=live 时跑(paper 不消耗 daily cap)
@@ -307,16 +309,17 @@ class TradeExecutor:
 
         # ── W3 D3 Safety pre-check ──────────────────────────────
         if safety_ctx is not None:
-            # R47 P6 — 注入 max_position_usd 给 HR01 函数检查(联动 strategy)
-            block = check_safety_for_trade(
-                {**safety_ctx,
-                 "chain": chain, "token_address": token_address,
-                 "action": action, "amount_usd": amount_usd,
-                 "slippage_pct": safety_ctx.get("slippage_pct", slippage_pct / 100.0),
-                 "max_position_usd": safety_ctx.get(
-                     "max_position_usd", rp.get("max_position_usd", 500),
-                 )},
-            )
+            # R47 P7 — 注入 max_position_usd 给 HR01;若策略未设则不注入(HR01 不触发)
+            ctx_inject = {
+                **safety_ctx,
+                "chain": chain, "token_address": token_address,
+                "action": action, "amount_usd": amount_usd,
+                "slippage_pct": safety_ctx.get("slippage_pct", slippage_pct / 100.0),
+            }
+            _explicit_cap = safety_ctx.get("max_position_usd") or rp.get("max_position_usd")
+            if _explicit_cap is not None:
+                ctx_inject["max_position_usd"] = _explicit_cap
+            block = check_safety_for_trade(ctx_inject)
             if block is not None:
                 return TradeResult(
                     success=False,

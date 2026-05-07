@@ -1413,7 +1413,7 @@ class PromoteToLiveRequest(BaseModel):
     has_wallet: bool = Field(..., description="已连接钱包(WalletService.wallets 非空)")
     disclaimer_accepted: bool = Field(..., description="已读 + 同意《免责声明》")
     risk_acknowledged: bool = Field(..., description="已勾选'我知道会亏钱'")
-    max_position_usd: Optional[float] = Field(None, description="单笔金额上限(默认 500,可调到 5000;R47 P6)")
+    max_position_usd: Optional[float] = Field(None, description="单笔金额上限(R47 P7:无封顶,用户随意填;>0 即可)")
 
 
 @router.post("/strategies/{strategy_id}/promote-to-live")
@@ -1428,7 +1428,7 @@ async def promote_to_live(
     - 用户主动决策 + 4 项解锁条件 checklist
     - 通过 force=True bypass R37 门槛
     - 写 audit log: event_type=admin_action(用户级 promote 也算 admin action)
-    - 在策略 risk_params 写入 max_position_usd(R47 P6:用户选 $500/$5000)
+    - 在策略 risk_params 写入 max_position_usd(R47 P7:无封顶,默认 $500,用户随意调)
     """
     strategy = _strategy_mgr.get_strategy(strategy_id)
     if not strategy:
@@ -1457,9 +1457,9 @@ async def promote_to_live(
             "missing": missing,
         }
 
-    # R47 P6 单笔金额上限:默认 $500 / 用户可调到 $5000
+    # R47 P7 单笔金额无封顶:默认 $500(给个合理初值),用户随意调,只要 > 0
     max_position = float(req.max_position_usd or 500)
-    max_position = max(10, min(5000, max_position))
+    max_position = max(0.01, max_position)  # 仅防 0/负数,无上限
 
     # 先写 max_position_usd 到策略,再 force=True go_live
     try:

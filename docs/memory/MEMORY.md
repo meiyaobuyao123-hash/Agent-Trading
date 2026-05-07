@@ -1,5 +1,33 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 P2 — USDC 充值闭环 4 链 + Flutter)
+
+**R47 P2**(2026-05-07 commits `f988b8e` + `cc5f1dd` + `8a445ee`):
+
+充值收款地址(用户提供):
+- Solana: `66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn`
+- EVM(eth/base/bsc 共用): `0xC862ff9Fd79D180950E546DBB8b108d5c9c38582`
+
+后端 USDC 监听 cron(60s tick,4 链):
+- `agent/loops/credit_recharge_loop.py`,接 main.py APScheduler
+- Solana 用标准 JSON-RPC(getSignaturesForAddress + getTransaction jsonParsed,解析 tokenBalances 差值);fallback list publicnode → mainnet-beta → ankr → Helius 兜底
+- EVM(eth/base/bsc)用 eth_getLogs + Transfer topic + padded our addr;每链 3-4 个公共 RPC fallback
+- BSC USDC 18 decimals 关键覆盖(其他 6 dec)— 单测验证防多发 10^12 倍 credit
+- 命中 → confirm_recharge_order;单链失败不影响其他链
+- 15 单测全过;cron 线上 60s tick 无报错
+
+Web `/app/credit`:
+- RechargeModal 加 4 链选择器(Solana/Base/Ethereum/BSC + USDC 标准 + 确认时间)
+- PayModal 文案按链动态适配
+
+Flutter App R46+R47(全套):
+- R46:auth_service(JWT+secure_storage)+ login/register 页 + DisclaimerGate 接 LoginPage + api_client Bearer token + 401 logout
+- R47:credit_service + credit_page(余额 + 充值 sheet + PayDialog QR + 订单 + 流水)+ BalanceChip(agent AppBar)+ profile 算力入口
+- pubspec + qr_flutter
+- flutter analyze 干净
+
+下一步用户实操:从自己 Phantom/MetaMask 转 $1.0XXX USDC 到对应收款地址 → 60-120s 自动 confirm
+
 ## ⚠️ 上线状态(2026-05-07 R47.1 — 登录入口 UX 优化上线)
 
 **R47.1 — 登录 UX 改造**(2026-05-07,helix-marketing 重 build):

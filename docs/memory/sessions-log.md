@@ -4,6 +4,56 @@
 
 ---
 
+## 2026-05-07 R47 P2 — USDC 充值闭环 4 链 + Flutter 全套
+
+### 用户暴露的真实问题
+"我都没给你收款地址,你这个功能开发的怎么样了" — 直击 R47 P1 的实际状态:
+- 服务器没配 RECHARGE_ADDRESS env → Web 创建订单返 503
+- 没有 USDC 监听 cron(用户转账过来无人识别)
+- Flutter 端完全没做(R46 登录 + R47 Credit 都没)
+
+### 用户提供 + 决策
+- Solana 收款: `66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn`
+- EVM(共用): `0xC862ff9Fd79D180950E546DBB8b108d5c9c38582`
+- 4 链全做(Solana + Ethereum + Base + BSC)
+- Web + App 都要支持
+- EVM RPC 用公共免费
+
+### 做了什么
+- 服务器 .env 配 4 个 RECHARGE_ADDRESS_*
+- agent/loops/credit_recharge_loop.py(60s tick):
+  - Solana standard RPC fallback list(publicnode → mainnet-beta → ankr → Helius)+ getSignaturesForAddress + getTransaction → tokenBalances 差值识别 USDC 入账
+  - EVM 4 链 3-4 个公共 RPC fallback + eth_getLogs Transfer event + padded to addr
+  - BSC 18 decimals / 其他 6 dec 按链查表
+  - 单链失败不影响其他;命中 → confirm_recharge_order(防重)
+- credit_service.list_pending_orders_by_chain helper
+- main.py APScheduler 加 cron job
+- 15 单测全过(BSC 18 dec 关键覆盖)
+- Web /app/credit RechargeModal 加 4 链选择器
+- Flutter R46(auth_service + login/register + DisclaimerGate + Bearer 拦截)
+- Flutter R47(credit_service + credit_page + BalanceChip + profile 入口 + qr_flutter)
+- 服务器部署 + cron 60s tick 无报错;4 链订单创建成功;Web 4 链 chunk 在 bundle
+
+### 讨论结论
+- Helius free tier 100k credits/月,Enhanced API 一次 ~10 credits → 60s tick × 4 链早就爆;切到 standard RPC + fallback 列表
+- 公共 RPC 每个都不稳(429 IP-ban / max usage)→ 必须按链多备 3-4 个 fallback
+- BSC 18 decimals 是最大坑;算错给用户多发 10^12 倍 credit;单测必盯死
+- Flutter App 用现有 secure_storage(iOS Keychain)+ http 包(已有),不引 dio 等新包
+
+### 被否定的方案
+- 用 Etherscan v2 unified API(需要 API key,公共 RPC 已够)
+- 钱包深链 URL(留 R48,第一版只显地址 + 金额 + QR)
+- WebSocket 监听 USDC Transfer 实时(60s 轮询足够,简单)
+
+### 风险待 R48
+- 公共 RPC 不稳定 — 后期升 Alchemy / QuickNode 付费
+- HTTPS(GA 前必做)
+- Helius free tier 已耗(下月 1 号回血,期间用公共)
+- iOS Google Sign-In(需 GoogleService-Info.plist + iOS OAuth client)
+- Solana / EVM 钱包深链(扫码直接发 USDC)
+
+---
+
 ## 2026-05-07 R47.1 — 登录入口 UX 优化
 
 ### 用户反馈

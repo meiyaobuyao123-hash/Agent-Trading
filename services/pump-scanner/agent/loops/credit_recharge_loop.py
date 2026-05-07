@@ -105,34 +105,54 @@ def _match_pending(
 
 # ── Solana ────────────────────────────────────────────────
 
+def _solana_rpc_list() -> List[str]:
+    """Solana RPC fallback list — 公共优先,Helius 兜底(因免费 quota 易爆)。
+    env SOL_RPC 可覆盖第一个。
+    """
+    api_key = os.getenv("HELIUS_API_KEY", "")
+    return [
+        os.getenv("SOL_RPC") or "https://solana-rpc.publicnode.com",
+        "https://api.mainnet-beta.solana.com",
+        "https://rpc.ankr.com/solana",
+        f"https://mainnet.helius-rpc.com/?api-key={api_key}" if api_key else "",
+    ]
+
+
+async def _try_solana_rpcs(
+    session: aiohttp.ClientSession,
+    method: str,
+    params: List[Any],
+) -> Optional[Any]:
+    last_err = None
+    for url in _solana_rpc_list():
+        if not url:
+            continue
+        try:
+            return await _evm_rpc(session, url, method, params)
+        except Exception as e:
+            last_err = e
+            continue
+    if last_err:
+        log.warning("[credit_recharge] solana all RPCs failed: %s", last_err)
+    return None
+
+
 async def scan_solana(session: aiohttp.ClientSession) -> int:
     """返本次 confirm 的订单数。
-    使用 Solana 标准 RPC(Helius 免费 tier 无量限):
+    使用 Solana 标准 RPC(fallback 列表):
       1. getSignaturesForAddress(addr, limit=10) → 10 个最新 tx 签名
       2. 对每条 sig:getTransaction(sig, jsonParsed) → 解析 tokenBalances 差值
-      3. 如发现 USDC 增加到我们的 ATA → 与 pending order 匹配 → confirm
-
-    避免 Enhanced Transactions API(/v0/addresses/.../transactions),那个有 100k credits/月 限额。
+      3. 如发现 USDC 增加到我们 → 与 pending order 匹配 → confirm
     """
     pending = credit_service.list_pending_orders_by_chain("solana")
     if not pending:
         return 0
 
     addr = pending[0]["receive_address"]
-    api_key = os.getenv("HELIUS_API_KEY", "")
-    rpc_url = (
-        f"https://mainnet.helius-rpc.com/?api-key={api_key}"
-        if api_key
-        else "https://api.mainnet-beta.solana.com"
-    )
 
-    try:
-        # 1. 拉最新 10 条 tx 签名(轻量调用)
-        sigs_resp = await _evm_rpc(session, rpc_url, "getSignaturesForAddress", [addr, {"limit": 10}])
-        if not sigs_resp:
-            return 0
-    except Exception as e:
-        log.warning("[credit_recharge] solana getSignaturesForAddress fail: %s", e)
+    # 1. 拉最新 10 条 tx 签名(fallback list)
+    sigs_resp = await _try_solana_rpcs(session, "getSignaturesForAddress", [addr, {"limit": 10}])
+    if not sigs_resp:
         return 0
 
     confirmed_count = 0
@@ -140,14 +160,11 @@ async def scan_solana(session: aiohttp.ClientSession) -> int:
         sig = sig_obj.get("signature")
         if not sig:
             continue
-        try:
-            tx = await _evm_rpc(session, rpc_url, "getTransaction", [
-                sig,
-                {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0},
-            ])
-            if not tx:
-                continue
-        except Exception:
+        tx = await _try_solana_rpcs(session, "getTransaction", [
+            sig,
+            {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0},
+        ])
+        if not tx:
             continue
 
         # 解析 pre/postTokenBalances diff,找 USDC 增量到我们 addr

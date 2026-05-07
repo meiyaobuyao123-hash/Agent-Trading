@@ -4,6 +4,49 @@
 
 ---
 
+## 2026-05-07 R47 P4 — 风控 audit 4 真 bug 全修
+
+### 用户问
+"我们的风控有没有真实生效"
+
+### 实事求是 audit
+读 18 项风控代码 + 跑 7 chaos test 在 prod,发现:
+- **真生效 5 项**:input_filter / output_filter / R47 chat gate / token 计费 / Paper SL/TP cron 在 tick
+- **空跑 9 项**:position_monitor 扫 agent_executions 0 条 / HITL pending_approvals 0 条 / strategies 0 条 / agent_risk_events 0 条等
+- **致命 bug 2 项**:
+  1. sl_pct/tp_pct 单位歧义(全栈 mixed unit:schema/prompt 用 ratio,paper_engine 用 percent)→ 3150 paper trades 全 sl=0.1 ratio,87 closed 95% 误触发 SL,平均 PnL=-3.79%
+  2. **Kill Switch 无鉴权!** 我自己 chaos test 1 行 curl 把全平台 Kill Switch trip 了(发现 ADMIN_TOKEN 空 = 任何人通过)— global_state 短暂 blocked,立即 release
+
+### 修复(全做)
+- P0.1 sl_pct 单位:Pydantic ge=1 le=90 + ratio reject validator + LLM SYSTEM_PROMPT 改 percent + _normalize_spec 自动 ratio→percent 迁移 + paper_engine 防御 sl_pct<1 跳过 + scripts/fix_paper_trades_unit.sql(3063 仓 sl_pct 0.1→10)+ 11 单测全过
+- P0.2 schema:agent_strategies 已有 mode CHECK(R42 P0.4 早建);migration 046 加 daily_loss/consecutive_losses + audit trigger 因 owner 权限被拒,留 R48 用 postgres 跑
+- P0.3 Kill Switch 鉴权:production 必须 ADMIN_TOKEN env,否则 503;dev 可空。服务器配新 ADMIN_TOKEN
+- P1.4 GA 加固:GeoBlock 默认开 + DEV bypass 双 env 才开
+
+### Chaos 重测全过
+1. ✅ input_filter 仍拦 prompt injection
+2. ✅ LLM 写 sl_pct=30(不是 0.3)
+3. ✅ 无 token Kill Switch 403
+4. ✅ 错 token Kill Switch 403
+5. ✅ 正 ADMIN_TOKEN Kill Switch trip + release 正常
+6. ✅ 3063 paper trades sl_pct 0.1→10 真改了
+7. ✅ 85 单测不回归
+
+### 讨论结论
+- 实事求是 audit 比"假装跑"更值得做 — 暴露的 Kill Switch 鉴权漏洞如果 GA 后被发现就是事故
+- sl_pct 单位 bug 是经典的 ratio/percent 歧义,金融代码常见,一定要 schema 强约束 + 测试覆盖
+- 全栈 mixed unit 必须文档化(prompt/schema/runtime 必须一致)
+- Migration 046 owner 权限要 R48 解(用 postgres user 跑或 GRANT)
+
+### 风险待 R48
+- HTTPS(GA 必做)
+- migration 046 audit trigger(用 postgres 用户跑)
+- price_feed 覆盖广度(3063 stuck open 根因之二)
+- HITL 真触发演示(造 $200 真交易场景)
+- agent_executions 真写入路径(等 P0.4 真 trade 接通)
+
+---
+
 ## 2026-05-07 R47 P3 — Web/App chat gate + Flutter Google Sign-In
 
 ### 用户反馈(三个真 bug)

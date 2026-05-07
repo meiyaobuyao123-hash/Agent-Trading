@@ -1,5 +1,39 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 P4 — 风控 audit 4 真 bug 全修)
+
+**R47 P4**(2026-05-07,commit `972acc5`):
+
+实事求是 audit 18 项风控,7 chaos test,发现:
+- 真生效 5 项 / 空跑 9 项 / disabled 2 项 / **致命 bug 2 项**
+
+**致命 bug 1 — sl_pct 单位歧义**:用户说 "止损 30%" → LLM 写 `0.3`(ratio)→ paper_engine 当 `0.3%` 用 → 所有 token 一动 0.3% 立即 SL → 87 closed 95% 误触发,平均 PnL=-3.79%,3063 stuck open 全 sl=0.1 ratio。修:schemas ge=1 le=90 + ratio reject validator + LLM prompt 改 percent 整数 + _normalize 自动 ratio→percent + paper_engine 防御 sl_pct<1 跳过 + 历史数据修复 SQL(3063 仓 0.1→10)+ 11 单测全过
+
+**致命 bug 2 — Kill Switch 无鉴权**:实战 chaos test 实际触发(2026-05-07 我自己 1 行 curl 把全平台 Kill Switch trip 了 global_state=blocked,然后发现 ADMIN_TOKEN 空 = 任何人通过)。修:production 必须配 ADMIN_TOKEN,否则 503;development 可空。+ 服务器配 `ADMIN_TOKEN=cENjLv0EgVw7s428DShxTm09lX6Aov+D`(请运维保管)
+
+**P0.2 schema/audit 部分完成**:agent_strategies 表已有 mode CHECK(R42 P0.4),migration 046 加 daily_loss/consecutive_losses + audit trigger 因 owner 权限被拒,留 R48 用 postgres 跑
+
+**P1 GA 加固**:GeoBlock 默认开,仅 ENVIRONMENT=development + DISABLE_GEO_BLOCK=true 才 disable;DEV bypass 双 env 才开,production 强制 503
+
+部署:server pull + restart pump-scanner-api active + 数据修复 SQL 跑通(3063 仓 sl_pct 0.1→10) + 全部 chaos 重测通
+
+文件:agent/schemas.py + agent/llm_parser.py + agent/paper_engine.py + agent/tools/t07_run_paper_trade.py + api/auth.py + api/app.py + api/routes_admin.py + migrations/046_strategies_mode.sql + scripts/fix_paper_trades_unit.sql + tests/test_paper_engine_units.py
+
+风控真生效现状(R47 P4 后):
+- ✅ input_filter prompt injection 拦截(真实 chaos test 触发 4 次)
+- ✅ output_filter LLM 输出 C1 命中(5 次 warn)
+- ✅ R47 余额 gate / token 计费(实战验证)
+- ✅ Kill Switch 鉴权(P4 修了致命漏洞)
+- ✅ Paper SL/TP cron 30s(逻辑修对了 — 用户说 30% 现在写 30,不是 0.3)
+- ✅ Paper 历史数据 fixed(3063 仓 sl_pct 0.1→10)
+- 🟡 Position Monitor 30s tick 跑(扫的 agent_executions 0 条,等真交易接通)
+- 🟡 HITL 5/15/60min cron(空跑,等真用户)
+- 🟡 trade_executor risk_params(0 真交易,等接通)
+
+GA 必修(留 R48):HTTPS / migration 046 用 postgres 跑 / Flutter google_sign_in iOS Simulator 实测 / Android Google client / Etherscan key
+
+ADMIN_TOKEN(server .env):**cENjLv0EgVw7s428DShxTm09lX6Aov+D**
+
 ## ⚠️ 上线状态(2026-05-07 R47 P3 — Web/App chat gate + Flutter Google Sign-In)
 
 **R47 P3**(2026-05-07,commits `4a135ab` + `aa33352`):

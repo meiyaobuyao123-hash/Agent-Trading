@@ -130,9 +130,24 @@ class ActionSpec(BaseModel):
     # 交易参数
     amount_usd: Optional[float] = Field(None, description="交易金额 (USD)")
     max_slippage_pct: Optional[float] = Field(None, description="最大滑点 %")
-    # 风控参数
-    stop_loss_pct: Optional[float] = Field(None, description="止损百分比 0.05-0.50")
-    take_profit_pct: Optional[float] = Field(None, description="止盈百分比 0.10-10.0")
+    # 风控参数 — R47 P4 单位统一为百分比整数(不是 ratio)
+    stop_loss_pct: Optional[float] = Field(
+        None, ge=1, le=90,
+        description="止损百分比 1-90,例如 30 表示 30%(不是 0.3)",
+    )
+    take_profit_pct: Optional[float] = Field(
+        None, ge=1, le=10000,
+        description="止盈百分比 1-10000,例如 100 表示 100%(不是 1.0)",
+    )
+
+    # R47 P4 ratio 误传防御:任何 0<x<1 都是 LLM ratio 单位错填,直接拒
+    @validator("stop_loss_pct", "take_profit_pct")
+    def _reject_ratio_unit(cls, v):
+        if v is not None and 0 < v < 1:
+            raise ValueError(
+                f"{v} 看起来是 ratio 单位,本字段必须是百分比整数(30 表示 30%);拒收"
+            )
+        return v
     max_position_usd: Optional[float] = Field(None, description="单笔最大金额 (USD)")
     trailing_stop: Optional[bool] = Field(None, description="是否启用追踪止损")
     # 交易执行参数（策略级）

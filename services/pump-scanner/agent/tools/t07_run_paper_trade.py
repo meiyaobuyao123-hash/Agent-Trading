@@ -65,8 +65,10 @@ class RunPaperTradeTool(Tool):
                 "token_address": {"type": "string"},
                 "token_symbol": {"type": "string"},
                 "amount_usd": {"type": "number", "exclusiveMinimum": 0},
-                "sl_pct": {"type": "number"},
-                "tp_pct": {"type": "number"},
+                "sl_pct": {"type": "number", "minimum": 1, "maximum": 90,
+                           "description": "止损百分比 1-90(30 = 30%,不是 0.3)"},
+                "tp_pct": {"type": "number", "minimum": 1, "maximum": 10000,
+                           "description": "止盈百分比 1-10000(100 = 100%,不是 1.0)"},
                 "trigger_context": {"type": "object"},
                 # sell only
                 "trade_id": {"type": "string"},

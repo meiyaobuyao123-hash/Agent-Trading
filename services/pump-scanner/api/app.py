@@ -55,16 +55,27 @@ app = FastAPI(
 # 注意：中间件按 add_middleware 的反序执行，GeoBlock 需在 CORS 之前注册
 # 故此处先 add GeoBlock，再 add CORS
 #
-# R36 加 env 开关:DISABLE_GEO_BLOCK=true 时跳过(团队内测期用,生产期务必关)
+# R47 P4 加固:
+#   - 默认开(production 安全默认)
+#   - 仅 ENVIRONMENT=development AND DISABLE_GEO_BLOCK=true 才 disable
+#   - 单独配 DISABLE_GEO_BLOCK=true 在 production 无效(防误配)
 import os as _os_geo
-if _os_geo.getenv("DISABLE_GEO_BLOCK", "").lower() not in ("true", "1", "yes"):
-    app.add_middleware(GeoBlockMiddleware)
-else:
-    import logging as _log_geo
+import logging as _log_geo
+
+_env_geo = _os_geo.getenv("ENVIRONMENT", "production").lower()
+_disable_geo = _os_geo.getenv("DISABLE_GEO_BLOCK", "").lower() in ("true", "1", "yes")
+
+if _env_geo == "development" and _disable_geo:
     _log_geo.getLogger(__name__).warning(
-        "[geo] GeoBlockMiddleware DISABLED via DISABLE_GEO_BLOCK env "
-        "(内测期用,GA 前务必关 env 关回)"
+        "[geo] GeoBlockMiddleware DISABLED (ENVIRONMENT=development + DISABLE_GEO_BLOCK=true)"
     )
+else:
+    app.add_middleware(GeoBlockMiddleware)
+    if _disable_geo:
+        # production 配了 DISABLE_GEO_BLOCK=true 但 ENVIRONMENT 不是 development → 忽略
+        _log_geo.getLogger(__name__).warning(
+            "[geo] DISABLE_GEO_BLOCK=true 在 production 无效;GeoBlockMiddleware 强制启用"
+        )
 
 # CORS 配置
 app.add_middleware(

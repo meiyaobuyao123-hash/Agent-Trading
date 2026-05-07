@@ -115,8 +115,13 @@ SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自�
 - sell: 自动卖出
 
 ## 风控参数 risk_params（交易策略必填）
-- stop_loss_pct: 止损% (0.05-0.50)，默认 0.30
-- take_profit_pct: 止盈% (0.10-10.0)，默认 1.00
+
+⚠️ **关键单位规范**：止损止盈用**百分比整数**,不是 ratio:
+- ✅ 用户说"止损 30%" → `stop_loss_pct: 30`(百分比整数)
+- ❌ 写 `0.3` 是 0.3%(token 跳一下就触发,系统会拒收)
+
+- stop_loss_pct: 止损百分比 1-90,默认 30(表示 30%)
+- take_profit_pct: 止盈百分比 1-10000,默认 100(表示 100%,即 2 倍)
 - max_position_usd: 单笔上限USD (10-1000)，默认 100
 - trailing_stop: 追踪止损 bool，默认 true
 - priority_fee_sol: SOL优先费，默认 0.0005
@@ -161,9 +166,10 @@ SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自�
   "actions": [{"type": "buy", "amount_usd": 50, "max_slippage_pct": 1.0}],
   "filters": {},
   "cooldown_minutes": 30,
-  "risk_params": {"stop_loss_pct": 0.20, "take_profit_pct": 2.0, "max_position_usd": 50, "trailing_stop": true}
+  "risk_params": {"stop_loss_pct": 20, "take_profit_pct": 200, "max_position_usd": 50, "trailing_stop": true}
 }
 ```
+**注意 risk_params 用百分比整数**:止损 20% → `20`,止盈 3 倍即 200% → `200`。
 
 ## 你的完整能力(R39 扩展:18 tool 自主 route)
 
@@ -366,19 +372,19 @@ STRATEGY_TOOL = {
             },
             "risk_params": {
                 "type": "object",
-                "description": "风控参数（交易策略专用）",
+                "description": "风控参数(交易策略专用)— 百分比单位为整数,30 表示 30%(不是 0.3)",
                 "properties": {
                     "stop_loss_pct": {
                         "type": "number",
-                        "description": "止损百分比 0.05-0.50，默认 0.30",
-                        "minimum": 0.05,
-                        "maximum": 0.50,
+                        "description": "止损百分比 1-90,默认 30(表示 30%,不是 0.3)",
+                        "minimum": 1,
+                        "maximum": 90,
                     },
                     "take_profit_pct": {
                         "type": "number",
-                        "description": "止盈百分比 0.10-10.0，默认 1.00",
-                        "minimum": 0.10,
-                        "maximum": 10.0,
+                        "description": "止盈百分比 1-10000,默认 100(表示 100%,即 2 倍)",
+                        "minimum": 1,
+                        "maximum": 10000,
                     },
                     "max_position_usd": {
                         "type": "number",
@@ -847,12 +853,21 @@ class LLMParser:
             "cooldown_minutes": max(raw.get("cooldown_minutes", 30), 5),
         }
 
-        # 风控参数（交易策略专用）
+        # 风控参数（交易策略专用)— R47 P4 单位统一为百分比整数
         risk_params = raw.get("risk_params")
         if risk_params:
+            # R47 P4 ratio→percent 自动迁移:LLM 误传 0.3 → 转为 30
+            sl_raw = float(risk_params.get("stop_loss_pct", 30))
+            tp_raw = float(risk_params.get("take_profit_pct", 100))
+            if 0 < sl_raw < 1:
+                log.warning("[normalize_spec] stop_loss_pct=%s 看似 ratio 单位,自动 ×100 转 percent", sl_raw)
+                sl_raw *= 100
+            if 0 < tp_raw < 1:
+                log.warning("[normalize_spec] take_profit_pct=%s 看似 ratio 单位,自动 ×100 转 percent", tp_raw)
+                tp_raw *= 100
             spec["risk_params"] = {
-                "stop_loss_pct": min(max(risk_params.get("stop_loss_pct", 0.30), 0.05), 0.50),
-                "take_profit_pct": min(max(risk_params.get("take_profit_pct", 1.00), 0.10), 10.0),
+                "stop_loss_pct": min(max(sl_raw, 1), 90),         # 1-90% 百分比
+                "take_profit_pct": min(max(tp_raw, 1), 10000),    # 1-10000% 百分比
                 "max_position_usd": min(max(risk_params.get("max_position_usd", 100), 10), 1000),
                 "trailing_stop": risk_params.get("trailing_stop", True),
                 "priority_fee_sol": min(max(risk_params.get("priority_fee_sol", 0.0005), 0.0001), 0.1),

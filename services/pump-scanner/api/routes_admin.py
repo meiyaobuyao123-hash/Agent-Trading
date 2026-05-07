@@ -41,9 +41,27 @@ ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")  # 空则不校验(开发期)
 
 
 def _check_admin(x_admin_token: Optional[str]) -> None:
-    """空 token = 开发期允许所有;否则严格匹配。"""
+    """R47 P4 — 严格化:必须配 ADMIN_TOKEN env + 请求带匹配的 X-Admin-Token header。
+
+    旧版 "ADMIN_TOKEN 空 → 任何人通过" 是致命漏洞:
+    任何 curl POST /api/admin/agent/kill-switch + confirm=true → Kill Switch trip 全平台关停。
+    R47 P4 实战 chaos test 实际触发过(2026-05-07 audit)。
+
+    生产环境必须配 ADMIN_TOKEN env(强 32+ 字节随机)。
+    开发环境配 ENVIRONMENT=development + ADMIN_TOKEN 可空 才放开。
+    """
+    import os as _os
+    _is_dev = _os.getenv("ENVIRONMENT", "production").lower() == "development"
+
     if not ADMIN_TOKEN:
-        return
+        if _is_dev:
+            # development 环境 + 未配 ADMIN_TOKEN → 允许(本地测试方便)
+            return
+        # production 环境必须配
+        raise HTTPException(
+            status_code=503,
+            detail="ADMIN_TOKEN env 未配,admin endpoint 在 production 不可用",
+        )
     if x_admin_token != ADMIN_TOKEN:
         raise HTTPException(status_code=403, detail="invalid admin token")
 

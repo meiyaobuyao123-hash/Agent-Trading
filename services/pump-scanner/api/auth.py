@@ -27,10 +27,20 @@ log = logging.getLogger(__name__)
 JWT_SECRET = os.getenv("AUTH_JWT_SECRET") or os.getenv("SUPABASE_JWT_SECRET", "")
 JWT_ALGORITHM = "HS256"
 
-# 开发模式:JWT Secret 未配置时跳过验证
-DEV_MODE = not JWT_SECRET
-if DEV_MODE:
-    log.warning("AUTH_JWT_SECRET not set — running in DEV mode (auth bypassed)")
+# R47 P4 加固:DEV bypass 必须双 env 才能开
+#   - JWT_SECRET 未配 (向后兼容)
+#   - AND ENVIRONMENT=development(显式开发环境)
+# production 默认 ENVIRONMENT=production → 即使 JWT_SECRET 未配也强制 401
+ENVIRONMENT = os.getenv("ENVIRONMENT", "production").lower()
+DEV_MODE = (not JWT_SECRET) and (ENVIRONMENT == "development")
+
+if not JWT_SECRET and ENVIRONMENT != "development":
+    log.error(
+        "AUTH_JWT_SECRET 未配 + ENVIRONMENT != development;"
+        "API 将拒绝所有请求(401),配 ENVIRONMENT=development 才走 dev-user bypass"
+    )
+elif DEV_MODE:
+    log.warning("AUTH_JWT_SECRET not set + ENVIRONMENT=development → DEV mode (auth bypassed)")
 
 # FastAPI 安全方案
 security = HTTPBearer(auto_error=False)
@@ -44,17 +54,26 @@ async def get_current_user(
     """
     验证 JWT 并返回 user_id
 
-    开发模式下跳过验证，返回固定 dev user_id。
+    R47 P4 production 强制:
+      - JWT_SECRET 未配 + ENVIRONMENT 不是 development → 401(无 dev-user 兜底)
+      - 只有同时满足 JWT_SECRET 未配 AND ENVIRONMENT=development → DEV mode
 
     Returns:
         user_id (UUID string)
 
     Raises:
-        HTTPException 401 if 认证失败（仅生产模式）
+        HTTPException 401 if 认证失败
     """
-    # 开发模式：跳过认证
+    # R47 P4 — DEV mode 严格化,production 拒所有无 token 请求
     if DEV_MODE:
         return _DEV_USER_ID
+
+    if not JWT_SECRET:
+        # production 但 secret 没配 — 不能走 dev bypass,必须报 503 让运维知道
+        raise HTTPException(
+            status_code=503,
+            detail="Server auth not configured (AUTH_JWT_SECRET missing in production)",
+        )
 
     if credentials is None:
         raise HTTPException(

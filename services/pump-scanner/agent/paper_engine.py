@@ -206,6 +206,16 @@ class PaperEngine:
                 if entry_price <= 0:
                     continue
 
+                # R47 P4 防御:sl_pct/tp_pct < 1 几乎肯定是 ratio 单位误存(如 0.3 = 30%),
+                # 这种值会导致 token 一动 0.3% 就 SL → 跳过 + 报警等数据修复
+                if sl_pct < 1 or tp_pct < 1:
+                    log.error(
+                        "[paper_engine] trade %s sl_pct=%s tp_pct=%s ratio_unit_skip "
+                        "(sl_pct/tp_pct must be percent integer; 30 means 30 percent)",
+                        trade.get("id"), sl_pct, tp_pct,
+                    )
+                    continue
+
                 # 获取当前价格
                 current_price = price_feed.get_token_price(token_address)
                 if current_price is None:

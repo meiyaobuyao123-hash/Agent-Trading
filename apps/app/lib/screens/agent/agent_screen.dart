@@ -4,7 +4,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
+import '../../services/credit_service.dart';
 import '../../services/wallet_service.dart';
+import '../credit/credit_page.dart';
 import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
@@ -520,6 +522,36 @@ class _ChatTabState extends State<_ChatTab>
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
+
+    // R47 P3 gate — 余额预检(已登录已就绪;同 Web 体验)
+    final bal = CreditService.instance.balance;
+    if (bal != null && bal.hasAccount && bal.balanceUsd <= 0) {
+      // 弹引导充值
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          icon: const Icon(Icons.bolt, color: Color(0xFFF59E0B), size: 32),
+          title: const Text('算力余额不足'),
+          content: const Text('需要充值后才能继续与 Agent 对话\n\n选 Solana / Base / Ethereum / BSC 链 USDC 充值'),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('取消')),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF3C82F6), foregroundColor: Colors.white),
+              child: const Text('去充值'),
+            ),
+          ],
+        ),
+      );
+      if (go == true && mounted) {
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const CreditPage()),
+        );
+        // 回来后顺便刷一次余额
+        await CreditService.instance.fetchBalance();
+      }
+      return;
+    }
 
     // 1. 添加用户消息 + 开启流式状态
     setState(() {

@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/app_config.dart';
 import '../models/review.dart';
 import '../models/semantic_rule.dart';
+import 'auth_service.dart';
 
 /// Agent API 服务 — 对接后端 FastAPI
 class AgentService {
@@ -14,9 +15,15 @@ class AgentService {
   static const _apiBase = AppConfig.backendBaseUrl;
   static const _timeout = Duration(seconds: 90);
 
-  Map<String, String> get _headers => {
-        'Content-Type': 'application/json',
-      };
+  /// R47 P3 — attach Bearer token(否则后端按 dev-user 处理,扣费扣到 dev 账上)
+  Map<String, String> get _headers {
+    final m = <String, String>{'Content-Type': 'application/json'};
+    final token = AuthService.instance.token;
+    if (token != null && token.isNotEmpty) {
+      m['Authorization'] = 'Bearer $token';
+    }
+    return m;
+  }
 
   /// 解析后端错误信息
   String _parseError(http.Response resp) {
@@ -76,6 +83,12 @@ class AgentService {
 
       final response = await _client.send(request).timeout(_timeout);
 
+      if (response.statusCode == 401) {
+        // R47 P3 — token 过期 → 自动 logout(UI 监听 AuthService → 跳 LoginPage)
+        await AuthService.instance.logout();
+        yield StreamEvent(type: 'error', text: '登录已过期,请重新登录');
+        return;
+      }
       if (response.statusCode != 200) {
         yield StreamEvent(type: 'error', text: 'Server error (${response.statusCode})');
         return;

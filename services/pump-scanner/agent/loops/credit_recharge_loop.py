@@ -49,11 +49,25 @@ USDC_EVM: Dict[str, Tuple[str, int]] = {
 # ERC-20 Transfer 事件 topic0 = keccak256("Transfer(address,address,uint256)")
 TRANSFER_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
 
-# 公共 RPC(env 可覆盖)
-EVM_RPC: Dict[str, str] = {
-    "ethereum": os.getenv("ETH_RPC", "https://eth.llamarpc.com"),
-    "base":     os.getenv("BASE_RPC", "https://mainnet.base.org"),
-    "bsc":      os.getenv("BSC_RPC", "https://bsc-dataseed.binance.org"),
+# 公共 RPC fallback 列表(env 可覆盖第一个;429/超时按顺序 fallback)
+# llamarpc 有时会"封 IP 50 天",所以多备几条
+EVM_RPC_LIST: Dict[str, List[str]] = {
+    "ethereum": [
+        os.getenv("ETH_RPC") or "https://ethereum-rpc.publicnode.com",
+        "https://rpc.ankr.com/eth",
+        "https://eth.drpc.org",
+        "https://eth.llamarpc.com",
+    ],
+    "base": [
+        os.getenv("BASE_RPC") or "https://mainnet.base.org",
+        "https://base-rpc.publicnode.com",
+        "https://base.drpc.org",
+    ],
+    "bsc": [
+        os.getenv("BSC_RPC") or "https://bsc-dataseed.binance.org",
+        "https://bsc-rpc.publicnode.com",
+        "https://bsc.drpc.org",
+    ],
 }
 
 # 每次扫多少 blocks 回看(覆盖 30min 订单有效期 + 几次 cron 失败重试)
@@ -92,56 +106,85 @@ def _match_pending(
 # ── Solana ────────────────────────────────────────────────
 
 async def scan_solana(session: aiohttp.ClientSession) -> int:
-    """返本次 confirm 的订单数。"""
+    """返本次 confirm 的订单数。
+    使用 Solana 标准 RPC(Helius 免费 tier 无量限):
+      1. getSignaturesForAddress(addr, limit=10) → 10 个最新 tx 签名
+      2. 对每条 sig:getTransaction(sig, jsonParsed) → 解析 tokenBalances 差值
+      3. 如发现 USDC 增加到我们的 ATA → 与 pending order 匹配 → confirm
+
+    避免 Enhanced Transactions API(/v0/addresses/.../transactions),那个有 100k credits/月 限额。
+    """
     pending = credit_service.list_pending_orders_by_chain("solana")
     if not pending:
         return 0
 
-    # 我们的收款地址(订单内已带,假设全用同一地址 — 即 env 配的)
     addr = pending[0]["receive_address"]
     api_key = os.getenv("HELIUS_API_KEY", "")
-    if not api_key:
-        log.warning("[credit_recharge] HELIUS_API_KEY 未配,跳 Solana")
-        return 0
-
-    url = f"https://api.helius.xyz/v0/addresses/{addr}/transactions"
-    params = {"api-key": api_key, "type": "TRANSFER", "limit": 20}
+    rpc_url = (
+        f"https://mainnet.helius-rpc.com/?api-key={api_key}"
+        if api_key
+        else "https://api.mainnet-beta.solana.com"
+    )
 
     try:
-        async with session.get(url, params=params, timeout=aiohttp.ClientTimeout(total=15)) as r:
-            if r.status != 200:
-                log.warning("[credit_recharge] solana http=%s %s", r.status, await r.text())
-                return 0
-            txs = await r.json()
+        # 1. 拉最新 10 条 tx 签名(轻量调用)
+        sigs_resp = await _evm_rpc(session, rpc_url, "getSignaturesForAddress", [addr, {"limit": 10}])
+        if not sigs_resp:
+            return 0
     except Exception as e:
-        log.warning("[credit_recharge] solana RPC fail: %s", e)
+        log.warning("[credit_recharge] solana getSignaturesForAddress fail: %s", e)
         return 0
 
     confirmed_count = 0
-    for tx in txs or []:
-        sig = tx.get("signature")
-        token_transfers = tx.get("tokenTransfers") or []
-        for tt in token_transfers:
-            mint = tt.get("mint")
-            to_acc = tt.get("toUserAccount")
-            amount = tt.get("tokenAmount")
-            if mint != USDC_SOL_MINT or to_acc != addr or amount is None:
+    for sig_obj in sigs_resp[:10]:
+        sig = sig_obj.get("signature")
+        if not sig:
+            continue
+        try:
+            tx = await _evm_rpc(session, rpc_url, "getTransaction", [
+                sig,
+                {"encoding": "jsonParsed", "maxSupportedTransactionVersion": 0},
+            ])
+            if not tx:
                 continue
-            received = Decimal(str(amount))
-            order = _match_pending(pending, received)
-            if not order:
-                continue
-            # 命中 — 调 confirm
-            res = credit_service.confirm_recharge_order(order["id"], sig)
-            if res:
-                confirmed_count += 1
-                log.info(
-                    "[credit_recharge][solana] confirmed order=%s amount=%s tx=%s user=%s",
-                    order["id"], received, sig, order["user_id"][:8],
-                )
-                # 已 confirmed 的 order 不再尝试匹配后续 tx
-                pending = [o for o in pending if o["id"] != order["id"]]
-                break
+        except Exception:
+            continue
+
+        # 解析 pre/postTokenBalances diff,找 USDC 增量到我们 addr
+        meta = tx.get("meta") or {}
+        pre = meta.get("preTokenBalances") or []
+        post = meta.get("postTokenBalances") or []
+
+        # 构 mint→{owner→amount} 映射
+        def _idx(arr):
+            d = {}
+            for b in arr:
+                m = b.get("mint")
+                o = b.get("owner")
+                ui = (b.get("uiTokenAmount") or {}).get("uiAmount")
+                if m == USDC_SOL_MINT and o == addr and ui is not None:
+                    d[o] = Decimal(str(ui))
+            return d
+
+        pre_d = _idx(pre)
+        post_d = _idx(post)
+        prev = pre_d.get(addr, Decimal(0))
+        curr = post_d.get(addr, Decimal(0))
+        delta = curr - prev
+        if delta <= 0:
+            continue
+
+        order = _match_pending(pending, delta)
+        if not order:
+            continue
+        res = credit_service.confirm_recharge_order(order["id"], sig)
+        if res:
+            confirmed_count += 1
+            log.info(
+                "[credit_recharge][solana] confirmed order=%s amount=%s tx=%s user=%s",
+                order["id"], delta, sig, order["user_id"][:8],
+            )
+            pending = [o for o in pending if o["id"] != order["id"]]
 
     return confirmed_count
 
@@ -159,40 +202,64 @@ async def _evm_rpc(session: aiohttp.ClientSession, url: str, method: str, params
         return d.get("result")
 
 
+async def _try_evm_rpcs(
+    session: aiohttp.ClientSession,
+    chain: str,
+    method: str,
+    params: List[Any],
+) -> Optional[Any]:
+    """尝试 fallback list 里的 RPC,第一个成功的返回。全部失败返 None。"""
+    urls = EVM_RPC_LIST.get(chain) or []
+    last_err = None
+    for url in urls:
+        if not url:
+            continue
+        try:
+            return await _evm_rpc(session, url, method, params)
+        except Exception as e:
+            last_err = e
+            continue
+    if last_err:
+        log.warning("[credit_recharge] %s all RPCs failed: %s", chain, last_err)
+    return None
+
+
 async def scan_evm(session: aiohttp.ClientSession, chain: str) -> int:
     """返本次 confirm 的订单数。"""
     pending = credit_service.list_pending_orders_by_chain(chain)
     if not pending:
         return 0
 
-    rpc_url = EVM_RPC.get(chain)
     usdc_info = USDC_EVM.get(chain)
     lookback = EVM_LOOKBACK_BLOCKS.get(chain, 200)
-    if not rpc_url or not usdc_info:
+    if not usdc_info:
         return 0
     usdc_contract, decimals = usdc_info
 
     addr = pending[0]["receive_address"]
 
+    # 当前块号(fallback 链)
+    block_hex = await _try_evm_rpcs(session, chain, "eth_blockNumber", [])
+    if not block_hex:
+        return 0
     try:
-        # 当前块号
-        block_hex = await _evm_rpc(session, rpc_url, "eth_blockNumber", [])
         current = int(block_hex, 16)
-        from_block = max(0, current - lookback)
+    except Exception:
+        return 0
+    from_block = max(0, current - lookback)
 
-        # eth_getLogs filter — Transfer to 我们
-        logs = await _evm_rpc(session, rpc_url, "eth_getLogs", [{
-            "address": usdc_contract,
-            "topics": [
-                TRANSFER_TOPIC,
-                None,                  # from(任意)
-                _pad_evm_addr(addr),   # to(我们)
-            ],
-            "fromBlock": hex(from_block),
-            "toBlock": "latest",
-        }])
-    except Exception as e:
-        log.warning("[credit_recharge] %s RPC fail: %s", chain, e)
+    # eth_getLogs filter — Transfer to 我们(fallback 链)
+    logs = await _try_evm_rpcs(session, chain, "eth_getLogs", [{
+        "address": usdc_contract,
+        "topics": [
+            TRANSFER_TOPIC,
+            None,                  # from(任意)
+            _pad_evm_addr(addr),   # to(我们)
+        ],
+        "fromBlock": hex(from_block),
+        "toBlock": "latest",
+    }])
+    if logs is None:
         return 0
 
     confirmed_count = 0

@@ -91,76 +91,92 @@ class TestSolana:
 
     @pytest.mark.asyncio
     async def test_happy_path_confirms_order(self):
+        """getSignaturesForAddress → getTransaction → 解析 tokenBalances 差值,匹配 → confirm"""
+        addr = "66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn"
         pending = [{
-            "id": 42,
-            "user_id": "u1",
-            "chain": "solana",
-            "receive_address": "66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn",
-            "amount_usd": Decimal("10.0034"),
+            "id": 42, "user_id": "u1", "chain": "solana",
+            "receive_address": addr, "amount_usd": Decimal("10.0034"),
         }]
-        # Helius 返一笔 tx,tokenTransfers 含 USDC mint + 我们 addr + 精确金额
-        helius_resp = [{
-            "signature": "sig_abc123",
-            "tokenTransfers": [{
-                "mint": crl.USDC_SOL_MINT,
-                "toUserAccount": "66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn",
-                "tokenAmount": 10.0034,
-            }],
-        }]
+        # 1. getSignaturesForAddress 返 1 个 sig
+        # 2. getTransaction 返 meta 含 pre/postTokenBalances,USDC delta = 10.0034 → 我们 addr
+        rpc_responses = [
+            {"jsonrpc": "2.0", "id": 1, "result": [{"signature": "sig_abc123"}]},
+            {"jsonrpc": "2.0", "id": 1, "result": {
+                "meta": {
+                    "preTokenBalances": [{
+                        "mint": crl.USDC_SOL_MINT,
+                        "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 5.0},
+                    }],
+                    "postTokenBalances": [{
+                        "mint": crl.USDC_SOL_MINT,
+                        "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 15.0034},  # +10.0034
+                    }],
+                },
+            }},
+        ]
         with patch.object(crl.credit_service, "list_pending_orders_by_chain", return_value=pending), \
-             patch.object(crl.credit_service, "confirm_recharge_order", return_value={"new_balance": Decimal("10.0034")}) as mock_conf, \
-             patch.dict("os.environ", {"HELIUS_API_KEY": "test_key"}):
-            session = _mock_session_get(helius_resp)
+             patch.object(crl.credit_service, "confirm_recharge_order", return_value={"ok": True}) as mock_conf:
+            session = _mock_session_post(rpc_responses)
             count = await crl.scan_solana(session)
             assert count == 1
             mock_conf.assert_called_once_with(42, "sig_abc123")
 
     @pytest.mark.asyncio
     async def test_amount_mismatch_skipped(self):
+        addr = "addr_test"
         pending = [{
-            "id": 42,
-            "user_id": "u1",
-            "chain": "solana",
-            "receive_address": "addr1",
-            "amount_usd": Decimal("10.0034"),
+            "id": 42, "user_id": "u1", "chain": "solana",
+            "receive_address": addr, "amount_usd": Decimal("10.0034"),
         }]
-        helius_resp = [{
-            "signature": "sig",
-            "tokenTransfers": [{
-                "mint": crl.USDC_SOL_MINT,
-                "toUserAccount": "addr1",
-                "tokenAmount": 10.0099,  # 不匹配
-            }],
-        }]
+        rpc_responses = [
+            {"jsonrpc": "2.0", "id": 1, "result": [{"signature": "sig"}]},
+            {"jsonrpc": "2.0", "id": 1, "result": {
+                "meta": {
+                    "preTokenBalances": [{
+                        "mint": crl.USDC_SOL_MINT, "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 5.0},
+                    }],
+                    "postTokenBalances": [{
+                        "mint": crl.USDC_SOL_MINT, "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 15.0099},  # +10.0099 不匹配
+                    }],
+                },
+            }},
+        ]
         with patch.object(crl.credit_service, "list_pending_orders_by_chain", return_value=pending), \
-             patch.object(crl.credit_service, "confirm_recharge_order") as mock_conf, \
-             patch.dict("os.environ", {"HELIUS_API_KEY": "test_key"}):
-            session = _mock_session_get(helius_resp)
+             patch.object(crl.credit_service, "confirm_recharge_order") as mock_conf:
+            session = _mock_session_post(rpc_responses)
             assert await crl.scan_solana(session) == 0
             mock_conf.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_wrong_mint_skipped(self):
-        """转的不是 USDC,是其他 SPL token → 不调 confirm"""
+        """tokenBalance 是其他 SPL token,不是 USDC → 不调 confirm"""
+        addr = "addr_test"
         pending = [{
-            "id": 42,
-            "user_id": "u1",
-            "chain": "solana",
-            "receive_address": "addr1",
-            "amount_usd": Decimal("10.0034"),
+            "id": 42, "user_id": "u1", "chain": "solana",
+            "receive_address": addr, "amount_usd": Decimal("10.0034"),
         }]
-        helius_resp = [{
-            "signature": "sig",
-            "tokenTransfers": [{
-                "mint": "OTHER_MINT_NOT_USDC",
-                "toUserAccount": "addr1",
-                "tokenAmount": 10.0034,
-            }],
-        }]
+        rpc_responses = [
+            {"jsonrpc": "2.0", "id": 1, "result": [{"signature": "sig"}]},
+            {"jsonrpc": "2.0", "id": 1, "result": {
+                "meta": {
+                    "preTokenBalances": [{
+                        "mint": "OTHER_TOKEN_MINT", "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 5.0},
+                    }],
+                    "postTokenBalances": [{
+                        "mint": "OTHER_TOKEN_MINT", "owner": addr,
+                        "uiTokenAmount": {"uiAmount": 15.0034},
+                    }],
+                },
+            }},
+        ]
         with patch.object(crl.credit_service, "list_pending_orders_by_chain", return_value=pending), \
-             patch.object(crl.credit_service, "confirm_recharge_order") as mock_conf, \
-             patch.dict("os.environ", {"HELIUS_API_KEY": "test_key"}):
-            session = _mock_session_get(helius_resp)
+             patch.object(crl.credit_service, "confirm_recharge_order") as mock_conf:
+            session = _mock_session_post(rpc_responses)
             assert await crl.scan_solana(session) == 0
             mock_conf.assert_not_called()
 

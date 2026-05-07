@@ -4,6 +4,57 @@
 
 ---
 
+## 2026-05-07 R47 P6 — HITL 分层重做 + 单笔上限 $500/$5000
+
+### 用户反转 R42 P0.3 决策
+之前(R42 P0.3 2026-05-05)用户明确说"不分层,全自动",我们删了所有 HITL 撤销窗口。今天用户改主意:
+- 单笔 < $500 全自动
+- 单笔 ≥ $500 半自动 + 10s 倒计时撤销
+- 单笔金额上限从 $50 升到 $500(默认),用户可调到 $5000
+
+### 14 CB 详细讲清楚
+按用户要求把 14 个全局熔断器逐个解释:CB01 日亏 $500 / CB02 周亏 $1500 / CB03 连亏 3 笔 / CB04 LLM 月预算 / CB05 30 天回撤 ≥20% / CB06 API 错误率 / CB07 单代币 1h ≥5 触发 / CB08 HITL 队列堆积 / CB09 WAL 失败 / CB10 Eval 通过率 / CB11 跟单钱包亏 / CB12 KMS / CB13 BTC 大盘危机 / CB14 手动 Kill Switch。
+
+### 拆单讲清楚
+触发条件:buy + 金额>$40 + 价格冲击>2%;笔数 max(2, $/$20) cap 10;每笔间隔 2s;最多 18s 发完 $5000。
+
+### 用户决策
+1. HR01 联动 strategy.max_position_usd(选 C 方案,推荐)
+2. cancel_window_sec = 10 秒(不是 5)
+
+### 改了 11 个后端文件
+- routes_agent promote-to-live 默认 $500 钳位 $5000
+- hitl_router 加 decide_automation_level + SEMI_AUTO_THRESHOLD_USD 常量
+- migration 047 新表 pending_semi_auto_trades
+- semi_auto_service.py 完整 CRUD 加防 race
+- semi_auto_executor 1s tick cron
+- main.py APScheduler 接入
+- routes_agent /trades/pending GET + cancel POST
+- action_dispatcher live 路径加 < $500 / ≥ $500 分流
+- safety_policy.yaml HR01 改 type=function
+- safety_engine 加 hr01_within_strategy_max 注册
+- trade_executor safety_ctx 注入 max_position_usd
+
+### 测试 + 部署 + E2E
+- 16 新单测全过(decide 6 / HR01 6 / service 2 / integration 2)
+- 累计 109/109 不回归
+- 服务器 git pull + migration 047 + restart 全 active
+- Semi-Auto Trade Executor 1s cron journalctl 已确认在跑
+- E2E 6 场景全过,包含**关键场景**:新建 pending → 等 12s → cron 自动执行 → status=executed + tx_hash=DRY_RUN_xxx(DRY_RUN 闸正确拦截不真发链)
+
+### 防 race 设计
+- cron 用 UPDATE WHERE status='pending' RETURNING(原子)
+- cancel_pending 加 execute_after > now 时间窗检查
+- 同一行 UPDATE 串行化,后到的拿不到 RETURNING → 跳过
+
+### 风险待 R48
+- Flutter HITL 倒计时撤销页 + Firebase 推送 wire(留下一会话做 UI)
+- Web /app/approvals 页加倒计时 + SWR 1s 轮询
+- 删 DRY_RUN_LIVE_TRADES env(允许真发链)
+- migration 046 audit trigger 用 postgres user 跑
+
+---
+
 ## 2026-05-07 R47 P5 — live 交易 user_id 透传接通(真发链上路径)
 
 ### 用户问"agent 是否真有交易能力,路径是不是通的"

@@ -1,5 +1,53 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 P6 — HITL 重新分层 + 单笔上限调整)
+
+**R47 P6**(2026-05-07,commit `c46f305`):
+
+用户反转 R42 P0.3 "全自动无撤销" 决策:
+- 单笔金额上限 $50 → $500(默认),用户可调到 $5000
+- HITL 分层:< $500 全自动 / ≥ $500 半自动 10s 撤销 / sell 永远 auto
+- HR01 硬防线从硬编码 $500 改为联动 strategy.max_position_usd
+
+后端改 11 个文件:
+- promote-to-live 默认 $500 钳位 $5000
+- hitl_router.decide_automation_level
+- migration 047_pending_semi_auto_trades 新表
+- agent/semi_auto_service.py 完整 CRUD(create/cancel/fetch_due/mark_executed/list_user)
+- agent/loops/semi_auto_executor.py 1s tick cron + main.py APScheduler 接入
+- /api/agent/trades/pending GET + cancel POST
+- action_dispatcher live 路径分流 auto / semi
+- safety_policy.yaml HR01 type=function fn=hr01_within_strategy_max
+- safety_engine 新加 hr01_within_strategy_max 函数 + 注册
+- trade_executor safety_ctx 注入 max_position_usd
+
+防 race 设计:
+- mark_executed 用 UPDATE WHERE status='pending' RETURNING(原子)
+- cancel_pending 加 execute_after > now 时间窗检查,不让 race 到 cron 已执行的窗口外
+- cron + cancel 同时跑,后到的 UPDATE 不命中 RETURNING → 跳过
+
+测试:
+- tests/test_hitl_semi_auto.py 16 单测全过(decide 6 + HR01 6 + service 2 + integration 2)
+- 累计 109/109(85 历史 + 16 P6 + 8 P5)不回归
+
+部署:
+- 服务器 git pull + migration 047 + restart pump-scanner-api/pump-scanner active
+- Semi-Auto Trade Executor 1s cron 真在跑(journalctl 已确认)
+
+E2E 6 场景验证全过:
+1. decide_automation_level 阈值正确($499 auto / $500 semi / sell always auto)
+2. create_pending 入表($1000 buy 成功)
+3. 1s 后用户撤销成功
+4. 重复撤销返 already_cancelled
+5. **新建 pending → 等 12s → cron 自动执行 → status=executed + tx_hash=DRY_RUN_xxx**(DRY_RUN 闸正确拦截)
+6. HR01 联动验证($400≤$500 通过 / $600>$500 拒 / $4000≤$5000 通过 / paper 跳过)
+
+GA 待办(R48):
+- 删 DRY_RUN_LIVE_TRADES env(允许真发链)
+- Flutter HITL 倒计时撤销页 + 推送 wire(留下一会话)
+- Web /app/approvals 页加倒计时 + SWR 1s 轮询(留下一会话)
+- migration 046 audit trigger 用 postgres user 跑
+
 ## ⚠️ 上线状态(2026-05-07 R47 P5 — live 交易链路 user_id 透传接通)
 
 **R47 P5**(2026-05-07,commit `f4e92d0`):

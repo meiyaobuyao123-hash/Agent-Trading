@@ -418,6 +418,43 @@ def create_recharge_order(
         return None
 
 
+def list_pending_orders_by_chain(chain: str) -> List[Dict[str, Any]]:
+    """R47 P2 监听 cron 用:拉某链所有 status='pending' 且未过期的 orders。
+    cron 拿到后从链上查 USDC 转账,匹配 amount_exact 命中 → 调 confirm_recharge_order。
+    """
+    try:
+        conn = _get_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id, user_id, chain, receive_address, amount_usd, amount_base,
+                       amount_nonce, created_at, expires_at
+                FROM recharge_orders
+                WHERE chain = %s AND status = 'pending' AND expires_at > now()
+                ORDER BY created_at ASC
+                """,
+                (chain,),
+            )
+            rows = cur.fetchall() or []
+        return [
+            {
+                "id": int(r[0]),
+                "user_id": str(r[1]),
+                "chain": r[2],
+                "receive_address": r[3],
+                "amount_usd": Decimal(str(r[4])),       # 精确金额(含 nonce)
+                "amount_base": Decimal(str(r[5])),
+                "amount_nonce": Decimal(str(r[6])),
+                "created_at": r[7],
+                "expires_at": r[8],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        log.warning("[credit] list_pending_orders_by_chain(%s) fail: %s", chain, e)
+        return []
+
+
 def list_recharge_orders(user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
     """返用户充值订单(最新在前)"""
     try:

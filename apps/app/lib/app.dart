@@ -16,6 +16,8 @@ import 'screens/agent/agent_screen.dart';
 import 'screens/history/history_screen.dart';
 import 'screens/profile/profile_screen.dart';
 import 'screens/disclaimer/disclaimer_page.dart';
+import 'screens/auth/login_page.dart';
+import 'services/auth_service.dart';
 
 // ══════════════════════════════════════════════════════════════
 //  主题状态管理
@@ -105,30 +107,43 @@ class _DisclaimerGate extends StatefulWidget {
 }
 
 class _DisclaimerGateState extends State<_DisclaimerGate> {
-  bool _accepted = false;
+  bool _disclaimerAccepted = false;
   bool _checked = false;
 
   @override
   void initState() {
     super.initState();
-    _checkDisclaimer();
+    _bootstrap();
+    AuthService.instance.addListener(_onAuthChanged);
   }
 
-  Future<void> _checkDisclaimer() async {
+  @override
+  void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _bootstrap() async {
     try {
+      // R46 — 启动时 hydrate 登录态
+      await AuthService.instance.hydrate();
       final prefs = await SharedPreferences.getInstance();
       final accepted = prefs.getBool('app_global_disclaimer_v1') ?? false;
       if (mounted) {
         setState(() {
-          _accepted = accepted;
+          _disclaimerAccepted = accepted;
           _checked = true;
         });
       }
     } catch (e) {
-      debugPrint('[DisclaimerGate] SharedPreferences error: $e');
+      debugPrint('[DisclaimerGate] bootstrap error: $e');
       if (mounted) {
         setState(() {
-          _accepted = false;
+          _disclaimerAccepted = false;
           _checked = true;
         });
       }
@@ -141,12 +156,20 @@ class _DisclaimerGateState extends State<_DisclaimerGate> {
     if (!_checked) {
       return const Scaffold(backgroundColor: Colors.black);
     }
-    if (_accepted) {
-      return const MainShell();
+    // 顺序:免责声明 → 登录 → 主 App
+    if (!_disclaimerAccepted) {
+      return DisclaimerPage(
+        onAccepted: () => setState(() => _disclaimerAccepted = true),
+      );
     }
-    return DisclaimerPage(
-      onAccepted: () => setState(() => _accepted = true),
-    );
+    if (!AuthService.instance.isLoggedIn) {
+      return LoginPage(
+        onLoggedIn: () {
+          // AuthService 内部已 notifyListeners → _onAuthChanged → setState
+        },
+      );
+    }
+    return const MainShell();
   }
 }
 

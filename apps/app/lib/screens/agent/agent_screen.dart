@@ -8,6 +8,7 @@ import '../../services/wallet_service.dart';
 import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
+import '../../widgets/balance_chip.dart';
 import '../../widgets/agent/cocreation_stepper.dart';
 import '../../models/thesis.dart';
 import '../../models/pending_approval.dart';
@@ -153,6 +154,12 @@ class _AgentScreenState extends State<AgentScreen>
                 letterSpacing: -0.3,
               ),
             ),
+            actions: const [
+              Padding(
+                padding: EdgeInsets.only(right: 12),
+                child: Center(child: BalanceChip()),
+              ),
+            ],
             bottom: TabBar(
               controller: _tab,
               indicatorColor: c.primary,

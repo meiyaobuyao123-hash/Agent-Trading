@@ -486,6 +486,29 @@ async def main():
         max_instances=1,
     )
 
+    # ── R47 P2 USDC 充值监听 cron(每 60s)───────────────────
+    # Solana(Helius enriched API)+ EVM eth_getLogs(eth/base/bsc)
+    # 命中 → credit_service.confirm_recharge_order → 自动加 user balance
+    async def _run_credit_recharge_scan():
+        try:
+            from agent.loops.credit_recharge_loop import run_once
+            result = await run_once()
+            if any(v > 0 for v in result.values()):
+                log.info("[credit_recharge cron] confirmed: %s", result)
+        except Exception as e:
+            log.warning("[credit_recharge cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_credit_recharge_scan,
+        trigger="interval",
+        seconds=60,
+        id="credit_recharge_scan",
+        name="USDC Recharge Watcher (4 chains, 60s)",
+        misfire_grace_time=30,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # ── W3 D5+ Memory WAL flush(每 10s)─────────────────────
     # 引用 services/pump-scanner/migrations/local_pg/036_pending_approvals_wal.sql
     # 引用 docs/agent-pm/06-memory-spec.md §3.5 Write Reliability

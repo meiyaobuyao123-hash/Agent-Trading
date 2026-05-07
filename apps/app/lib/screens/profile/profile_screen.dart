@@ -6,8 +6,10 @@ import '../../app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/locale_provider.dart';
 import '../../services/wallet_service.dart';
+import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
+import '../credit/credit_page.dart';
 import '../../services/push_notification_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -108,6 +110,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 children: [
                   // ── 钱包绑定卡 ─────────────────
                   const _WalletCard(),
+                  const SizedBox(height: 16),
+
+                  // ── R47 算力 + R46 账户 ─────────
+                  _SectionLabel(label: '账户 & 算力'),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: Icons.bolt_rounded,
+                    title: '算力余额',
+                    value: '充值 / 流水',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const CreditPage()),
+                    ),
+                  ),
+                  _SettingItem(
+                    icon: Icons.account_circle_outlined,
+                    title: AuthService.instance.email ?? '未登录',
+                    value: AuthService.instance.displayName ?? '',
+                    onTap: null,
+                  ),
+                  _SettingItem(
+                    icon: Icons.logout_rounded,
+                    title: '登出',
+                    value: '',
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('确认登出?'),
+                          content: const Text('登出后下次启动需要重新登录'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('登出', style: TextStyle(color: Color(0xFFEF4444))),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await AuthService.instance.logout();
+                      }
+                    },
+                  ),
                   const SizedBox(height: 16),
 
                   // ── 通知设置 ───────────────────

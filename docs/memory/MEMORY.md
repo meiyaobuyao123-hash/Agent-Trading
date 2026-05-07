@@ -1,5 +1,38 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 P5 — live 交易链路 user_id 透传接通)
+
+**R47 P5**(2026-05-07,commit `f4e92d0`):
+
+audit 发现 paper 链路 100% 通(3150 trades 数据为证),但 **live 链路因 user_id 没透传 100% 必断**:
+- ActionDispatcher → execute_trade(无 user_id)
+- → _resolve_wallet(user_id=None) → 跳 user_wallets DB
+- → 走 env TRADE_WALLET_PRIVATE_KEY ← 没配
+- → "No wallet configured" 失败
+
+修 4 处 + DRY_RUN 安全闸(共 5 修):
+1. `trade_executor.execute_trade` 签名加 user_id;调 dex_router/_execute_trade_ave/_resolve_wallet 透传
+2. `dex_router.execute` 顶部预解析钱包(传 user_id 给 _resolve_wallet)→ 后续子函数无需重新解析
+3. `action_dispatcher` 调 execute_trade 传 user_id=event.user_id + safety_ctx
+4. `position_monitor` SL/TP + CRISIS 紧急清仓 都透传 pos.user_id
+5. **新增 DRY_RUN_LIVE_TRADES env 闸**:true 时返 mock TradeResult 不真发链(trace 验证用)— 服务器已配 true,GA 前必须删
+
+测试:tests/test_trade_executor_user_id.py 8 单测全过,93/93 累计不回归(85 历史 + 8 新)
+
+修复后链路:
+  event → ActionDispatcher → execute_trade(user_id=X) → dex_router.execute(user_id=X) → 预解析 _resolve_wallet → 优先 user_wallets AES 解密 → wallet_address+private_key → Jupiter 签名 + _broadcast_solana → tx_hash → agent_executions confirmed → position_monitor 30s 扫到 → SL/TP execute_trade(action=sell, user_id=X) → 平仓 + agent_risk_events
+
+服务器:git pull + restart pump-scanner-api/pump-scanner active + position_monitor 30s tick 在跑
+
+下一步可做:
+- 服务器 DRY_RUN_LIVE_TRADES=true 已配 → 跑 promote-to-live + 等 hot_coin event → trace 全流程不真发链
+- 用户充 \$2 USDC + 0.01 SOL → 真发 \$1 测试 swap(改 DRY_RUN=false)
+
+GA 必修:
+- 删 DRY_RUN_LIVE_TRADES env(GA 前)
+- HTTPS 443 已开通(R47 P4 腾讯云 Lighthouse 安全组加规则)
+- migration 046 audit trigger(用 postgres user 跑)
+
 ## ⚠️ 上线状态(2026-05-07 R47 P4 — 风控 audit 4 真 bug 全修)
 
 **R47 P4**(2026-05-07,commit `972acc5`):

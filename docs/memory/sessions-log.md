@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-07 R47 P5 — live 交易 user_id 透传接通(真发链上路径)
+
+### 用户问"agent 是否真有交易能力,路径是不是通的"
+
+### Audit 完整 trace 13 步路径
+- ✅ Paper 链路 100% 通(3150 trades 数据为证)
+- 🔴 Live 链路代码 95% 完整,但有 2 致命断点:
+  1. ActionDispatcher → execute_trade 不传 user_id → _resolve_wallet 跳 user_wallets DB → 走未配 env → "No wallet configured"
+  2. agent_executions 0 条 → position_monitor 永远空跑
+
+根因:`_resolve_wallet(user_id, ...)` 第 2 优先级查 user_wallets AES 解密(R42 P1 路径,WALLET_MASTER_KEY 配了,user_wallets 有 1 条 Solana 钱包),但 caller 都没传 user_id 进去,直接跳到 step 3 fallback env(env 没配)→ 必断。
+
+### 修了 5 处
+1. trade_executor.execute_trade 签名加 user_id + 内部 _resolve_wallet/dex_router/AVE 全透传
+2. dex_router.execute 顶部预解析钱包(传 user_id 给 _resolve_wallet)
+3. action_dispatcher 调 execute_trade 传 user_id=event.user_id + safety_ctx
+4. position_monitor SL/TP + CRISIS 清仓 都透传 pos.user_id
+5. DRY_RUN_LIVE_TRADES env 闸:true → 返 mock 不真发链(trace 用)
+
+测试:8 新单测 + 85 历史 = 93/93 全过
+
+### 部署
+- git push f4e92d0
+- 服务器 git pull + restart pump-scanner-api/pump-scanner active
+- 服务器 .env 加 DRY_RUN_LIVE_TRADES=true(安全闸)
+- position_monitor 30s tick 在跑
+
+### 讨论结论
+- Audit 价值大 — 不真测会一直假装 live 跑得通
+- user_id 透传缺失这种 bug 是经典"前后端单独 review 都没问题但合起来有断点"
+- DRY_RUN env 是 GA 前最重要的安全闸,允许全流程 trace 不烧用户钱
+
+### 风险待 R48
+- 删 DRY_RUN_LIVE_TRADES env(GA 前)
+- migration 046 用 postgres user 跑(audit trigger)
+- 真链 \$1 测试(用户充 ≥2 USDC + 0.01 SOL gas)
+- HITL 真触发演示(造 \$200 真交易场景)
+
+---
+
 ## 2026-05-07 R47 P4 — 风控 audit 4 真 bug 全修
 
 ### 用户问

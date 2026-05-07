@@ -100,6 +100,26 @@ def c5_hitl_completeness(ctx: dict) -> bool:
     )
 
 
+def hr01_within_strategy_max(ctx: dict) -> bool:
+    """R47 P6 — 触发: 单笔金额超过策略 max_position_usd。
+
+    联动 strategy.max_position_usd:每个策略可独立设上限(默认 $500,可调到 $5000)。
+    caller 必须把 strategy.max_position_usd 注入 ctx,否则 fallback 默认 $500。
+
+    paper 模式不检查(paper 不烧真钱)。
+    """
+    if ctx.get("mode") == "paper":
+        return False
+    amount = ctx.get("amount_usd")
+    if amount is None:
+        return False
+    cap = ctx.get("max_position_usd", 500)  # 默认 $500
+    try:
+        return float(amount) > float(cap)
+    except (TypeError, ValueError):
+        return False
+
+
 def hr10_within_authorization(ctx: dict) -> bool:
     """触发: 单笔超过用户授权额度。
     auth_single_trade_max 缺失视为无授权(触发,要求显式提供)。
@@ -142,6 +162,7 @@ CHECK_FUNCTIONS: dict[str, Callable[[dict], bool]] = {
     "c3_thesis_evidence_non_empty":  c3_thesis_evidence_non_empty,
     "c4_persona_tone":               c4_persona_tone,
     "c5_hitl_completeness":          c5_hitl_completeness,
+    "hr01_within_strategy_max":      hr01_within_strategy_max,    # R47 P6
     "hr10_within_authorization":     hr10_within_authorization,
     "hr11_credentials_revoked":      hr11_credentials_revoked,
     "hr24_slippage_within_limit":    hr24_slippage_within_limit,

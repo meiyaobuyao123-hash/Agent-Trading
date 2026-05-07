@@ -1413,7 +1413,7 @@ class PromoteToLiveRequest(BaseModel):
     has_wallet: bool = Field(..., description="已连接钱包(WalletService.wallets 非空)")
     disclaimer_accepted: bool = Field(..., description="已读 + 同意《免责声明》")
     risk_acknowledged: bool = Field(..., description="已勾选'我知道会亏钱'")
-    max_position_usd: Optional[float] = Field(None, description="单笔金额上限(默认 50,可调到 500)")
+    max_position_usd: Optional[float] = Field(None, description="单笔金额上限(默认 500,可调到 5000;R47 P6)")
 
 
 @router.post("/strategies/{strategy_id}/promote-to-live")
@@ -1428,7 +1428,7 @@ async def promote_to_live(
     - 用户主动决策 + 4 项解锁条件 checklist
     - 通过 force=True bypass R37 门槛
     - 写 audit log: event_type=admin_action(用户级 promote 也算 admin action)
-    - 在策略 risk_params 写入 max_position_usd(用户选 $50/$500)
+    - 在策略 risk_params 写入 max_position_usd(R47 P6:用户选 $500/$5000)
     """
     strategy = _strategy_mgr.get_strategy(strategy_id)
     if not strategy:
@@ -1457,9 +1457,9 @@ async def promote_to_live(
             "missing": missing,
         }
 
-    # 单笔金额上限校验(默认 $50 / 用户可调至 $500)
-    max_position = float(req.max_position_usd or 50)
-    max_position = max(10, min(500, max_position))
+    # R47 P6 单笔金额上限:默认 $500 / 用户可调到 $5000
+    max_position = float(req.max_position_usd or 500)
+    max_position = max(10, min(5000, max_position))
 
     # 先写 max_position_usd 到策略,再 force=True go_live
     try:
@@ -2497,4 +2497,38 @@ async def cocreation_chat(
     except Exception as e:
         log.warning("cocreation chat failed: %s", e)
         raise HTTPException(status_code=500, detail=str(e)[:200])
+
+
+# ──────────────────────────────────────────────────────────────
+# R47 P6 — 半自动交易撤销窗口 endpoints
+# ──────────────────────────────────────────────────────────────
+
+@router.get("/trades/pending")
+async def list_pending_semi_auto(
+    limit: int = 20,
+    user_id: str = Depends(get_current_user),
+):
+    """列出当前用户的半自动交易(pending / executed / cancelled / failed 全部)。
+    R47 P6 — 给 UI 倒计时页 + 历史列表用。
+    """
+    from agent import semi_auto_service
+    return {"trades": semi_auto_service.list_user_pending(user_id, limit=limit)}
+
+
+@router.post("/trades/pending/{pending_id}/cancel")
+async def cancel_pending_semi_auto(
+    pending_id: str,
+    user_id: str = Depends(get_current_user),
+):
+    """R47 P6 — 用户在 10s 撤销窗口内撤销半自动交易。
+
+    返:
+      {"cancelled": true}                          → 成功
+      {"cancelled": false, "reason": "..."}        → 失败(已超时/已执行/已撤销/race)
+    """
+    from agent import semi_auto_service
+    cancelled, reason = semi_auto_service.cancel_pending(pending_id, user_id)
+    if cancelled:
+        return {"cancelled": True}
+    return {"cancelled": False, "reason": reason or "unknown"}
 

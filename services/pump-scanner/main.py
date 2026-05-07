@@ -509,6 +509,30 @@ async def main():
         coalesce=True,
     )
 
+    # ── R47 P6 半自动交易执行器(每 1s)─────────────────────
+    # 单笔 ≥ $500 走半自动:写 pending_semi_auto_trades 表 + 10s 撤销窗口
+    # cron 扫到 execute_after < now 且 status='pending' → 真发交易
+    # 用户在窗口内可调 cancel endpoint 撤销
+    async def _run_semi_auto_executor():
+        try:
+            from agent.loops.semi_auto_executor import run_once
+            res = await run_once()
+            if res.get("executed", 0) > 0 or res.get("failed", 0) > 0:
+                log.info("[semi_auto cron] %s", res)
+        except Exception as e:
+            log.warning("[semi_auto cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_semi_auto_executor,
+        trigger="interval",
+        seconds=1,                      # 1s tick(撤销窗口只有 10s,延迟敏感)
+        id="semi_auto_exec",
+        name="Semi-Auto Trade Executor (1s)",
+        misfire_grace_time=5,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # ── W3 D5+ Memory WAL flush(每 10s)─────────────────────
     # 引用 services/pump-scanner/migrations/local_pg/036_pending_approvals_wal.sql
     # 引用 docs/agent-pm/06-memory-spec.md §3.5 Write Reliability

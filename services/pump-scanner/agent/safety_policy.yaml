@@ -40,15 +40,13 @@ hr_to_cb_map:
 hard_rules:
 
   - id: HR01
-    name: 单笔真金 ≤ $500
+    name: 单笔真金 ≤ strategy.max_position_usd(R47 P6 联动)
     severity: BLOCK
     implemented: true
     check:
-      type: simple
-      field: amount_usd
-      op: gt
-      value: 500
-    message: "单笔金额 ${amount_usd} 超过 $500 上限"
+      type: function
+      fn: hr01_within_strategy_max
+    message: "单笔金额 ${amount_usd} 超策略上限 ${max_position_usd}"
     audit_event: trade_exec
 
   - id: HR02

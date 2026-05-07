@@ -307,11 +307,15 @@ class TradeExecutor:
 
         # ── W3 D3 Safety pre-check ──────────────────────────────
         if safety_ctx is not None:
+            # R47 P6 — 注入 max_position_usd 给 HR01 函数检查(联动 strategy)
             block = check_safety_for_trade(
                 {**safety_ctx,
                  "chain": chain, "token_address": token_address,
                  "action": action, "amount_usd": amount_usd,
-                 "slippage_pct": safety_ctx.get("slippage_pct", slippage_pct / 100.0)},
+                 "slippage_pct": safety_ctx.get("slippage_pct", slippage_pct / 100.0),
+                 "max_position_usd": safety_ctx.get(
+                     "max_position_usd", rp.get("max_position_usd", 500),
+                 )},
             )
             if block is not None:
                 return TradeResult(

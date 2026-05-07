@@ -311,8 +311,65 @@ class ActionDispatcher:
         executor = get_trade_executor()
         slippage = action.get("max_slippage_pct", 1.0)
 
-        # R47 P5 — 透传 user_id 给 trade_executor → _resolve_wallet 优先从 user_wallets 解密
-        # safety_ctx 也补 user_id + mode 给 daily cap / 权限检查
+        # R47 P6 — HITL 自动化分层(只对 live 模式生效;paper 已在前面 _handle_paper_trade 路径分流)
+        # < $500 → auto 直接发
+        # ≥ $500 → semi 写 pending_semi_auto_trades + 推送 + 10s 倒计时撤销
+        if strategy_mode == "live":
+            try:
+                from agent.hitl_router import decide_automation_level
+                level, cancel_sec = decide_automation_level(
+                    amount_usd=amount_usd, side=action_type,
+                )
+            except Exception as e:
+                log.warning("[hitl] decide_automation_level fail, fallback auto: %s", e)
+                level, cancel_sec = ("auto", 0)
+
+            if level == "semi":
+                # 写 pending 表 + 推送(本期推送 wire 留 P9,后端先入表)
+                try:
+                    from agent import semi_auto_service
+                    pending_id = semi_auto_service.create_pending(
+                        user_id=event.user_id,
+                        strategy_id=event.strategy_id,
+                        chain=chain,
+                        token_address=token_address,
+                        token_symbol=event.token_name,
+                        action=action_type,
+                        amount_usd=amount_usd,
+                        slippage_pct=slippage,
+                        trigger_context=event.trigger_context or {},
+                        cancel_window_sec=cancel_sec,
+                    )
+                    log.info(
+                        "[hitl] R47 P6 SEMI-AUTO 入队: pending=%s amount=$%.2f window=%ds — "
+                        "cron 1s 后开始扫,过 %ds 自动执行(用户可调 /trades/pending/%s/cancel 撤销)",
+                        (pending_id or "?")[:8], amount_usd, cancel_sec, cancel_sec,
+                        (pending_id or "?")[:8],
+                    )
+                    # 写一条 alert 通知用户(复用现有 push 路径)
+                    try:
+                        get_db().table("agent_alerts").insert({
+                            "user_id": event.user_id,
+                            "strategy_id": event.strategy_id,
+                            "title": f"💰 半自动交易({cancel_sec}s 撤销)",
+                            "message": f"{action_type.upper()} ${amount_usd:.0f} {event.token_name} — "
+                                       f"{cancel_sec} 秒后自动执行,可点击撤销",
+                            "severity": "warning",
+                            "metadata": {
+                                "kind": "semi_auto_pending",
+                                "pending_id": pending_id,
+                                "amount_usd": amount_usd,
+                                "cancel_window_sec": cancel_sec,
+                            },
+                        }).execute()
+                    except Exception as e:
+                        log.debug("[hitl] alert insert fail: %s", e)
+                    return  # 不直接发,等 cron
+                except Exception as e:
+                    log.error("[hitl] R47 P6 semi pending create fail, fallback auto: %s", e)
+                    # fallback: 直接发(不阻塞业务,但 audit 留痕)
+
+        # auto 路径(原 R47 P5 修复):透传 user_id + safety_ctx
         result = await executor.execute_trade(
             chain=chain,
             token_address=token_address,

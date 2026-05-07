@@ -4,6 +4,46 @@
 
 ---
 
+## 2026-05-07 R47 P3 — Web/App chat gate + Flutter Google Sign-In
+
+### 用户反馈(三个真 bug)
+1. "Google 登录按钮在 App 端是占位 — 开发啊,干嘛先用着"
+2. "在 WEB 端为什么我可以不登录发消息给 agent,但是报错,不是说,发消息之前得校验是否登录,是否有算力"
+3. "APP 端是不是有同样的问题,请你检查"
+
+### Audit 发现
+- Web `chat/page.tsx send()` 完全不查 token → 后端 401 → 前端只显"报错"
+- Flutter `agent_service._headers` 完全没 attach Bearer token → **所有 chat 请求按 dev-user 处理(后端 DEV bypass),R47 算力扣费扣到 dev 账户而非用户**(P2 严重 bug,用户没意识到这个)
+- Flutter login_page Google 按钮是 `_GoogleBtnPlaceholder` 显示"Continue with Google(待启用)",没接 google_sign_in 包
+
+### 做了什么
+1. **Web chat gate**:`send()` 顶部 useUser.token 检查 + insufficientCredit 检查;未登录弹 LoginModal + redirectTo,余额不足 setError + 渲染"去充值"按钮(关键词触发)+ 空 conversation 时显示橙色"算力余额不足 + 去充值"提示条
+2. **Flutter Bearer token**:agent_service `_headers` 改为读 AuthService.instance.token + chatStream 401 → AuthService.logout()(UI 监听 → 跳 LoginPage);chat _send() 拿 CreditService.instance.balance 预检,余额≤0 弹 AlertDialog "去充值/取消" → 跳 CreditPage
+3. **Chrome MCP**:用 Claude in Chrome 打开 console.cloud.google.com/apis/credentials → 发现 iOS OAuth client 已经存在(Firebase 自动创),Bundle ID 完美匹配 com.aitrading.aitradingApp;直接拿到 client ID `151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43...` + URL scheme
+4. **Flutter Google Sign-In 真接**:
+   - pubspec.yaml + google_sign_in ^6.2.2
+   - ios/Runner/Info.plist + CFBundleURLTypes + GIDClientID + GIDServerClientID
+   - auth_service.loginWithGoogle() 调 GoogleSignIn().signIn() 拿 idToken → POST /api/auth/google
+   - login_page 删 placeholder,加 _GoogleSignInBtn + _googleLogin handler
+5. **后端多 audience**:`verify_google_id_token` 改为依次尝试 `[GOOGLE_CLIENT_IDS逗号, GOOGLE_CLIENT_ID, GOOGLE_IOS_CLIENT_ID, GOOGLE_ANDROID_CLIENT_ID]`,任意 aud 验过即返;14 单测不回归
+6. 服务器 .env 配 GOOGLE_IOS_CLIENT_ID + restart pump-scanner-api active + /health 200
+
+### 讨论结论
+- Google iOS / Web client 必须分类型(Google 强制),不能复用 — Firebase 早就帮我们建好了 iOS client,我们之前没用而已
+- iOS ID token aud = iOS client ID;Web ID token aud = Web client ID;后端必须接受多 audience
+- Flutter `serverClientId = Web client` 让 Google 同时签一份 web aud token,backend 双 audience 都能验,稳
+- Chrome MCP 这次省了我们手动登录 GCP Console 的时间 — 直接 deviceId 选 Browser 1 就接管
+
+### 被否定的方案
+- 重新创 iOS OAuth client(没必要,Firebase 已经创好,Bundle ID 又匹配)
+- 后端只接 Web client,iOS 也走 Web aud(serverClientId 路径)— 不够稳,iOS 原生 token aud 是 iOS client,直接接受更鲁棒
+
+### 风险
+- 模拟器跑 Google 登录可能有 iOS Simulator 限制(GoogleSignIn 要求物理设备较稳),如果模拟器报错请用真机或退到邮箱密码
+- Android 端没配 GoogleService-Info.plist 等价物(google-services.json),Android Google 登录还没启用 — Android client ID 待加(GOOGLE_ANDROID_CLIENT_ID env 已支持,只缺 google-services.json + Android client 创建)
+
+---
+
 ## 2026-05-07 R47 P2 — USDC 充值闭环 4 链 + Flutter 全套
 
 ### 用户暴露的真实问题

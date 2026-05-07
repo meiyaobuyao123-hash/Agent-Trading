@@ -1,5 +1,19 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47 P3 — Web/App chat gate + Flutter Google Sign-In)
+
+**R47 P3**(2026-05-07,commits `4a135ab` + `aa33352`):
+
+3 个用户暴露的真问题全 fix:
+
+1. **Web chat 未登录可发消息只报错** — `chat/page.tsx send()` 加双 gate(未登录弹 LoginModal,余额≤0 显示"去充值"CTA → 跳 /app/credit)
+2. **Flutter agent_service 不发 Bearer token** — `_headers` 加 `Authorization: Bearer $token`,401 自动 logout;chat send 加余额预检对话框
+3. **Flutter Google Sign-In** — google_sign_in: ^6.2.2 + iOS Info.plist + 后端多 audience(env GOOGLE_IOS_CLIENT_ID)+ login_page 真接按钮
+
+iOS OAuth client `151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43.apps.googleusercontent.com`(Firebase 自动创,Bundle ID 完美匹配 com.aitrading.aitradingApp)。
+
+服务器 .env 已配 GOOGLE_IOS_CLIENT_ID + 部署 active。
+
 ## ⚠️ 上线状态(2026-05-07 R47 P2 — USDC 充值闭环 4 链 + Flutter)
 
 **R47 P2**(2026-05-07 commits `f988b8e` + `cc5f1dd` + `8a445ee`):

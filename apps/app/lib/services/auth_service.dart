@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 
 import '../config/app_config.dart';
@@ -71,6 +72,35 @@ class AuthService extends ChangeNotifier {
 
   Future<AuthResult> loginWithGoogleIdToken(String idToken) async {
     return _post('/api/auth/google', {'id_token': idToken});
+  }
+
+  /// R47 P3 — 触发 Google Sign-In 原生 flow + 自动 POST /api/auth/google
+  ///
+  /// iOS:用 Info.plist 里 GIDClientID(iOS OAuth client)弹原生选账号弹窗
+  /// 拿到 idToken → 后端 verify(audience 已加 iOS client ID 白名单)→ 签 JWT
+  Future<AuthResult> loginWithGoogle() async {
+    try {
+      // serverClientId = Web OAuth client ID(让 Google 同时签一份 aud=web 的 token,
+      // 后端可一并接受;iOS 自己的 client ID 由 Info.plist GIDClientID 指定)
+      const webServerClientId =
+          '151316463137-0gm4d85uc77fthd4lgcvrdvvn6jhdi3t.apps.googleusercontent.com';
+      final googleSignIn = GoogleSignIn(
+        scopes: const ['email', 'profile', 'openid'],
+        serverClientId: webServerClientId,
+      );
+      final account = await googleSignIn.signIn();
+      if (account == null) {
+        return AuthResult.fail('用户取消 Google 登录');
+      }
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) {
+        return AuthResult.fail('Google 未返回 ID token,请重试');
+      }
+      return await loginWithGoogleIdToken(idToken);
+    } catch (e) {
+      return AuthResult.fail('Google 登录失败: ${e.toString().substring(0, e.toString().length > 100 ? 100 : e.toString().length)}');
+    }
   }
 
   Future<AuthResult> _post(String path, Map<String, dynamic> body) async {

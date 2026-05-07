@@ -59,6 +59,24 @@
 		<key>NSAllowsArbitraryLoads</key>
 		<true/>
 	</dict>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<!-- R47 P3 Google Sign-In iOS reverse client ID
+				     iOS client: 151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43.apps.googleusercontent.com
+				     Reverse: com.googleusercontent.apps.151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43 -->
+				<string>com.googleusercontent.apps.151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43</string>
+			</array>
+		</dict>
+	</array>
+	<key>GIDClientID</key>
+	<string>151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43.apps.googleusercontent.com</string>
+	<key>GIDServerClientID</key>
+	<string>151316463137-0gm4d85uc77fthd4lgcvrdvvn6jhdi3t.apps.googleusercontent.com</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

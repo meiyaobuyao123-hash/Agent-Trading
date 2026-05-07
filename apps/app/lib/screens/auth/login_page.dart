@@ -49,6 +49,22 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  /// R47 P3 — Continue with Google
+  Future<void> _googleLogin() async {
+    setState(() {
+      _error = null;
+      _submitting = true;
+    });
+    final r = await AuthService.instance.loginWithGoogle();
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    if (r.success) {
+      widget.onLoggedIn();
+    } else {
+      setState(() => _error = r.error ?? 'Google 登录失败');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -165,17 +181,20 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              const SizedBox(height: 28),
               Row(children: [
                 Expanded(child: Container(height: 1, color: c.border)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text('Google 登录(待启用)', style: TextStyle(color: c.textTertiary, fontSize: 11)),
+                  child: Text('或', style: TextStyle(color: c.textTertiary, fontSize: 11)),
                 ),
                 Expanded(child: Container(height: 1, color: c.border)),
               ]),
               const SizedBox(height: 14),
-              _GoogleBtnPlaceholder(),
+              _GoogleSignInBtn(
+                onTap: _submitting ? null : _googleLogin,
+                loading: _submitting,
+              ),
 
               const SizedBox(height: 28),
               Container(
@@ -286,36 +305,58 @@ class _PrimaryBtn extends StatelessWidget {
   }
 }
 
-class _GoogleBtnPlaceholder extends StatelessWidget {
+/// R47 P3 — 真 Google Sign-In 按钮(白底 + 多色 G logo + 灰描边)
+class _GoogleSignInBtn extends StatelessWidget {
+  final VoidCallback? onTap;
+  final bool loading;
+  const _GoogleSignInBtn({required this.onTap, this.loading = false});
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    return Container(
-      height: 48,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.7),
-        border: Border.all(color: c.border),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
         borderRadius: BorderRadius.circular(10),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // 简易 Google 字母 Logo
-          const Text('G', style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Color(0xFF4285F4),
-          )),
-          const SizedBox(width: 10),
-          Text(
-            'Continue with Google(待启用)',
-            style: TextStyle(
-              color: Colors.black.withValues(alpha: 0.45),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
+        onTap: onTap,
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: c.border),
+            borderRadius: BorderRadius.circular(10),
           ),
-        ],
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Google 多色 G(简化版,5 个色块组合不实际,先用简洁 letter mark)
+              Container(
+                width: 18,
+                height: 18,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: const Color(0xFFE0E0E0), width: 0.5),
+                ),
+                child: const Text('G',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF4285F4),
+                    )),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                loading ? '正在登录...' : 'Continue with Google',
+                style: const TextStyle(
+                  color: Color(0xFF1F1F1F),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

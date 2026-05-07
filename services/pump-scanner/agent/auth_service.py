@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import bcrypt
 import jwt as pyjwt
@@ -128,37 +128,63 @@ def verify_jwt(token: str) -> Dict[str, Any]:
 
 # ── Google OAuth ID token 验证 ──────────────────────────────
 
+def _get_google_audiences() -> List[str]:
+    """返所有合法 audience(Web client + iOS client + Android client 可共存)。
+
+    R47 P3 — 多平台 OAuth client 必须各自独立(Google 强制要求按平台分类型),
+    每个 client 颁发的 ID token 的 aud claim 是不同的 client ID。
+    我们必须接受所有合法 audience。
+
+    Env 优先级:
+      GOOGLE_CLIENT_IDS  — 逗号分隔多个 client ID(推荐)
+      GOOGLE_CLIENT_ID   — 单个(向后兼容,通常是 Web client)
+      GOOGLE_IOS_CLIENT_ID — iOS client(显式追加)
+    """
+    out: List[str] = []
+    multi = os.getenv("GOOGLE_CLIENT_IDS", "").strip()
+    if multi:
+        out += [x.strip() for x in multi.split(",") if x.strip()]
+    single = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+    if single and single not in out:
+        out.append(single)
+    ios = os.getenv("GOOGLE_IOS_CLIENT_ID", "").strip()
+    if ios and ios not in out:
+        out.append(ios)
+    android = os.getenv("GOOGLE_ANDROID_CLIENT_ID", "").strip()
+    if android and android not in out:
+        out.append(android)
+    return out
+
+
 def verify_google_id_token(id_token_str: str) -> Dict[str, Any]:
     """验证 Google ID token,返 user info dict。
     失败抛 ValueError(明显错误,caller 拦截返 401)。
 
-    返字段(Google ID token 标准):
-      sub:Google 用户 ID(永久不变)
-      email:用户邮箱
-      email_verified:邮箱是否经 Google 验证
-      name / given_name / family_name / picture
-      iss / aud / exp / iat
+    R47 P3 — 接受多 audience(Web + iOS + Android 各自独立 OAuth client)。
+    依次尝试每个允许的 audience,任意一个验过即返。
     """
-    client_id = _get_google_client_id()
-    if not client_id:
-        raise RuntimeError("GOOGLE_CLIENT_ID env 未配")
+    audiences = _get_google_audiences()
+    if not audiences:
+        raise RuntimeError("GOOGLE_CLIENT_ID / GOOGLE_CLIENT_IDS env 未配")
     try:
         from google.oauth2 import id_token as google_id_token
         from google.auth.transport import requests as google_requests
     except ImportError as e:
         raise RuntimeError(f"google-auth 未装: {e}")
 
-    # google-auth 会:
-    # 1. 拉 Google 公钥(自动 cache)
-    # 2. 验签
-    # 3. 验 aud == GOOGLE_CLIENT_ID
-    # 4. 验 exp 未过期
-    # 5. 验 iss == accounts.google.com / https://accounts.google.com
     request_obj = google_requests.Request()
-    info = google_id_token.verify_oauth2_token(
-        id_token_str, request_obj, client_id,
-    )
-    return info
+    last_err: Optional[Exception] = None
+    for aud in audiences:
+        try:
+            info = google_id_token.verify_oauth2_token(
+                id_token_str, request_obj, aud,
+            )
+            return info
+        except ValueError as e:
+            last_err = e
+            continue
+    # 全部 audience 都没过
+    raise ValueError(f"Google ID token audience 不匹配任何配置的 client(尝试 {len(audiences)} 个): {last_err}")
 
 
 # ── 测试用:reset cache ─────────────────────────────────────

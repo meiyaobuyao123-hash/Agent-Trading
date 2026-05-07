@@ -48,6 +48,10 @@ dependencies:
   # R47 — 充值二维码
   qr_flutter: ^4.1.0
 
+  # R47 P3 — Google Sign-In(iOS + Android)
+  # iOS Bundle ID: com.aitrading.aitradingApp(已配 Firebase)
+  google_sign_in: ^6.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

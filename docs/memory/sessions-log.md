@@ -4,6 +4,38 @@
 
 ---
 
+## 2026-05-07 R47.1 — 登录入口 UX 优化
+
+### 用户反馈
+1. Google 登录点击"按钮没动效,很生硬地跳到谷歌"
+2. 登录按钮"不该只在 Agent 二级页面,要放在一级页面靠右 tab 位置(普遍网站做法)"
+3. 未注册/未登录时点击受保护入口"应该弹起登录框引导登录"
+
+### 做了什么
+- 主 Nav 右侧加 [登录 / 注册] 按钮(未登录)/ [余额胶囊 + 头像 dropdown](已登录)
+- UserMenu dropdown:打开 Agent / 算力余额 / 我的钱包 / 登出
+- 新建 `<LoginModal>`(全站挂在 root layout),受 `useLoginModal` zustand store 控制
+- Google 跳转加 280ms 全屏过渡 overlay(Loader2 + Google logo + 文案),修"生硬"问题
+- sessionStorage 存 redirectTo,Google callback 后回原意图页(不硬跳 dashboard)
+- SubNav 删用户/余额/登出(已上移),只剩 Agent 子页签
+- /app/login 改成跳 / + 自动弹 modal
+- axios 401 拦截改成清 token + 弹 modal + 记录 redirectTo
+- 加 globals.css 动画:helix-modal-fade(200ms)/ helix-modal-pop(280ms cubic-bezier)
+- 服务器 build + restart helix-marketing 通
+
+### 讨论结论
+- LoginModal 挂在 root layout(/ 和 /app/* 都能用)
+- 用 zustand `useLoginModal` 而非 React Context(避免 provider 嵌套)
+- Google 跳转必须有视觉反馈(否则用户以为没响应)— 280ms 是 sweet spot
+- /app/login 保留但成为 redirect 终点(防有人手输 URL)
+
+### 被否定的方案
+- popup window 模式 Google 登录(被 Chrome popup blocker 误杀概率高)
+- LoginModal 挂在 /app layout(则首页不能弹 — 与"主 Nav 也要登录入口"矛盾)
+- React Context Provider(无谓嵌套,zustand 更轻)
+
+---
+
 ## 2026-05-07 R47 — Credit 算力体系
 
 ### 做了什么

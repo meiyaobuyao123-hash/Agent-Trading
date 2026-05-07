@@ -1,5 +1,16 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-07 R47.1 — 登录入口 UX 优化上线)
+
+**R47.1 — 登录 UX 改造**(2026-05-07,helix-marketing 重 build):
+1. **登录按钮上移到主 Nav 右侧**(普遍站惯例)— 未登录:`[登录 / 注册]`;已登录:`[余额胶囊]` + 头像 dropdown(打开 Agent / 算力 / 钱包 / 登出)
+2. **LoginModal 全站 Modal** — `useLoginModal` store 控制;遮罩 backdrop-blur + helix-modal-pop 280ms 上浮;含邮箱/密码登录 + 注册 + Continue with Google
+3. **Google 跳转过渡**(修"生硬")— 点击后全屏 z-110 overlay(Loader2 + Google logo + "正在跳转到 Google");280ms 后才真跳;sessionStorage 存 redirectTo 让 callback 回原意图页
+4. **SubNav 简化** — 删用户/余额/登出,只保留 Agent 子页签
+5. **/app/login 改成跳 / + 弹 modal**;**axios 401 弹 modal**(不再硬跳 login 页)
+
+文件:Nav 重写 / LoginModal 新建 / store +`useLoginModal` / api.ts 401 弹 modal / globals.css +helix-modal-pop / layout.tsx 挂载
+
 ## ⚠️ 上线状态(2026-05-07 R47 — Credit 算力体系上线)
 
 **R47 — Credit 算力 + Token 计费**(2026-05-07,commits `3b9f10f` + `b2f633b`):

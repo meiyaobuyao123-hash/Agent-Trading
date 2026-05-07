@@ -311,12 +311,20 @@ class ActionDispatcher:
         executor = get_trade_executor()
         slippage = action.get("max_slippage_pct", 1.0)
 
+        # R47 P5 — 透传 user_id 给 trade_executor → _resolve_wallet 优先从 user_wallets 解密
+        # safety_ctx 也补 user_id + mode 给 daily cap / 权限检查
         result = await executor.execute_trade(
             chain=chain,
             token_address=token_address,
             action=action_type,
             amount_usd=amount_usd,
             slippage_pct=slippage,
+            user_id=event.user_id,
+            safety_ctx={
+                "user_id": event.user_id,
+                "strategy_id": event.strategy_id,
+                "mode": strategy_mode,
+            },
         )
 
         if result.success:

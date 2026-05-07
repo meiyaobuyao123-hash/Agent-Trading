@@ -126,6 +126,7 @@ class DexRouter:
         private_key: Optional[str] = None,
         priority_fee_sol: float = 0.0005,    # R42 P0.2:Solana 优先 Gas Fee
         mev_bribe_sol: float = 0.0,          # R42 P0.2:Solana Jito MEV 贿赂(0=不走 Jito)
+        user_id: Optional[str] = None,       # R47 P5:透传给 _resolve_wallet 拉 user_wallets
     ) -> RouteResult:
         """
         多 DEX 路由执行
@@ -148,6 +149,27 @@ class DexRouter:
                 "(%s)", priority_fee_sol, mev_bribe_sol,
                 "Jito bundle (P1 待接)" if mev_bribe_sol > 0 else "公共 mempool + 高优先",
             )
+
+        # R47 P5 — 预解析钱包(若入参未提供)。
+        # 传 user_id 给 _resolve_wallet → 优先从 user_wallets AES 解密拉私钥(R42 P1 路径),
+        # 否则 fallback env。预解析后的 wallet/priv 透传给所有 _execute_* 子函数,避免
+        # 子函数内部再次调 _resolve_wallet 时丢 user_id 上下文(原 bug)。
+        if (not wallet_address or not private_key) and user_id:
+            try:
+                executor = self._get_okx_executor()
+                resolved_addr, resolved_key = executor._resolve_wallet(
+                    chain, wallet_address, private_key, user_id=user_id,
+                )
+                if resolved_addr and resolved_key:
+                    wallet_address = resolved_addr
+                    private_key = resolved_key
+                    log.info(
+                        "[dex_router] R47 P5 钱包预解析成功 user=%s chain=%s addr=%s..%s",
+                        user_id[:8], chain, resolved_addr[:6], resolved_addr[-4:],
+                    )
+            except Exception as e:
+                log.warning("[dex_router] R47 P5 钱包预解析失败: %s", e)
+
         try:
             # 确定交易方向
             if action == "buy":

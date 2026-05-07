@@ -201,6 +201,7 @@ class TradeExecutor:
         private_key: Optional[str] = None,
         safety_ctx: Optional[Dict[str, Any]] = None,
         risk_params: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,        # R47 P5 — 透传给 _resolve_wallet 拉 user_wallets
     ) -> TradeResult:
         """
         执行买入或卖出交易 — PRD-009: 通过 DexRouter 多 DEX 路由
@@ -227,6 +228,29 @@ class TradeExecutor:
         Returns:
             TradeResult（safety BLOCK 时 success=False, error="safety: <rule_id> <reason>"）
         """
+        # ── R47 P5 DRY_RUN 安全闸 ─────────────────────────────
+        # env DRY_RUN_LIVE_TRADES=true 时,任何 live 交易请求返 mock 成功(不真发链)
+        # 用于线上 trace 验证全流程是否走通,但不真消耗用户钱包余额。
+        # 设计假设:paper 路径不走 execute_trade,所以这里只拦 live。
+        if os.getenv("DRY_RUN_LIVE_TRADES", "").lower() in ("true", "1", "yes"):
+            log.warning(
+                "[trade_executor] DRY_RUN_LIVE_TRADES=true → mock %s %s amount=$%s user=%s",
+                action, token_address[:10] if token_address else "?",
+                amount_usd, (user_id or "?")[:8],
+            )
+            return TradeResult(
+                success=True,
+                tx_hash=f"DRY_RUN_{int(time.time())}",
+                from_amount=amount_usd,
+                to_amount=amount_usd,
+                price=1.0,
+                gas_fee=0.0,
+                error=None,
+                chain=chain,
+                token_address=token_address,
+                action=action,
+            )
+
         # ── R42 P0.2:risk_params 真用(取代 hardcoded)─────────
         rp = risk_params or {}
         # max_position_usd 强制限仓(超出截断 + log)
@@ -303,6 +327,7 @@ class TradeExecutor:
             return await self._execute_trade_ave(
                 chain, token_address, action, amount_usd,
                 slippage_pct, wallet_address, private_key,
+                user_id=user_id,    # R47 P5
             )
 
         try:
@@ -319,6 +344,7 @@ class TradeExecutor:
                 private_key=private_key,
                 priority_fee_sol=priority_fee_sol,   # R42 P0.2
                 mev_bribe_sol=mev_bribe_sol,         # R42 P0.2
+                user_id=user_id,                     # R47 P5 — 透传给 dex_router 预解析钱包
             )
 
             # 转换 RouteResult → TradeResult
@@ -369,6 +395,7 @@ class TradeExecutor:
         slippage_pct: float = 1.0,
         wallet_address: Optional[str] = None,
         private_key: Optional[str] = None,
+        user_id: Optional[str] = None,        # R47 P5
     ) -> TradeResult:
         """
         OKX 直连执行（保留原始路径，供 DexRouter fallback 使用）
@@ -377,8 +404,8 @@ class TradeExecutor:
             TradeResult
         """
         try:
-            # 获取钱包信息
-            wallet_addr, priv_key = self._resolve_wallet(chain, wallet_address, private_key)
+            # 获取钱包信息(R47 P5 user_id 透传 → user_wallets 优先)
+            wallet_addr, priv_key = self._resolve_wallet(chain, wallet_address, private_key, user_id=user_id)
             if not wallet_addr or not priv_key:
                 return TradeResult(
                     success=False, error="No wallet configured for trading",
@@ -553,12 +580,13 @@ class TradeExecutor:
         amount_usd: float, slippage_pct: float = 1.0,
         wallet_address: Optional[str] = None,
         private_key: Optional[str] = None,
+        user_id: Optional[str] = None,    # R47 P5
     ) -> TradeResult:
         """通过 AVE Cloud chainWallet API 执行交易"""
         try:
             from ave_client import ave
 
-            addr, key = self._resolve_wallet(chain, wallet_address, private_key)
+            addr, key = self._resolve_wallet(chain, wallet_address, private_key, user_id=user_id)
             if not addr or not key:
                 return TradeResult(success=False, error="No wallet configured for AVE trade")
 

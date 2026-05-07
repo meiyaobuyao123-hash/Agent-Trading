@@ -187,7 +187,7 @@ class PositionMonitor:
                 f"entry=${pos.entry_price:.6f} exit=${exit_price:.6f} pnl={pnl_pct:+.1f}%"
             )
 
-            # 执行卖出
+            # 执行卖出 — R47 P5 透传 user_id → user_wallets 解密路径
             result = await executor.execute_trade(
                 chain=pos.chain,
                 token_address=pos.token_address,
@@ -196,6 +196,12 @@ class PositionMonitor:
                 slippage_pct=2.0,  # 卖出用更大滑点
                 wallet_address=pos.wallet_address or None,
                 private_key=pos.private_key or None,
+                user_id=pos.user_id or None,    # R47 P5
+                safety_ctx={
+                    "user_id": pos.user_id,
+                    "strategy_id": pos.strategy_id,
+                    "mode": "live",   # position_monitor 只扫真盘
+                },
             )
 
             # 更新 DB
@@ -391,6 +397,7 @@ class PositionMonitor:
                 success = False
                 for attempt in range(2):  # 最多重试 1 次
                     try:
+                        # R47 P5 — 紧急清仓也透传 user_id
                         result = await executor.execute_trade(
                             chain=pos.chain,
                             token_address=pos.token_address,
@@ -399,6 +406,12 @@ class PositionMonitor:
                             slippage_pct=5.0,  # CRISIS 滑点放宽
                             wallet_address=pos.wallet_address or None,
                             private_key=pos.private_key or None,
+                            user_id=pos.user_id or None,
+                            safety_ctx={
+                                "user_id": pos.user_id,
+                                "strategy_id": pos.strategy_id,
+                                "mode": "live",
+                            },
                         )
                         if result.success:
                             success = True

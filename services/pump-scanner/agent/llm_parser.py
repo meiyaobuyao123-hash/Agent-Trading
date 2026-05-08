@@ -561,7 +561,7 @@ class LLMParser:
 
         strategy_spec = None
         ai_message = ""
-        MAX_TURNS = 5  # 最多 5 轮 tool use 循环
+        MAX_TURNS = 110  # R47 P8 — 5→110(原 5 太紧,复杂任务命中边界 bug;R47 余额 gate 兜底防失控)
 
         for turn in range(MAX_TURNS):
             try:
@@ -638,10 +638,49 @@ class LLMParser:
             if response.stop_reason == "end_turn":
                 break
 
+        # R47 P8 — 命中 MAX_TURNS 上限时强制汇总:
+        # 跑完 MAX_TURNS 仍有 tool_calls 且 ai_message 为空 → 用户钱花了但看不到任何答复
+        # 再调一次 LLM(tools=[])让它根据已有 tool_result 给最终汇总
+        if turn == MAX_TURNS - 1 and tool_calls and not ai_message:
+            log.warning(
+                "[parse_strategy] MAX_TURNS %d hit — forcing summary without tools (R47 P8)",
+                MAX_TURNS,
+            )
+            try:
+                forced = await asyncio.to_thread(
+                    client.messages.create,
+                    model=MODEL,
+                    max_tokens=2048,
+                    system=SYSTEM_PROMPT + "\n\n[系统注:工具调用已达上限。"
+                           "请根据已收集的 tool_result 直接给用户最终答复或建议,不要再调工具。]",
+                    messages=messages,
+                    tools=[],  # 关键:禁止再调工具
+                )
+                # 累加 token usage(R47 计费)
+                try:
+                    u = getattr(forced, "usage", None)
+                    if u is not None:
+                        self._last_usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
+                        self._last_usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+                except Exception:
+                    pass
+                for block in forced.content:
+                    if block.type == "text":
+                        ai_message += block.text
+            except Exception as e:
+                log.warning("[parse_strategy] forced summary fail: %s", e)
+                ai_message = (
+                    "已收集所需数据但分析步骤较多(达上限)。"
+                    "请将问题拆得更具体,例如\"先查 BTC 头部 10 个币\"再进一步。"
+                )
+
         if not ai_message and strategy_spec:
             ai_message = f"已为您创建策略「{strategy_spec.get('name', '')}」，请确认是否启用。"
         if not ai_message and not strategy_spec:
-            ai_message = "抱歉，我无法理解您的策略描述。请更具体地描述您想监控什么条件、触发什么动作。"
+            ai_message = (
+                "我没能给出明确建议 — 可能你的问题需要更具体一些。"
+                "试试明确说明:1) 监控哪个币/链 2) 什么条件触发 3) 触发后做什么(只通知 / 自动买入)"
+            )
 
         # R39 v5: 把本轮 LLM 的 final 文本回复也追加进 messages,
         # 让下一轮 caller 拿到完整 anthropic 历史(含本轮 user + tool 链 + 最终 assistant)
@@ -686,7 +725,7 @@ class LLMParser:
         yield {"type": "start"}
 
         strategy_spec = None
-        MAX_TURNS = 5
+        MAX_TURNS = 110  # R47 P8 — 5→110;命中上限走强制汇总,不直接断
         # R39 v5: 累积本流的纯文本 LLM 回复,用于追加到 messages 末尾(给下轮 caller)
         accumulated_assistant_text = ""
 
@@ -766,6 +805,45 @@ class LLMParser:
 
                 if response.stop_reason == "end_turn":
                     break
+
+            # R47 P8 — 命中 MAX_TURNS 上限时强制汇总(stream 路径)
+            # 跑完 MAX_TURNS 仍有 tool_calls 且没文本积累 → 用户钱花了但收不到回复
+            # 调一次 LLM(tools=[])让它 stream 出最终汇总
+            if turn == MAX_TURNS - 1 and tool_calls and not accumulated_assistant_text:
+                log.warning(
+                    "[parse_strategy_stream] MAX_TURNS %d hit — forcing summary (R47 P8)",
+                    MAX_TURNS,
+                )
+                try:
+                    forced = await asyncio.to_thread(
+                        client.messages.create,
+                        model=MODEL,
+                        max_tokens=2048,
+                        system=SYSTEM_PROMPT + "\n\n[系统注:工具调用已达上限。"
+                               "请根据已收集的 tool_result 直接给用户最终答复或建议,不要再调工具。]",
+                        messages=messages,
+                        tools=[],
+                    )
+                    try:
+                        u = getattr(forced, "usage", None)
+                        if u is not None:
+                            self._last_usage["in"] += int(getattr(u, "input_tokens", 0) or 0)
+                            self._last_usage["out"] += int(getattr(u, "output_tokens", 0) or 0)
+                    except Exception:
+                        pass
+                    for block in forced.content:
+                        if block.type == "text":
+                            accumulated_assistant_text += block.text
+                            # 模拟流式推送给前端
+                            chunk_size = 15
+                            for i in range(0, len(block.text), chunk_size):
+                                yield {"type": "delta", "text": block.text[i:i + chunk_size]}
+                                await asyncio.sleep(0.02)
+                except Exception as e:
+                    log.warning("[parse_strategy_stream] forced summary fail: %s", e)
+                    fallback = "已收集所需数据但分析步骤较多(达上限)。请将问题拆得更具体。"
+                    accumulated_assistant_text = fallback
+                    yield {"type": "delta", "text": fallback}
 
             # R39 v5: 把 final text 追加到 messages 末尾,然后 yield 给 caller 持久化
             if accumulated_assistant_text and (

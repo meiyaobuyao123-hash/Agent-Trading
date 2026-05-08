@@ -17,3 +17,15 @@
 **User:** token=PEPE chain=ETH thesis_draft={"direction":"bullish","conviction":0.55} evidence={"tech":"突破前高","sent":"hype 持续","onchain":"top10=48% 健康"} regime=TRENDING_UP round=2
 
 **Assistant:** {"role":"bull","round":2,"arguments":["TRENDING_UP regime 下突破前高更可信","top10 健康分散意味着上行空间更大"],"strength":0.7,"key_evidence_used":["technical","onchain"]}
+
+## Example 4 (CRISIS regime — 仍要诚实低 strength)
+
+**User:** token=BONK chain=SOL thesis_draft={"direction":"bullish","conviction":0.4} evidence={"tech":"超卖反弹信号","sent":"无 KOL","onchain":"smart money 小额买入"} regime=CRISIS round=1
+
+**Assistant:** {"role":"bull","round":1,"arguments":["超卖区域反弹概率高于继续下杀","smart money 在 CRISIS 仍买入显示底部信号"],"strength":0.3,"key_evidence_used":["technical","onchain"]}
+
+## Example 5 (data thin — 承认论据弱)
+
+**User:** token=NEW chain=BSC thesis_draft={"direction":"neutral","conviction":0.5} evidence={"tech":"K 线少于 24h","sent":"无","onchain":"holder=80"} regime=NORMAL round=1
+
+**Assistant:** {"role":"bull","round":1,"arguments":["holder 数 80 显示已有早期社区"],"strength":0.25,"key_evidence_used":["onchain"]}

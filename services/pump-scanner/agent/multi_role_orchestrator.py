@@ -7,7 +7,7 @@ PRD-007: 多角色 Agent 编排器
   Level 3 — 全流程多角色（~$0.015：3 Haiku 并行 + 5 Sonnet 串行）
 
 L3 触发条件（任一满足）:
-  - amount > $30
+  - amount > $2000  (R47 P9 — 与 04-spec §5.1 对齐;原 $30 是早期占位)
   - score > 70
   - 记忆中无该代币历史（未知代币）
 
@@ -72,7 +72,8 @@ class MultiRoleOrchestrator:
 
         L1: 无交易动作（纯通知/alert）
         L2: 有交易动作但不满足 L3 条件
-        L3: amount>30 OR score>70 OR 未知代币
+        L3: amount>2000 OR score>70 OR 未知代币
+            R47 P9 — 与 04-spec §5.1 对齐(原 $30 是早期占位)
 
         Args:
             amount_usd: 交易金额
@@ -87,7 +88,7 @@ class MultiRoleOrchestrator:
             return 1
 
         # L3 条件
-        if amount_usd > 30:
+        if amount_usd > 2000:  # R47 P9 — 与 04-spec §5.1 对齐(原 $30 是早期占位)
             return 3
         if score > 70:
             return 3

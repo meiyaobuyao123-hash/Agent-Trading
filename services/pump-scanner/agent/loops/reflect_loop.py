@@ -127,6 +127,8 @@ class ReflectLoop:
             reflection = await mem.reflection.run_reflection(
                 trades=trades, active_rules=active_rules,
                 is_emergency=is_emergency,
+                user_id=device_id,  # R47 P9 — per-user 计费透传
+                trigger=trigger,
             )
         except Exception as e:
             return ReflectResult(
@@ -247,6 +249,70 @@ class ReflectLoop:
             reflection_id=reflection_id,
             latency_ms=int((time.monotonic() - t0) * 1000),
         )
+
+    # ── R47 P9: per-user 反思 + per-user 扣 credit ───────────
+
+    async def run_per_user_cycle(
+        self,
+        trigger: str = "daily",
+        lookback_days: int = DEFAULT_TRADE_LOOKBACK_DAYS,
+    ) -> List[ReflectResult]:
+        """R47 P9 — per-user 反思 + per-user 扣 credit。
+
+        cron 用本方法,而不是 run_cycle(device_id=None) 跨用户聚合。
+        理由:反思针对每个用户的策略,谁的策略反思扣谁余额。
+
+        实现:
+          1. 拉所有最近 N 天有 trade 的 distinct user_id
+          2. 余额 gate:can_proceed(user_id) 失败的 user 跳过(不烧免费)
+          3. 对每个 user 串行调 run_cycle(device_id=user_id, trigger=trigger)
+          4. 返每个 user 的 ReflectResult 列表
+        """
+        from agent import credit_service
+        try:
+            from database import get_db
+        except Exception as e:
+            log.warning("[reflect_per_user] db import failed: %s", e)
+            return []
+
+        period_from = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+        try:
+            db = get_db()
+            res = (
+                db.table("agent_executions")
+                .select("user_id")
+                .gte("created_at", period_from.isoformat())
+                .limit(500)
+                .execute()
+            )
+            rows = res.data or []
+        except Exception as e:
+            log.warning("[reflect_per_user] load distinct users failed: %s", e)
+            return []
+
+        user_ids = {r.get("user_id") for r in rows if r.get("user_id")}
+        log.info(
+            "[reflect_per_user] trigger=%s lookback=%dd users=%d",
+            trigger, lookback_days, len(user_ids),
+        )
+        results: List[ReflectResult] = []
+        for uid in user_ids:
+            try:
+                ok, _reason = credit_service.can_proceed(uid)
+            except Exception as e:
+                log.warning("[reflect_per_user] can_proceed user=%s err=%s", uid[:8], e)
+                continue
+            if not ok:
+                log.info("[reflect_per_user] skip user=%s 余额不足", uid[:8])
+                continue
+            try:
+                r = await self.run_cycle(
+                    device_id=uid, trigger=trigger, lookback_days=lookback_days,
+                )
+                results.append(r)
+            except Exception as e:
+                log.warning("[reflect_per_user] user=%s failed: %s", uid[:8], e)
+        return results
 
     # ── helpers ──────────────────────────────────────────────
 

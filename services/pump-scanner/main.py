@@ -390,17 +390,19 @@ async def main():
 
     # ── W3 D5+ Reflect Loop daily cron(UTC 12:00 = 北京时间 20:00)──
     # 引用 docs/agent-pm/17-tech-plan.md Phase 2 Reflect Loop trigger
-    # 跨用户聚合反思(device_id=None);失败 swallow 不阻断 main loop
+    # R47 P9: per-user 反思 + per-user 扣 credit(原跨用户聚合 device_id=None)
+    # 失败 swallow 不阻断 main loop
     async def _run_daily_reflect():
         try:
             from agent.loops.reflect_loop import get_reflect_loop
-            r = await get_reflect_loop().run_cycle(
-                device_id=None, trigger="daily", lookback_days=7,
+            results = await get_reflect_loop().run_per_user_cycle(
+                trigger="daily", lookback_days=7,
             )
+            total_promoted = sum(r.promoted for r in results)
+            total_trades = sum(r.trades_analyzed for r in results)
             log.info(
-                "[reflect cron] ok=%s trades=%d new=%d dedupe=%d promoted=%d gate_blocked=%d",
-                r.ok, r.trades_analyzed, r.new_rules_proposed,
-                r.dedupe_skipped, r.promoted, r.gate_blocked,
+                "[reflect cron] users=%d total_trades=%d total_promoted=%d",
+                len(results), total_trades, total_promoted,
             )
         except Exception as e:
             log.warning("[reflect cron] failed: %s", e)

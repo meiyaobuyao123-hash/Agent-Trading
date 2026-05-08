@@ -104,7 +104,7 @@
 - ❌ 不推送官方信号（用户需自建策略）
 - ❌ 不给"保证盈利"话术
 - ❌ 不预测具体价格
-- ❌ 单笔真金 > $500 **必须**用户当次 HITL，即使已授权
+- ❌ 单笔真金 > $2000 **必须**用户当次 HITL，即使已授权(R47 P9 — 用户 2026-05-08 提)
 - ❌ 不做未经用户明确授权的真金执行
 - ⚠️ **托管模式下**（v0.5）：助记词仅存用户 FlutterSecureStorage + 服务端 KMS 签名密钥，严禁 .env / DB 明文（见 08 § 6A）
 
@@ -339,7 +339,7 @@ async def on_event(event):
 |------|---------|------|------|------|
 | **L1** | 简单查询 / 已决定 | RuleEngine | 无 LLM | $0 |
 | **L2** | 常规分析 | 单 prompt + tool-use | **Opus** | **~$0.025** |
-| **L3** | 大额（>$200）/ 低置信度（<0.6）/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | **3×Opus + 5×Opus + 1×Opus** | **~$0.35** |
+| **L3** | 大额（**>$2000**）/ 低置信度（<0.6）/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | **3×Opus + 5×Opus + 1×Opus** | **~$0.35** |
 
 **L3 伪代码**：
 ```python
@@ -415,8 +415,8 @@ async def reflect(period="daily"):
 | 当前级别 | 升级到 | 触发条件 |
 |---------|-------|---------|
 | L1 → L2 | | 需要文本 thesis（chat / thesis UI）|
-| L2 → L3 | | 任一：amount > $200 / conviction < 0.6 / regime == CRISIS / 新策略首 3 笔 / 陌生代币（< 24h 且无 memory） |
-| 任何 → HITL | | amount > $500 真金 / 同链集中度 > 50% / 连续亏损 ≥ 3 笔 |
+| L2 → L3 | | 任一：amount > $2000 / conviction < 0.6 / regime == CRISIS / 新策略首 3 笔 / 陌生代币（< 24h 且无 memory） |
+| 任何 → HITL | | amount > $2000 真金 / 同链集中度 > 50% / 连续亏损 ≥ 3 笔 |
 
 ### 5.2 降级条件（提前结束）
 
@@ -686,7 +686,7 @@ PR 改动 agent/ 下代码 → 自动触发对应 Eval。失败不得合入。�
 | G5 | **Observability 基础** | 只有 logger，无 trace | v1 接 Langfuse / OpenTelemetry（[15 Observability](./15-observability-tracing.md)）|
 | G6 | **Eval 套件未建** | prompt 改完无数据反馈 | v1 跑通 Agentic Eval + Regression ([09 Eval Plan](./09-eval-plan.md)) |
 | G7 | **Cost Budget 未硬约束** | 成本累加器无熔断 | v1 加日预算硬上限 + L3→L2 自动降级 |
-| G8 | **HITL 默认策略** | 真金首笔 / >$500 无 HITL 门槛 | v1 写入 Safety Policy |
+| G8 | **HITL 默认策略** | 真金首笔 / >$2000 无 HITL 门槛 | v1 写入 Safety Policy |
 | G9 | **降级不可见** | Helius 断连用户无感 | v1 UI "延迟模式" 标识 |
 | G10 | **旧 30s 轮询代码未废弃** | 违反 Event-Driven First | v1 审计并删除 monitor_job 部分职能 |
 

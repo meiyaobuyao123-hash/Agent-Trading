@@ -4,6 +4,39 @@
 
 ---
 
+## 2026-05-08 R47 P9 — 阈值统一 $2000 + Reflect per-user 计费 + FOMO 订正
+
+### 用户抛 3 个 correction
+1. **金额阈值**:doc 04-spec §5.1 写的 L3 触发 $200 / HITL 触发 $500、代码 multi_role_orchestrator $30,3 处不一致。用户口径 "全部 $2000"。
+2. **Reflect Loop 必须扣用户 credit**:理由"我们是给这个用户的策略反思,谁用谁付;没交易就没反思"。原 cron 跨用户聚合 1 次平台吞 LLM 钱不合理。
+3. **FOMO Terminal 是独立产品**:用户官网验证后纠正我之前的误判("FOMO 是 Axiom 子产品 / Pulse 功能")。Benchmark $17M Series A,移动端 4 链。
+
+### 做了什么
+- doc 04-spec L107/L342/L418/L419/L689 5 处 $200/$500 → $2000
+- multi_role_orchestrator.py L10/L75 docstring + L91 代码 $30 → $2000
+- reflection.run_reflection 加 `user_id` + `trigger` 参数,LLM 调用后调 credit_service.deduct(写 `reflect:daily` request_id 到流水)
+- reflect_loop 加 `run_per_user_cycle()` 方法:拉 distinct user_id → 余额 gate → 每个 user 串行调 run_cycle
+- main.py daily cron 切到 run_per_user_cycle
+- 新单测 6 个(deduct 调用 / DEV bypass / 余额 gate / 向后兼容 / 空 user 短路)
+- memory 三件套同步 R47 P9 + FOMO 独立订正
+
+### 讨论结论
+- **保留 run_cycle(device_id=None) 跨用户聚合语义**:留给 admin / debug,不删。日 cron 走新方法 run_per_user_cycle。
+- **`request_id=reflect:daily`**:credit_transactions 表里能审计"这条消费是反思 cron 不是 chat",前端流水也能区分。
+- **DEV bypass 双重防御**:credit_service.deduct 内部已 bypass `00000000-...0001`,reflection.py 也加二次检查防止误扣。
+- **distinct user_id client-side dedup**:Supabase select 没原生 `distinct()`,先 select user_id 再 set() 去重;500 行 limit 内可接受;真上规模换 raw SQL。
+
+### 被否定的方案
+- 在 reflect_loop.py 直接拼 raw SQL 拉 distinct user_id:复杂度上升,跨 Postgres/Supabase 兼容性差。改用现有 supabase 客户端 + client-side set() 去重。
+- 把阈值常量集中到 `thresholds.py` 模块共享 doc + code:减改动面积、避免引入新模块依赖,本次只改数值,常量集中化留 R48。
+- run_per_user_cycle 并发跑(asyncio.gather):反思 LLM 调用本身贵,串行更稳,避免余额 race + DB 写入竞争。
+
+### 测试
+- 6 新 + reflect_loop 13 + max_turns 4 + hitl 17 = **40/40 全过**
+- 关键 case:`test_run_reflection_calls_credit_deduct` 断 deduct 被调一次且 kwargs 全对、`test_dev_user_bypass_no_deduct`、`test_run_per_user_cycle_skips_insufficient_balance`(4 user 半数余额不足 → 实际跑 2)
+
+---
+
 ## 2026-05-07 R47 P6 — HITL 分层重做 + 单笔上限 $500/$5000
 
 ### 用户反转 R42 P0.3 决策

@@ -86,6 +86,8 @@ class ReflectionEngine:
         trades: List[Dict],
         active_rules: List[Dict],
         is_emergency: bool = False,
+        user_id: Optional[str] = None,
+        trigger: str = "daily",
     ) -> Optional[Dict]:
         """
         执行一次反思
@@ -94,6 +96,9 @@ class ReflectionEngine:
             trades: 最近的交易记录（最多 10 笔）
             active_rules: 当前活跃的 semantic 规则
             is_emergency: 是否紧急反思
+            user_id: R47 P9 — 反思归属 user(用于扣 credit);None = 跨用户聚合
+                     不扣费(管理 / debug 用)
+            trigger: R47 P9 — request_id 标记用('daily' / 'count' / 'emergency')
 
         Returns:
             反思结果 dict，或 None（失败/跳过）
@@ -148,6 +153,24 @@ class ReflectionEngine:
                 max_tokens=1024,
                 messages=[{"role": "user", "content": prompt}],
             )
+
+            # R47 P9 — per-user 计费(谁的 trades 反思,扣谁余额)
+            # DEV bypass(00000000-...0001) 由 credit_service.deduct 内部处理
+            try:
+                if user_id and user_id != "00000000-0000-0000-0000-000000000001":
+                    from agent import credit_service
+                    u = getattr(response, "usage", None)
+                    if u is not None:
+                        credit_service.deduct(
+                            user_id=user_id,
+                            model=REFLECTION_MODEL,
+                            tokens_in=int(getattr(u, "input_tokens", 0) or 0),
+                            tokens_out=int(getattr(u, "output_tokens", 0) or 0),
+                            request_id=f"reflect:{trigger or 'unknown'}",
+                        )
+            except Exception as e:
+                log.warning("[reflection] credit deduct fail: %s", e)
+
             text = response.content[0].text.strip()
 
             # 清理可能的 markdown 代码块包裹

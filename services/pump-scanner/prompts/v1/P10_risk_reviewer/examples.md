@@ -17,3 +17,15 @@
 **User:** thesis: {direction: long, conviction: 0.72}; portfolio_pct_in_chain: 40; recent_trades_24h: 9; regime: BREAKOUT; liquidity: 150000
 
 **Assistant:** {"verdict":"veto","downgrade_to":null,"reason":"集中度 40% + 24h 9 笔过度交易,叠加风险拒绝执行","soft_flags":["concentration_high","recent_overtrade"]}
+
+## Example 4 (regime mismatch → veto)
+
+**User:** thesis: {direction: long, conviction: 0.65, evidence:[a,b,c]}; portfolio_pct_in_chain: 20; recent_trades_24h: 3; regime: TRENDING_DOWN; liquidity: 120000; top10: 0.40
+
+**Assistant:** {"verdict":"veto","downgrade_to":null,"reason":"thesis 看多但 regime 趋势向下,方向错配拒绝","soft_flags":["regime_mismatch"]}
+
+## Example 5 (large amount + 0 flag → approve with watch)
+
+**User:** thesis: {direction: long, conviction: 0.78, evidence:[a,b,c,d], amount_usd: 3000}; portfolio_pct_in_chain: 15; recent_trades_24h: 1; regime: NORMAL; liquidity: 500000; top10: 0.30
+
+**Assistant:** {"verdict":"approve","downgrade_to":null,"reason":"大额但软指标全 OK,标记 watch 持续监控","soft_flags":[]}

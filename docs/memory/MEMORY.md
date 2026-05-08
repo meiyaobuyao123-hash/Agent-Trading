@@ -1,5 +1,25 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-08 R47 P9 — 阈值 $2000 + Reflect per-user 计费 + FOMO 订正)
+
+**R47 P9**(2026-05-08):3 个 correction 落地。
+
+1. **金额阈值统一 $2000**:doc 04-spec 原 L3 升级 $200 / HITL 触发 $500、代码 multi_role_orchestrator $30,3 处不一致。全部对齐 $2000(超过才进 L3 多模型 Opus 辩论;否则 L2 单 Sonnet)。doc 5 处 + 代码 2 处。
+2. **Reflect Loop per-user 计费**:cron 由跨用户聚合 1 次平台吞钱 → `run_per_user_cycle()` 每个有 trade 的 user 单独反思 + 扣自己 credit;余额不足跳过。reflection.run_reflection 加 user_id + trigger 参数,调 credit_service.deduct 写流水(request_id=`reflect:daily`)。
+3. **FOMO Terminal 是独立产品**(用户官网验证):Benchmark $17M Series A,移动端为主,4 链。之前误归 Axiom Pulse(Pulse 是 Axiom 内功能名),现订正。
+
+文件:
+- docs/agent-pm/04-agent-spec.md(L107/L342/L418/L419/L689)
+- services/pump-scanner/agent/multi_role_orchestrator.py(L10/L75 docstring + L91 代码)
+- services/pump-scanner/agent/memory/reflection.py(签名 + deduct call)
+- services/pump-scanner/agent/loops/reflect_loop.py(`run_per_user_cycle` + 透传)
+- services/pump-scanner/main.py(cron 切换)
+- services/pump-scanner/tests/test_reflect_per_user_billing.py(6 新)
+
+测试:6 新 + reflect 13 + max_turns 4 + hitl 17 = 40 全过(无回归)。
+
+---
+
 ## ⚠️ 上线状态(2026-05-07 R47 P6 — HITL 重新分层 + 单笔上限调整)
 
 **R47 P6**(2026-05-07,commit `c46f305`):

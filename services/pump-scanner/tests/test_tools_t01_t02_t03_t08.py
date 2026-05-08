@@ -373,10 +373,10 @@ class TestExecuteSwap:
 
 
 def test_registry_has_17_tools():
-    """R35 完成判定:17/17 Tool 全实施。"""
+    """R35 完成判定:17/17 Tool 全实施。R47+ 新增 1 个 tool 到 18。"""
     from agent.tools import get_tool_registry
     registry = get_tool_registry()
-    assert len(registry) == 17
+    assert len(registry) == 18
     expected = {
         "query_market", "query_holders", "query_onchain_activity",
         "execute_swap",
@@ -385,5 +385,6 @@ def test_registry_has_17_tools():
         "approve_rule", "save_strategy", "send_push_notification",
         "calc_technical_indicators", "calc_risk_metrics", "run_backtest",
         "calc_position_size",
+        "query_top_movers",  # R47+ 新增
     }
     assert set(registry.keys()) == expected

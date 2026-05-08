@@ -77,8 +77,11 @@ class TestCheckHelper:
         assert block is None
 
     def test_amount_over_returns_block(self, base_safety_ctx):
+        # R47 P7 — HR01 改为联动 strategy.max_position_usd(原硬编码 $500 撤销)
         from agent.trade_executor import check_safety_for_trade
-        base_safety_ctx["amount_usd"] = 1000  # > $500
+        base_safety_ctx["mode"] = "live"  # paper 模式跳过 HR01
+        base_safety_ctx["max_position_usd"] = 500.0
+        base_safety_ctx["amount_usd"] = 1000
         block = check_safety_for_trade(base_safety_ctx)
         assert block is not None
         assert block.rule_id == "HR01"
@@ -155,6 +158,9 @@ class TestExecuteTradeSafety:
         monkeypatch.setattr(dr, "get_dex_router", lambda: mock_router)
         monkeypatch.setattr("config.USE_AVE", False, raising=False)
 
+        # R47 P7 — HR01 联动 strategy.max_position_usd
+        base_safety_ctx["mode"] = "live"
+        base_safety_ctx["max_position_usd"] = 500.0
         base_safety_ctx["amount_usd"] = 100  # ctx 内的 amount(< 500)
         result = await executor.execute_trade(
             chain="solana", token_address="Mock", action="buy",

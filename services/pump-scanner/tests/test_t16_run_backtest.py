@@ -32,7 +32,7 @@ VALID_SPEC = {
 def test_registry_includes_t16():
     reg = get_tool_registry()
     assert "run_backtest" in reg
-    assert len(reg) == 17
+    assert len(reg) == 18  # R47+ 新增 1 个 tool
 
 
 # ── Input schema validation ─────────────────────────────────

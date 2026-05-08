@@ -166,6 +166,10 @@ class TestHardRules:
         assert not _ids(engine.check_trade(base_ctx)).intersection({"HR01"})
 
     def test_hr01_amount_over_500_block(self, engine, base_ctx):
+        # R47 P7 — HR01 改为联动 strategy.max_position_usd(原硬编码 $500 撤销)
+        # 只有 ctx 显式设了 max_position_usd 才会触发。R49 测试更新。
+        base_ctx["mode"] = "live"  # paper 模式跳过 HR01
+        base_ctx["max_position_usd"] = 500.0
         base_ctx["amount_usd"] = 750.0
         assert "HR01" in _ids(engine.check_trade(base_ctx))
 
@@ -264,6 +268,9 @@ class TestHardRules:
 
     def test_multiple_violations_all_reported(self, engine, base_ctx):
         """多条违规同时触发应全部返回。"""
+        # R47 P7 — HR01 需 ctx 显式 max_position_usd 才触发
+        base_ctx["mode"] = "live"
+        base_ctx["max_position_usd"] = 500.0
         base_ctx["amount_usd"] = 750
         base_ctx["liquidity_usd"] = 1000
         base_ctx["is_honeypot"] = True

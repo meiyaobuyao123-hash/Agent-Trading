@@ -50,7 +50,7 @@ async def test_t07_buy_basic():
             "strategy_id": "s-1", "user_id": "u-1",
             "token_address": "0xabc", "token_symbol": "TRUMP",
             "chain": "SOL", "price": 100.0, "amount_usd": 100.0,
-            "sl_pct": -10.0, "tp_pct": 30.0,
+            "sl_pct": 10.0, "tp_pct": 30.0,  # R47 P4 — 单位归一为 percent 整数(原 -10.0 ratio 已废)
         })
     assert r.ok is True
     assert r.output["ok"] is True
@@ -110,7 +110,7 @@ async def test_t07_open_returns_none():
             "action": "buy",
             "strategy_id": "s-1", "user_id": "u-1",
             "token_address": "0x", "token_symbol": "X", "chain": "SOL",
-            "price": 100, "amount_usd": 100, "sl_pct": -5, "tp_pct": 20,
+            "price": 100, "amount_usd": 100, "sl_pct": 5, "tp_pct": 20,  # R47 P4 percent
         })
     assert r.output["ok"] is False
     assert r.output["reason"] == "open_position_failed"

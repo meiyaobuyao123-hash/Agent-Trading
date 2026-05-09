@@ -1,14 +1,16 @@
 """
-价格代理路由 — 供 Flutter 实时价格查询
+价格代理路由 — 供 Flutter / Web 实时价格查询
 
 端点：
   GET /api/price/batch?chain={chain}&addresses={addr1,addr2,...}
+  GET /api/price/majors  — BTC/ETH/SOL/BNB 实时价格(Binance WS bookTicker)
 
 DexScreener 批量查询（OKX price-info 需白名单暂不可用）。
 Python 3.9 兼容。
 """
 
 import logging
+import time
 from typing import Dict
 
 import aiohttp
@@ -21,6 +23,29 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/price", tags=["price"])
 
 _TIMEOUT = aiohttp.ClientTimeout(total=10)
+
+
+@router.get("/majors")
+async def get_majors():
+    """
+    主流币实时价格 — Binance WebSocket bookTicker 毫秒级缓存
+    返回:
+      { "BTC": 108250.5, "ETH": 3284.51, "SOL": 182.40, "BNB": 612.3, "ts": 1715212800 }
+    任一字段可能为 null(WS 还没收到首条 tick)。
+    """
+    try:
+        from price_feed import price_feed
+    except Exception as e:
+        log.error(f"price_feed import failed: {e}")
+        raise HTTPException(503, "price_feed_unavailable")
+    return {
+        "BTC": price_feed.get_major_price("BTC"),
+        "ETH": price_feed.get_major_price("ETH"),
+        "SOL": price_feed.get_major_price("SOL"),
+        "BNB": price_feed.get_major_price("BNB"),
+        "ts":  int(time.time()),
+        "source": "binance_ws",
+    }
 
 
 @router.get("/batch")

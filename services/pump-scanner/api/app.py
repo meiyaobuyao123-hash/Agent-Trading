@@ -114,6 +114,21 @@ app.include_router(auth_router)    # R46 邮箱/Google 登录
 app.include_router(credit_router)  # R47 算力体系
 
 
+# ── 启动时拉起 Binance majors WS(BTC/ETH/SOL/BNB 实时价格) ────
+# pump-scanner-api 跟 pump-scanner main 是两个进程,各自维护自己的
+# PriceFeed 实例;为了让 /api/price/majors 有真数据,API 这边自己起一条
+# Binance bookTicker 长连接(只跑 _run_binance_loop,不要 Helius/EVM)。
+@app.on_event("startup")
+async def _start_binance_majors_loop():
+    import asyncio
+    try:
+        from price_feed import price_feed
+        asyncio.create_task(price_feed._run_binance_loop())
+        log.info("[api] Binance majors WS loop started (BTC/ETH/SOL/BNB)")
+    except Exception as e:
+        log.error(f"[api] failed to start binance majors loop: {e}")
+
+
 # ── 健康检查 ──────────────────────────────────────────────────
 
 @app.get("/health")

@@ -188,8 +188,10 @@ class _MainShellState extends State<MainShell> {
     ProfileScreen(),
   ];
 
-  // R49 — 切 tab 拦截:idx=2 (Agent) / idx=4 (Profile) 需登录
-  static const _gatedTabs = {2, 4};
+  // R49 — 切 tab 拦截:仅 Profile (idx=4) 需登录
+  // Agent tab 不在此处 gate — 用户可以进 Agent 页面浏览 UI/历史,
+  // 但点击发送时由 AgentScreen._send() 内部弹登录(更精准,体验更好)
+  static const _gatedTabs = {4};
 
   /// 处理 tab 点击:需登录的 tab 在未登录时弹 LoginPage(可关闭)
   Future<void> _handleTabTap(int targetIdx) async {

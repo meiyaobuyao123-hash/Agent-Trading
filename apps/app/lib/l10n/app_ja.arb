@@ -1,11 +1,9 @@
 {
   "@@locale": "ja",
-
   "tabMarket": "市場",
   "tabAgent": "Agent",
   "tabHistory": "シグナル",
   "tabProfile": "マイ",
-
   "profileTitle": "マイページ",
   "notificationSettings": "通知設定",
   "newCoinPush": "新規コインプッシュ",
@@ -40,7 +38,6 @@
   "addressCopied": "アドレスをコピーしました",
   "importWallet": "ウォレットをインポート",
   "addWallet": "ウォレットを追加",
-
   "marketTitle": "市場",
   "hotCoins": "ホット",
   "smartMoney": "スマートマネー",
@@ -63,12 +60,10 @@
   "strongSignalInfo": "{strong}件強シグナル · {total}トークン · 5分更新",
   "scanInfo": "リアルタイムスキャン · pump.fun · 30秒更新",
   "strongNormal2h": "{strong}おすすめ  {normal}普通  ·  2時間更新",
-
   "realtimeSignals": "リアルタイムシグナル",
   "watch": "ウォッチ",
   "whenTokenAppears": "条件を満たすトークンが自動的に表示されます",
   "buyersCount": "{count}人",
-
   "agentStrategy": "Agentストラテジー",
   "chatTab": "チャット",
   "myStrategyTab": "マイストラテジー",
@@ -91,7 +86,6 @@
   "confirmEnable": "有効化を確認",
   "cooldownTime": "クールダウン: {minutes}分",
   "unnamedStrategy": "名前なしストラテジー",
-
   "securityStatement": "セキュリティ声明",
   "walletDisclaimer1": "ニーモニック/秘密鍵はデバイスのセキュアエリア（iOS Keychain / Android Keystore）にのみ保存されます",
   "walletDisclaimer2": "当サーバーは秘密鍵を受信、保存、送信しません",
@@ -114,7 +108,6 @@
   "mnemonicHint": "12または24語をスペースで区切って入力",
   "privateKeyHint": "秘密鍵を入力（16進数またはBase58）",
   "securityNote": "ニーモニックと秘密鍵はデバイスの暗号化セキュアエリアにのみ保存され、サーバーにアップロードされることはありません。バックアップを安全に保管してください。",
-
   "running": "実行中",
   "paused": "一時停止",
   "triggerInfo": "{count}回トリガー · {minutes}分クールダウン",
@@ -130,7 +123,6 @@
   "noSellRecords": "売り記録なし",
   "tradeRecordHint": "ストラテジーが取引を実行すると、ここに記録が表示されます",
   "txHashCopied": "取引ハッシュをコピーしました",
-
   "detail": "詳細",
   "totalInflow": "流入",
   "totalOutflow": "流出",
@@ -152,14 +144,12 @@
   "watchingDesc": "勝率≥40%かつ≥3取引、シグナル重み×1",
   "tierSystemDesc": "システムがオンチェーンスマートマネーウォレットの取引パフォーマンスを追跡し、自動評価します。エリートウォレットの買いシグナルが最も信頼性が高いです。",
   "copied": "{address}をコピーしました",
-
   "mcLiquidity": "MC {mc} · 流動性 {liquidity}",
   "walletsCount": "{count}ウォレット",
   "eliteCountLabel": "({count}エリート)",
   "buyVolume": "買 {amount}",
   "sellVolume": "売 {amount}",
   "netAmount": "純{amount}",
-
   "honeypotDetection": "ハニーポット検出",
   "dangerous": "危険",
   "safe": "安全",
@@ -169,41 +159,34 @@
   "buyTax": "買い税",
   "sellTax": "売り税",
   "top10Concentration": "Top10集中度",
-
   "justNow": "たった今",
   "minutesAgo": "{minutes}分前",
   "hoursAgo": "{hours}時間前",
   "daysAgo": "{days}日前",
-
   "holders": "保有者",
   "holderCount": "保有者数",
   "top10Ratio": "Top10割合",
   "top1Ratio": "Top1割合",
-
   "noKlineData": "K線データなし",
   "tokenTooNew": "トークンが新しすぎる可能性があります",
   "chartLoadFailed": "チャートの読み込みに失敗しました。ネットワークを確認してください",
   "chartInitFailed": "チャートの初期化に失敗しました",
-
   "serverError": "サーバーエラー ({code})",
   "networkFailed": "ネットワーク接続失敗。バックエンドサービスを確認してください",
   "dataFormatError": "レスポンスフォーマットが無効です",
   "networkError": "ネットワークエラー: {error}",
   "unnamed": "名前なし",
-
   "mnemonicMustBe12or24": "ニーモニックは12語または24語である必要があります",
   "chainWallet": "{chain}ウォレット",
   "allChainsExist": "すべてのチェーンのウォレットが既に存在します",
   "invalidPrivateKey": "無効な秘密鍵",
   "walletAlreadyExists": "ウォレットは既に存在します",
-
   "disclaimerTitle": "利用規約",
   "disclaimerScrollHint": "よく読んで、一番下までスクロールしてください",
   "disclaimerCheckbox": "私は18歳以上であり、上記のすべての条項を読み理解し、本アプリの利用規約に同意します。\nI am 18+, have read and understood all terms above.",
   "disclaimerAccept": "同意して続ける",
   "disclaimerScrollFirst": "まず一番下までスクロールしてください",
   "disclaimerReachedBottom": "— 一番下に到達しました。チェックして同意してください —",
-
   "disclaimerGeoTitle": "地域制限",
   "disclaimerGeoBody": "本サービスは以下の地域のユーザーには提供されません：\n• 中国大陸（中国本土のIPは自動的にブロックされます）\n• 香港特別行政区\n• マカオ特別行政区\n• 台湾\n\n上記の地域にお住まいの場合は、直ちに使用を中止し、アプリをアンインストールしてください。",
   "disclaimerAdviceTitle": "投資助言ではありません",
@@ -216,29 +199,57 @@
   "disclaimerLegalBody": "本アプリはいかなる金融規制機関の規制も受けず、投資顧問や金融サービスライセンスも保持していません。本アプリを使用することで、関連するすべてのリスクを理解し受け入れるものとします。",
   "disclaimerVersionTitle": "バージョン",
   "disclaimerVersionBody": "最終更新: 2026年3月。",
-
   "hotCoinList": "ホットコイン",
   "scanPumpFun": "リアルタイムスキャン pump.fun · 30秒更新",
-
   "tradeDynamics": "取引動態",
   "securityCheck": "セキュリティ検査",
   "tokenInfo": "トークン情報",
   "buyPressure": "{pct}% 買い圧力",
-  "@buyPressure": { "placeholders": { "pct": { "type": "String" } } },
+  "@buyPressure": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
   "buyLabel": "買 {count}",
-  "@buyLabel": { "placeholders": { "count": { "type": "String" } } },
+  "@buyLabel": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
   "sellLabel": "売 {count}",
-  "@sellLabel": { "placeholders": { "count": { "type": "String" } } },
+  "@sellLabel": {
+    "placeholders": {
+      "count": {
+        "type": "String"
+      }
+    }
+  },
   "noSocialInfo": "ソーシャル情報なし",
   "contractAddress": "コントラクトアドレス",
   "blockExplorer": "ブロックエクスプローラー",
   "textCopied": "コピーしました",
   "distanceToGrad": "卒業まで残り{pct}%",
-  "@distanceToGrad": { "placeholders": { "pct": { "type": "String" } } },
+  "@distanceToGrad": {
+    "placeholders": {
+      "pct": {
+        "type": "String"
+      }
+    }
+  },
   "graduated": "卒業済み",
   "notGraduated": "未卒業",
   "daysUnit": "{days}日",
-  "@daysUnit": { "placeholders": { "days": { "type": "String" } } },
+  "@daysUnit": {
+    "placeholders": {
+      "days": {
+        "type": "String"
+      }
+    }
+  },
   "riskDetected": "リスクあり",
   "securityUnavailable": "セキュリティデータ利用不可",
   "momentumM": "モメンタム M",
@@ -273,7 +284,6 @@
   "smartMoneySourceDesc": "多次元階層(Elite/Verified/Watching)、60日減衰、Bot検出",
   "okxDexDesc": "30チェーン、リアルタイム見積+実行エンジン、自動取引対応",
   "coinGeckoDesc": "ATH/ATL、総供給量、コミュニティデータなどの補足情報",
-
   "detailTabQuotes": "相場",
   "detailTabDetails": "詳細",
   "detailTabSecurity": "セキュリティ",
@@ -318,7 +328,13 @@
   "tokenFullName": "トークン名",
   "createdTime": "作成日時",
   "aboutToken": "{symbol}について",
-  "@aboutToken": { "placeholders": { "symbol": { "type": "String" } } },
+  "@aboutToken": {
+    "placeholders": {
+      "symbol": {
+        "type": "String"
+      }
+    }
+  },
   "noDescription": "説明なし",
   "socialMedia": "ソーシャルメディア",
   "searchOnX": "Xで検索",
@@ -340,12 +356,33 @@
   "noTradePairData": "ペアデータなし",
   "noTradeData": "取引データなし",
   "secondsAgo": "{seconds}秒前",
-  "@secondsAgo": { "placeholders": { "seconds": { "type": "int" } } },
+  "@secondsAgo": {
+    "placeholders": {
+      "seconds": {
+        "type": "int"
+      }
+    }
+  },
   "vol24hShort": "24h量",
   "vol1hShort": "1h量",
   "liqMcShort": "流/時価",
   "statusConfirmed": "確認済み",
   "statusFailed": "失敗",
   "statusSubmitting": "送信中",
-  "statusPending": "待機中"
+  "statusPending": "待機中",
+  "topHolders": "保有ランキング",
+  "addressLabel": "アドレス",
+  "holdingPct": "保有率",
+  "fundFlow24h": "24h 資金フロー",
+  "netInflow": "純流入",
+  "netOutflow": "純流出",
+  "sellPressure": "売却",
+  "totalBuy": "総買い",
+  "totalSell": "総売り",
+  "largeOrders": "大口取引 (>$10K)",
+  "largeBuy": "大口買い",
+  "largeSell": "大口売り",
+  "tradeHistory": "取引分布",
+  "buySimple": "買い",
+  "sellSimple": "売り"
 }

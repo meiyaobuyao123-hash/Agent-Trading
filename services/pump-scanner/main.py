@@ -511,6 +511,56 @@ async def main():
         coalesce=True,
     )
 
+    # ── R52 充值订单过期清理(每 5min)──────────────────────
+    # recharge_orders 30min 没收到链上付款 → 标记 expired
+    # 不清理:pending 表会堆积(虽不影响功能,长期 N 千条堆积影响查询)
+    async def _run_recharge_order_expire():
+        try:
+            from agent.credit_service import expire_pending_orders
+            n = expire_pending_orders()
+            if n > 0:
+                log.info("[recharge_expire cron] expired %d orders", n)
+        except Exception as e:
+            log.warning("[recharge_expire cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_recharge_order_expire,
+        trigger="interval",
+        minutes=5,
+        id="recharge_order_expire",
+        name="Recharge Order Expire Sweeper (5min)",
+        misfire_grace_time=60,
+        max_instances=1,
+        coalesce=True,
+    )
+
+    # ── R52 LLM 价格表刷新(每 6h)──────────────────────────
+    # 从 LiteLLM 拉 Anthropic 最新单价(模型 alias 见 pricing_loader._MODEL_ALIASES)
+    # 失败 → 沿用 in-process cache(用户已确认决策:继续,不阻塞 chat)
+    # 静默更新,不发告警(用户已确认决策:暂时不告警)
+    async def _run_pricing_refresh():
+        try:
+            from agent.pricing_loader import refresh_pricing
+            ok = refresh_pricing(force=True)
+            if ok:
+                from agent.pricing_loader import get_status
+                st = get_status()
+                log.info("[pricing cron] refreshed: %d models", st["models_loaded"])
+            # ok=False 时 refresh_pricing 已在内部 log 了
+        except Exception as e:
+            log.warning("[pricing cron] failed: %s", e)
+
+    scheduler.add_job(
+        _run_pricing_refresh,
+        trigger="interval",
+        hours=6,
+        id="pricing_refresh",
+        name="LLM Pricing Refresh from LiteLLM (6h)",
+        misfire_grace_time=600,
+        max_instances=1,
+        coalesce=True,
+    )
+
     # ── R47 P6 半自动交易执行器(每 1s)─────────────────────
     # 单笔 ≥ $500 走半自动:写 pending_semi_auto_trades 表 + 10s 撤销窗口
     # cron 扫到 execute_after < now 且 status='pending' → 真发交易

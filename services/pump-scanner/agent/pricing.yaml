@@ -1,40 +1,49 @@
-# Anthropic Claude API 定价 — 单一来源
+# Anthropic Claude API 定价 — 单一来源(yaml 仅作 LiteLLM 死线兜底)
 #
-# Source:        https://www.anthropic.com/pricing
-# Verifier:      python3 scripts/verify_pricing.py(对照 LiteLLM 维护的社区源)
-# Last verified: 2026-05-09
+# R52 update:
+#   - 接入 pricing_loader,每 6h 从 LiteLLM 拉最新价;LiteLLM 失败才用本 yaml
+#   - 修正 Haiku 4.5 价格:$0.25/$1.25 → $1/$5(原值 4 倍偏低,长期低估成本)
+#   - 加 Opus 4.5/4.6/4.7(都是 $5/$25,比 Opus 4.1 便宜 3 倍)
 #
-# 改价后必跑:
-#   - python3 scripts/verify_pricing.py(对比 LiteLLM)
-#   - python3 -m pytest tests/test_pricing.py
-#
-# 单价:USD per 1,000,000 tokens
+# Source:        https://www.anthropic.com/pricing + LiteLLM model_prices_and_context_window.json
+# Verifier:      python3 scripts/verify_pricing.py
+# Last verified: 2026-05-09 (R52 — 通过 LiteLLM 实拉对照)
 
 last_verified: "2026-05-09"
 
 # R51:充值环节已收 1% 平台手续费,LLM 调用按真实成本(不再加 markup)
-# 如要重新加 markup,改这个值即可(0.05% = 1.0005)
 markup: 1.0
 
 # 充值手续费 1%
 recharge_fee_rate: 0.01
 
 models:
-  # ─── Claude 4 series ───
-  claude-haiku-4-5:           {in: 0.25,  out: 1.25}
-  claude-haiku-4-5-20251001:  {in: 0.25,  out: 1.25}
+  # ─── Sonnet 4 / 4.5 / 4.6(同价 $3/$15)───
+  claude-sonnet-4-20250514:   {in: 3.00,  out: 15.00}
+  claude-sonnet-4-5:          {in: 3.00,  out: 15.00}
   claude-sonnet-4-6:          {in: 3.00,  out: 15.00}
   claude-sonnet-4-6-20251022: {in: 3.00,  out: 15.00}
-  claude-sonnet-4-20250514:   {in: 3.00,  out: 15.00}  # 当前线上 chat 用
-  claude-opus-4-6:            {in: 15.00, out: 75.00}
-  claude-opus-4-6-20251022:   {in: 15.00, out: 75.00}
+
+  # ─── Haiku 4.5($1/$5 per MTok)───
+  # R52 修正:之前 yaml 写 $0.25/$1.25 是 Haiku 3.5 的旧价,Haiku 4.5 是 4 倍贵
+  claude-haiku-4-5:           {in: 1.00,  out: 5.00}
+  claude-haiku-4-5-20251001:  {in: 1.00,  out: 5.00}
+
+  # ─── Opus 4.1($15/$75)— 老但贵 ───
+  claude-opus-4-1:            {in: 15.00, out: 75.00}
+
+  # ─── Opus 4.5 / 4.6 / 4.7($5/$25)— 新且便宜,L3 优先用 ───
+  claude-opus-4-5:            {in: 5.00,  out: 25.00}
+  claude-opus-4-6:            {in: 5.00,  out: 25.00}
+  claude-opus-4-6-20251022:   {in: 5.00,  out: 25.00}
+  claude-opus-4-7:            {in: 5.00,  out: 25.00}
 
   # ─── Claude 3.5 (legacy 兼容) ───
   claude-3-5-sonnet-20241022: {in: 3.00,  out: 15.00}
   claude-3-5-haiku-20241022:  {in: 1.00,  out: 5.00}
 
 # 估算 "次询问" 时的默认假设(用户在 Flutter 充值 sheet 看到)
-# 真实使用平均 ~3000 input + ~500 output tokens(基于 R47 P9 sample)
+# 真实使用平均 ~3000 input + ~500 output tokens
 estimate_assumptions:
   default_model: "claude-sonnet-4-6"
   avg_input_tokens: 3000

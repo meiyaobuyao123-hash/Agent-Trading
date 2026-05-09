@@ -22,7 +22,11 @@ from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
-SONNET_MODEL = "claude-sonnet-4-20250514"
+# R52 — L3 风控审查升级 Opus 4.7(>$2000 大额关键决策)
+# 风控是最后防线,推理出错代价高,Opus 更稳
+# Opus 4.7($5/$25)比 4.1 便宜 3 倍且更新
+RISK_REVIEW_MODEL = "claude-opus-4-7"
+SONNET_MODEL = RISK_REVIEW_MODEL  # 向后兼容
 
 SYSTEM_PROMPT = """你是独立风控审查官。你的唯一职责是保护资金安全。
 你不受交易机会诱惑，只关注风险。

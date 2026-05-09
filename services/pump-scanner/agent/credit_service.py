@@ -76,17 +76,45 @@ ESTIMATE_AVG_OUT: int = _PRICING.get("estimate_assumptions", {}).get("avg_output
 MIN_BALANCE_USD = Decimal("0.0001")
 
 
+class UnknownModelError(Exception):
+    """LLM 调用了 pricing 表未覆盖的模型 — 拒绝调用而非"瞎算"。
+
+    R52:用户原话"价格千万不能瞎算" → 未知模型必须告警 + 拒绝,
+    而不是 fallback 到 sonnet 价 / yaml 默认值。
+    """
+
+
 def calc_cost(model: str, tokens_in: int, tokens_out: int) -> Decimal:
     """计算一次 LLM 调用的成本(USD)。
 
+    R52 — 三层 fallback:
+      1) pricing_loader(LiteLLM 6h 拉的最新价)
+      2) yaml 静态(LiteLLM 都死时兜底)
+      3) 抛 UnknownModelError(连 yaml 都没该 model → 拒绝调用,不"瞎算")
+
     返 Decimal(精确到 8 位小数)。
     """
-    p = LLM_PRICES.get(model)
-    if not p:
-        # 未知 model 用 Sonnet 价(保守)
-        log.warning("[credit] unknown model %s, using sonnet price", model)
-        p = LLM_PRICES["claude-sonnet-4-6"]
-    raw = (Decimal(tokens_in) * Decimal(p["in"]) + Decimal(tokens_out) * Decimal(p["out"]))
+    # 优先 dynamic loader(LiteLLM)
+    try:
+        from agent.pricing_loader import get_price as _dyn_get
+        p = _dyn_get(model)
+    except Exception as e:
+        log.warning("[credit] pricing_loader unreachable, fallback to yaml: %s", e)
+        p = None
+
+    # fallback 到 yaml 静态(进程启动时加载的)
+    if p is None:
+        p = LLM_PRICES.get(model)
+
+    if p is None:
+        log.error("[credit] UNKNOWN MODEL %s — refusing to charge (not falling back to sonnet)", model)
+        raise UnknownModelError(
+            f"Model '{model}' not in pricing table. "
+            "Refused to estimate cost (could over/undercharge user)."
+        )
+
+    raw = (Decimal(tokens_in) * Decimal(str(p["in"]))
+           + Decimal(tokens_out) * Decimal(str(p["out"])))
     cost = raw / Decimal(1_000_000) * MARKUP
     return cost.quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
 
@@ -203,7 +231,17 @@ def deduct(
     if not user_id or user_id == "00000000-0000-0000-0000-000000000001":
         return Decimal(0)  # DEV bypass 不扣费
 
-    cost = calc_cost(model, tokens_in, tokens_out)
+    try:
+        cost = calc_cost(model, tokens_in, tokens_out)
+    except UnknownModelError as e:
+        # R52:未知模型不"瞎算" — 这次不扣(平台吃亏),但立刻 critical log
+        # 让运维/我看到补 alias 表;不阻塞 chat(用户感知是免费)
+        log.critical(
+            "[credit] UNKNOWN MODEL detected mid-flight: %s | user=%s tokens=%d/%d | "
+            "REFUSING to charge to avoid over/under-billing. ADD ALIAS NOW.",
+            model, user_id[:8], tokens_in, tokens_out,
+        )
+        return get_balance(user_id)
     if cost <= 0:
         return get_balance(user_id)
 

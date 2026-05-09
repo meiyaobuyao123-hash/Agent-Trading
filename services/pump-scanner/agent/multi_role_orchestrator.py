@@ -35,10 +35,13 @@ from agent.risk_manager import get_risk_manager
 
 log = logging.getLogger(__name__)
 
-# 成本估算常量（每次触发的 USD 成本）
+# 成本估算常量（每次触发的 USD 平均成本,统计用 — 真实计费走 calc_cost)
+# R52 update:
+#   L2 = 单 Sonnet 一次评估 ~ $0.003
+#   L3 = 3 Haiku 并行 ($0.0003) + 4 Opus 串行(辩论 4 轮 + 风控 + 决策)~ $0.06+
 COST_L1 = 0.0
 COST_L2 = 0.003
-COST_L3 = 0.015
+COST_L3 = 0.060
 
 
 class MultiRoleOrchestrator:

@@ -175,7 +175,7 @@ class _CreditPageState extends State<CreditPage> with SingleTickerProviderStateM
                                   children: [
                                     Icon(CupertinoIcons.add, color: Colors.white, size: 14),
                                     SizedBox(width: 6),
-                                    Text('充值算力',
+                                    Text('充值',
                                         style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w600)),
                                   ],
                                 ),
@@ -549,7 +549,7 @@ class _RechargeSheetState extends State<RechargeSheet> {
                   child: const Icon(Icons.bolt, color: Colors.white, size: 22),
                 ),
                 const SizedBox(width: 12),
-                Text('充值算力',
+                Text('充值',
                     style: TextStyle(color: c.textPrimary, fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.3)),
               ],
             ),

@@ -19,7 +19,12 @@ from typing import Any, Dict, Optional
 
 log = logging.getLogger(__name__)
 
-SONNET_MODEL = "claude-sonnet-4-20250514"
+# R52 — L3 辩论(>$2000 大额)升级 Opus 4.7
+# 牛熊辩论是关键决策时刻,Opus 推理更稳
+# Opus 4.7($5/$25)比 4.1($15/$75)便宜 3 倍且更新,无理由用老版
+# 命名保留 SONNET_MODEL 是历史变量名,实际指向 Opus
+DEBATE_MODEL = "claude-opus-4-7"
+SONNET_MODEL = DEBATE_MODEL  # 向后兼容:其他文件 import 这个名字
 
 # ── Prompt 模板 ────────────────────────────────────────
 

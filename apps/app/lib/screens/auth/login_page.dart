@@ -120,7 +120,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(width: 10),
                   Text(
-                    '登录 Helix',
+                    '登录 Future Trading',
                     style: TextStyle(color: c.textPrimary, fontSize: 22, fontWeight: FontWeight.w700),
                   ),
                 ],

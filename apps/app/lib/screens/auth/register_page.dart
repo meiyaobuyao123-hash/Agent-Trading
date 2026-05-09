@@ -72,7 +72,7 @@ class _RegisterPageState extends State<RegisterPage> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const SizedBox(height: 8),
-              Text('注册 Helix',
+              Text('注册 Future Trading',
                   style: TextStyle(color: c.textPrimary, fontSize: 22, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Text('一个账户 · Web + App 共享 · 钱包跟着账户走',

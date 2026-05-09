@@ -101,10 +101,10 @@ def c5_hitl_completeness(ctx: dict) -> bool:
 
 
 def hr01_within_strategy_max(ctx: dict) -> bool:
-    """R47 P7 — 触发: 单笔金额超过策略 max_position_usd。
+    """R47 P6 — 触发: 单笔金额超过策略 max_position_usd。
 
-    R47 P7 调整:无 max_position_usd 注入 → 不触发(无封顶模式)。
-    若策略显式设了 max_position,仍按策略上限拦。
+    联动 strategy.max_position_usd:每个策略可独立设上限(默认 $500,可调到 $5000)。
+    caller 必须把 strategy.max_position_usd 注入 ctx,否则 fallback 默认 $500。
 
     paper 模式不检查(paper 不烧真钱)。
     """
@@ -113,9 +113,7 @@ def hr01_within_strategy_max(ctx: dict) -> bool:
     amount = ctx.get("amount_usd")
     if amount is None:
         return False
-    cap = ctx.get("max_position_usd")
-    if cap is None:
-        return False  # R47 P7 — 无封顶,不触发
+    cap = ctx.get("max_position_usd", 500)  # 默认 $500
     try:
         return float(amount) > float(cap)
     except (TypeError, ValueError):

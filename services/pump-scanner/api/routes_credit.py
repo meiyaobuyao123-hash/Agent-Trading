@@ -109,6 +109,30 @@ async def list_txs(
     return {"transactions": credit_service.list_transactions(user_id, limit=limit)}
 
 
+@router.get("/estimate")
+async def estimate_messages(
+    amount_usd: float,
+    model: Optional[str] = None,
+):
+    """R51 — Flutter 充值 sheet 用:估算充 X 美金能问多少次。
+    自动扣 1% 手续费,再按 pricing.yaml 默认 3000 in / 500 out 算。
+    无需登录(纯客户端展示用)。
+    """
+    if amount_usd <= 0 or amount_usd > 100000:
+        raise HTTPException(400, "amount_usd 必须在 (0, 100000] 范围内")
+    used_model = model or credit_service.DEFAULT_MODEL
+    n = credit_service.estimate_messages_for_recharge(Decimal(str(amount_usd)), used_model)
+    return {
+        "amount_usd": amount_usd,
+        "fee_rate": str(credit_service.RECHARGE_FEE_RATE),
+        "amount_credited": str(Decimal(str(amount_usd)) * (Decimal("1") - credit_service.RECHARGE_FEE_RATE)),
+        "model": used_model,
+        "estimated_messages": n,
+        "avg_in_tokens": credit_service.ESTIMATE_AVG_IN,
+        "avg_out_tokens": credit_service.ESTIMATE_AVG_OUT,
+    }
+
+
 @router.post("/admin/grant", status_code=200)
 async def admin_grant(
     req: AdminGrantRequest,

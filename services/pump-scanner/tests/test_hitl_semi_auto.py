@@ -82,15 +82,11 @@ class TestHr01StrategyMax:
         ctx = {"mode": "live", "amount_usd": 600, "max_position_usd": 500}
         assert hr01_within_strategy_max(ctx) is True
 
-    def test_no_max_position_means_no_block_in_p7(self):
-        """R47 P7 — max_position 没设 → HR01 不触发(无封顶模式)"""
+    def test_uses_default_500_when_max_not_provided(self):
         from agent.safety_engine import hr01_within_strategy_max
-        # 没传 max_position_usd → 不触发(R47 P7 无封顶)
+        # 没传 max_position_usd → 默认 $500
         ctx = {"mode": "live", "amount_usd": 600}
-        assert hr01_within_strategy_max(ctx) is False
-        # 即使 99999 也不触发
-        ctx_huge = {"mode": "live", "amount_usd": 99999}
-        assert hr01_within_strategy_max(ctx_huge) is False
+        assert hr01_within_strategy_max(ctx) is True
 
     def test_user_can_lift_to_5000(self):
         from agent.safety_engine import hr01_within_strategy_max
@@ -157,29 +153,21 @@ class TestSemiAutoService:
 # ═════════════════════════════════════════════════════════
 
 class TestActionDispatcherIntegration:
-    def test_action_dispatcher_p7_no_semi_branch(self):
-        """R47 P7 — dispatcher 不再走 semi 分支(撤回 P6),所有 live 直接 execute_trade"""
+    def test_action_dispatcher_imports_decide_automation_level(self):
+        """action_dispatcher 必须 import decide_automation_level + create_pending"""
         from pathlib import Path
         src = Path(__file__).resolve().parents[1] / "agent" / "action_dispatcher.py"
         content = src.read_text()
-        # 不应再有 semi 分流的 if 语句(P7 撤回)
-        assert 'level == "semi"' not in content, \
-            "R47 P7 dispatcher 应已删除 semi 分支(用户决策全自动)"
-        # 但 user_id 透传仍要保留(R47 P5)
-        assert "user_id=event.user_id" in content
+        assert "decide_automation_level" in content, \
+            "action_dispatcher 必须用 decide_automation_level 决定 auto / semi"
+        assert "semi_auto_service" in content, \
+            "action_dispatcher 必须 import semi_auto_service.create_pending"
+        assert 'level == "semi"' in content, \
+            "必须有 level == 'semi' 分支"
 
-    def test_routes_agent_has_cancel_endpoint_preserved(self):
-        """R47 P7 — cancel endpoint 保留(以后重开 semi 时 0 成本)"""
+    def test_routes_agent_has_cancel_endpoint(self):
         from pathlib import Path
         src = Path(__file__).resolve().parents[1] / "api" / "routes_agent.py"
         content = src.read_text()
         assert "/trades/pending/{pending_id}/cancel" in content
         assert "cancel_pending_semi_auto" in content
-
-    def test_decide_automation_level_function_preserved(self):
-        """R47 P7 — hitl_router.decide_automation_level 函数保留(代码不删,以后可重开)"""
-        from agent.hitl_router import decide_automation_level
-        # 函数还在,行为不变
-        level, sec = decide_automation_level(amount_usd=1000)
-        assert level == "semi"
-        assert sec == 10

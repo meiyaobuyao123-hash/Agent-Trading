@@ -1,13 +1,14 @@
 """
 R47 — Credit 算力服务
+R51 — 价目表抽到 pricing.yaml(单一来源 + verifier);1% 充值手续费
 
 计费模型:
-  cost_usd = (tokens_in × in_price + tokens_out × out_price) / 1M × 1.0005
+  cost_usd = (tokens_in × in_price + tokens_out × out_price) / 1M × MARKUP
+  recharge_credited = amount_usd × (1 - RECHARGE_FEE_RATE)
 
-价目表对齐 Anthropic 公开价(2026 May):
-  Haiku 4.5    $0.25 / $1.25 per MTok
-  Sonnet 4.6   $3.00 / $15.0 per MTok
-  Opus 4.6     $15.0 / $75.0 per MTok
+价目表来源:agent/pricing.yaml(对照 Anthropic 公开 2026 May)
+  - 改价跑:scripts/verify_pricing.py(对比 LiteLLM 社区源)
+  - 单测:tests/test_pricing.py
 
 API:
   get_balance(user_id) -> Decimal
@@ -27,32 +28,49 @@ import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 log = logging.getLogger(__name__)
 
 
-# ── 价目表(2026 May Anthropic 公开价 USD per 1M tokens)─────────
+# ── 价目表来自 pricing.yaml(单一来源,改价 → 改 yaml + 跑 verifier) ─
 
-LLM_PRICES: Dict[str, Dict[str, float]] = {
-    # Claude 4 series
-    "claude-haiku-4-5":          {"in": 0.25,  "out": 1.25},
-    "claude-haiku-4-5-20251001": {"in": 0.25,  "out": 1.25},
-    "claude-sonnet-4-6":         {"in": 3.0,   "out": 15.0},
-    "claude-sonnet-4-6-20251022":{"in": 3.0,   "out": 15.0},
-    "claude-sonnet-4-20250514":  {"in": 3.0,   "out": 15.0},  # 当前线上 chat 用
-    "claude-opus-4-6":           {"in": 15.0,  "out": 75.0},
-    "claude-opus-4-6-20251022":  {"in": 15.0,  "out": 75.0},
-    # Claude 3.5 / Sonnet 兼容(老 model id)
-    "claude-3-5-sonnet-20241022":{"in": 3.0,   "out": 15.0},
-    "claude-3-5-haiku-20241022": {"in": 1.0,   "out": 5.0},
-}
+def _load_pricing_yaml() -> Dict[str, Any]:
+    """启动时读 pricing.yaml,失败 fallback 到 hardcoded 默认(防 yaml 误删)。"""
+    try:
+        import yaml  # type: ignore
+        p = Path(__file__).parent / "pricing.yaml"
+        return yaml.safe_load(p.read_text(encoding="utf-8"))
+    except Exception as e:
+        log.error("[credit] failed to load pricing.yaml, using emergency fallback: %s", e)
+        return {
+            "markup": 1.0,
+            "recharge_fee_rate": 0.01,
+            "models": {
+                "claude-sonnet-4-6":         {"in": 3.0, "out": 15.0},
+                "claude-sonnet-4-20250514":  {"in": 3.0, "out": 15.0},
+                "claude-haiku-4-5":          {"in": 0.25, "out": 1.25},
+                "claude-opus-4-6":           {"in": 15.0, "out": 75.0},
+            },
+            "estimate_assumptions": {
+                "default_model": "claude-sonnet-4-6",
+                "avg_input_tokens": 3000,
+                "avg_output_tokens": 500,
+            },
+        }
 
-# 万分之五 markup(覆盖 USDC RPC / 监听服务成本)
-MARKUP = Decimal("1.0005")
+
+_PRICING = _load_pricing_yaml()
+
+LLM_PRICES: Dict[str, Dict[str, float]] = _PRICING.get("models", {})
+MARKUP: Decimal = Decimal(str(_PRICING.get("markup", 1.0)))
+RECHARGE_FEE_RATE: Decimal = Decimal(str(_PRICING.get("recharge_fee_rate", 0.01)))
 
 # 估算用默认 model(用户没指定时)
-DEFAULT_MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL: str = _PRICING.get("estimate_assumptions", {}).get("default_model", "claude-sonnet-4-6")
+ESTIMATE_AVG_IN: int = _PRICING.get("estimate_assumptions", {}).get("avg_input_tokens", 3000)
+ESTIMATE_AVG_OUT: int = _PRICING.get("estimate_assumptions", {}).get("avg_output_tokens", 500)
 
 # 最小余额门槛 — 低于这个值拒新请求(避免负余额,留 buffer 给当前请求扣费)
 MIN_BALANCE_USD = Decimal("0.0001")
@@ -522,18 +540,30 @@ def confirm_recharge_order(
             user_id, amount_usd, amount_base = row
         conn.commit()
 
-        # 用户实际收到 amount_base(用户支付的整数,nonce 是免费的零头)
+        # R51 — 平台 1% 充值手续费
+        # 用户支付 amount_base (e.g. $100),平台扣 1% (= $1),实际到账 $99
+        # nonce 零头(amount_usd - amount_base)始终免费(订单识别用)
+        amount_base_dec = Decimal(str(amount_base))
+        fee = (amount_base_dec * RECHARGE_FEE_RATE).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        amount_credited = amount_base_dec - fee
+
         new_balance = add_credit(
             str(user_id),
-            Decimal(str(amount_base)),
+            amount_credited,
             source_type="recharge",
             chain_tx_hash=chain_tx_hash,
             recharge_order_id=order_id,
-            meta={"received_amount": str(amount_usd)},
+            meta={
+                "received_amount": str(amount_usd),
+                "fee_usd": str(fee),
+                "fee_rate": str(RECHARGE_FEE_RATE),
+            },
         )
         return {
             "user_id": str(user_id),
-            "amount_credited": str(amount_base),
+            "amount_received": str(amount_base),       # 用户实际付的(USDC 链上)
+            "fee_charged": str(fee),                   # 平台 1% 手续费
+            "amount_credited": str(amount_credited),   # 实际加到余额的
             "new_balance": str(new_balance),
         }
     except Exception as e:
@@ -565,9 +595,17 @@ def expire_pending_orders() -> int:
 
 def estimate_remaining_messages(balance: Decimal, model: str = DEFAULT_MODEL) -> int:
     """估算剩余余额能跑多少条平均长度的 chat(用于 UI 提示)。
-    平均一条 chat:~800 input + 300 output tokens。
+    平均一条 chat:用 pricing.yaml 的 estimate_assumptions(默认 3000 in / 500 out)。
     """
-    avg_cost = calc_cost(model, 800, 300)
+    avg_cost = calc_cost(model, ESTIMATE_AVG_IN, ESTIMATE_AVG_OUT)
     if avg_cost <= 0:
         return 0
     return int(balance / avg_cost)
+
+
+def estimate_messages_for_recharge(amount_usd: Decimal, model: str = DEFAULT_MODEL) -> int:
+    """R51 — 给 Flutter 充值 sheet 用:充 X 美金能问多少次?
+    扣完 1% 手续费后,按 pricing.yaml 的 estimate_assumptions 算。
+    """
+    credited = Decimal(str(amount_usd)) * (Decimal("1") - RECHARGE_FEE_RATE)
+    return estimate_remaining_messages(credited, model)

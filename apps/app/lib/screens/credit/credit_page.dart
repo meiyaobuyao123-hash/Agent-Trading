@@ -456,6 +456,14 @@ class _RechargeSheetState extends State<RechargeSheet> {
   bool _creating = false;
   String? _err;
 
+  // R51 — 1% 平台手续费,跟后端 pricing.yaml 对齐
+  static const double _feeRate = 0.01;
+
+  // R51 — 估算"次询问"用 Sonnet 单价 + 3000 in / 500 out 平均 token
+  // (来自后端 pricing.yaml estimate_assumptions,Sonnet $3/$15/MTok markup=1.0)
+  // 单条平均成本 = (3000*3 + 500*15) / 1M = $0.0165
+  static const double _avgCostPerCall = 0.0165;
+
   @override
   void dispose() {
     _customCtrl.dispose();
@@ -477,129 +485,156 @@ class _RechargeSheetState extends State<RechargeSheet> {
     Navigator.of(context).pop(order);
   }
 
+  /// 估算 N 次询问(扣完 1% 手续费后能问几次 Sonnet)
+  int _estimateMessages(int amountUsd) {
+    final credited = amountUsd * (1 - _feeRate);
+    return (credited / _avgCostPerCall).round();
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
     final selected = _CHAINS.firstWhere((x) => x.id == _chain);
     return DraggableScrollableSheet(
       expand: false,
-      initialChildSize: 0.8,
-      maxChildSize: 0.9,
+      initialChildSize: 0.88,
+      maxChildSize: 0.95,
       minChildSize: 0.5,
       builder: (_, scroll) => Container(
         decoration: BoxDecoration(
           color: c.bg,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(color: Colors.black.withValues(alpha: 0.18), blurRadius: 24, offset: const Offset(0, -4)),
+          ],
         ),
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
         child: ListView(
           controller: scroll,
           children: [
+            // 顶部把手
             Center(
               child: Container(
-                width: 40,
+                width: 38,
                 height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
+                margin: const EdgeInsets.only(bottom: 18),
                 decoration: BoxDecoration(
                   color: c.border,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-            Text('充值算力',
-                style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 6),
-            Text('USDC 链上充值 · 充值后立即可用 · 余额永不过期',
-                style: TextStyle(color: c.textTertiary, fontSize: 12)),
-            const SizedBox(height: 18),
-            Text('1. 选择链', style: TextStyle(color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+
+            // 标题 + 渐变 icon
+            Row(
+              children: [
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [Color(0xFF3C82F6), Color(0xFF8B5CF6)],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF3C82F6).withValues(alpha: 0.32),
+                        blurRadius: 12,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.bolt, color: Colors.white, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Text('充值算力',
+                    style: TextStyle(color: c.textPrimary, fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -0.3)),
+              ],
+            ),
             const SizedBox(height: 8),
+            Text('USDC 链上充值 · 充值后立即可用 · 余额永不过期',
+                style: TextStyle(color: c.textTertiary, fontSize: 12, height: 1.5)),
+
+            // R51 — 1% 平台手续费明示
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0x1FF59E0B),
+                border: Border.all(color: const Color(0x4DF59E0B), width: 1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, color: Color(0xFFF59E0B), size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: RichText(
+                      text: TextSpan(
+                        style: TextStyle(color: c.textPrimary, fontSize: 12.5, height: 1.5),
+                        children: const [
+                          TextSpan(text: '平台手续费 1%', style: TextStyle(fontWeight: FontWeight.w700)),
+                          TextSpan(text: ' — 例如充值 '),
+                          TextSpan(text: '\$100', style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600)),
+                          TextSpan(text: ' 实际到账 '),
+                          TextSpan(text: '\$99 算力', style: TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w600, color: Color(0xFF10B981))),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 22),
+            Text('1. 选择链', style: TextStyle(color: c.textSecondary, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2)),
+            const SizedBox(height: 10),
+
+            // 4 链卡片 — 修 overflow + 渐变 + 选中态
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
               crossAxisCount: 2,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 2.7,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 2.0,  // R51:从 2.7 → 2.0,放得下底部 sub label
               children: _CHAINS.map((opt) {
                 final active = opt.id == _chain;
-                return GestureDetector(
+                return _ChainCard(
+                  opt: opt,
+                  active: active,
                   onTap: _creating ? null : () => setState(() => _chain = opt.id),
-                  child: Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: active ? const Color(0xFF3C82F6) : c.surface,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: active ? const Color(0xFF3C82F6) : c.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Row(children: [
-                          Text(opt.emoji, style: const TextStyle(fontSize: 16)),
-                          const SizedBox(width: 6),
-                          Text(opt.label,
-                              style: TextStyle(
-                                color: active ? Colors.white : c.textPrimary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                              )),
-                        ]),
-                        const SizedBox(height: 2),
-                        Text(opt.tokenStd,
-                            style: TextStyle(
-                              color: active ? Colors.white.withValues(alpha: 0.85) : c.textTertiary,
-                              fontSize: 10,
-                            )),
-                        Text(opt.sub,
-                            style: TextStyle(
-                              color: active ? Colors.white.withValues(alpha: 0.85) : c.textTertiary,
-                              fontSize: 10,
-                            )),
-                      ],
-                    ),
-                  ),
+                );
+              }).toList(),
+            ),
+
+            const SizedBox(height: 22),
+            Text('2. 选择金额', style: TextStyle(color: c.textSecondary, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.2)),
+            const SizedBox(height: 10),
+
+            // 4 金额卡片 — 修 overflow + 玻璃态 + 真实"次询问"
+            GridView.count(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              crossAxisCount: 2,
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 2.0,  // R51:从 2.5 → 2.0,放得下副标题
+              children: _PRESETS.map((amt) {
+                return _AmountCard(
+                  amount: amt,
+                  estimatedMessages: _estimateMessages(amt),
+                  onTap: _creating ? null : () => _create(amt),
                 );
               }).toList(),
             ),
 
             const SizedBox(height: 16),
-            Text('2. 选择金额', style: TextStyle(color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: 2,
-              mainAxisSpacing: 8,
-              crossAxisSpacing: 8,
-              childAspectRatio: 2.5,
-              children: _PRESETS
-                  .map((amt) => GestureDetector(
-                        onTap: _creating ? null : () => _create(amt),
-                        child: Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: c.surface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: c.border),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text('\$$amt',
-                                  style: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
-                              Text('约 ${(amt * 144)} 次询问',
-                                  style: TextStyle(color: c.textTertiary, fontSize: 11)),
-                            ],
-                          ),
-                        ),
-                      ))
-                  .toList(),
-            ),
 
-            const SizedBox(height: 12),
+            // 自定义金额 + 充值按钮
             Row(children: [
               Expanded(
                 child: TextField(
@@ -611,47 +646,246 @@ class _RechargeSheetState extends State<RechargeSheet> {
                     hintStyle: TextStyle(color: c.textTertiary, fontSize: 13),
                     filled: true,
                     fillColor: c.surface,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: c.border),
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: c.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFF3C82F6), width: 1.5),
                     ),
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
-              ElevatedButton(
-                onPressed: _creating
-                    ? null
-                    : () {
-                        final n = int.tryParse(_customCtrl.text.trim());
-                        if (n != null && n >= 1 && n <= 10000) _create(n);
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF3C82F6),
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              const SizedBox(width: 10),
+              Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: _creating ? null : [
+                    BoxShadow(
+                      color: const Color(0xFF3C82F6).withValues(alpha: 0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                child: Text(_creating ? '...' : '充值 ${selected.label}'),
+                child: ElevatedButton(
+                  onPressed: _creating
+                      ? null
+                      : () {
+                          final n = int.tryParse(_customCtrl.text.trim());
+                          if (n != null && n >= 1 && n <= 10000) _create(n);
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF3C82F6),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    elevation: 0,
+                  ),
+                  child: _creating
+                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                      : Text('充值 ${selected.label}', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                ),
               ),
             ]),
 
             if (_err != null) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                 decoration: BoxDecoration(
                   color: const Color(0x1FEF4444),
-                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0x4DEF4444)),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                child: Text(_err!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: Color(0xFFEF4444), size: 14),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_err!, style: const TextStyle(color: Color(0xFFEF4444), fontSize: 12))),
+                  ],
+                ),
               ),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// R51 — 链卡片(选中态渐变 + 微动效)
+// ─────────────────────────────────────────────────────────
+
+class _ChainCard extends StatelessWidget {
+  final _ChainOpt opt;
+  final bool active;
+  final VoidCallback? onTap;
+  const _ChainCard({required this.opt, required this.active, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          gradient: active
+              ? const LinearGradient(
+                  colors: [Color(0xFF3C82F6), Color(0xFF8B5CF6)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: active ? null : c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active ? Colors.transparent : c.border,
+            width: 1,
+          ),
+          boxShadow: active
+              ? [
+                  BoxShadow(
+                    color: const Color(0xFF3C82F6).withValues(alpha: 0.32),
+                    blurRadius: 14,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Text(opt.emoji, style: const TextStyle(fontSize: 18)),
+                const SizedBox(width: 8),
+                Text(
+                  opt.label,
+                  style: TextStyle(
+                    color: active ? Colors.white : c.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                if (active) ...[
+                  const Spacer(),
+                  const Icon(Icons.check_circle, color: Colors.white, size: 16),
+                ],
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              opt.tokenStd,
+              style: TextStyle(
+                color: active ? Colors.white.withValues(alpha: 0.9) : c.textTertiary,
+                fontSize: 11,
+                fontFamily: 'monospace',
+                letterSpacing: 0.2,
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              opt.sub,
+              style: TextStyle(
+                color: active ? Colors.white.withValues(alpha: 0.78) : c.textTertiary,
+                fontSize: 10.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────
+// R51 — 金额卡片(玻璃态 + 真实"次询问"算法)
+// ─────────────────────────────────────────────────────────
+
+class _AmountCard extends StatelessWidget {
+  final int amount;
+  final int estimatedMessages;
+  final VoidCallback? onTap;
+  const _AmountCard({required this.amount, required this.estimatedMessages, required this.onTap});
+
+  String _formatNum(int n) {
+    if (n >= 10000) return '${(n / 10000).toStringAsFixed(1)}万';
+    return n.toString();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final credited = amount * 0.99; // 显式扣 1%
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: c.surface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.border, width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 主金额 + 实际到账
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.baseline,
+              textBaseline: TextBaseline.alphabetic,
+              children: [
+                Text(
+                  '\$$amount',
+                  style: TextStyle(
+                    color: c.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: -0.5,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  '→ \$${credited.toStringAsFixed(0)}',
+                  style: TextStyle(
+                    color: const Color(0xFF10B981),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            // 真实"次询问"算法(基于后端 pricing.yaml Sonnet 单价)
+            Text(
+              '约 ${_formatNum(estimatedMessages)} 次 · Sonnet',
+              style: TextStyle(color: c.textTertiary, fontSize: 11),
+            ),
           ],
         ),
       ),

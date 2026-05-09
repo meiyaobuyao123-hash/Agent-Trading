@@ -1,0 +1,41 @@
+# Anthropic Claude API 定价 — 单一来源
+#
+# Source:        https://www.anthropic.com/pricing
+# Verifier:      python3 scripts/verify_pricing.py(对照 LiteLLM 维护的社区源)
+# Last verified: 2026-05-09
+#
+# 改价后必跑:
+#   - python3 scripts/verify_pricing.py(对比 LiteLLM)
+#   - python3 -m pytest tests/test_pricing.py
+#
+# 单价:USD per 1,000,000 tokens
+
+last_verified: "2026-05-09"
+
+# R51:充值环节已收 1% 平台手续费,LLM 调用按真实成本(不再加 markup)
+# 如要重新加 markup,改这个值即可(0.05% = 1.0005)
+markup: 1.0
+
+# 充值手续费 1%
+recharge_fee_rate: 0.01
+
+models:
+  # ─── Claude 4 series ───
+  claude-haiku-4-5:           {in: 0.25,  out: 1.25}
+  claude-haiku-4-5-20251001:  {in: 0.25,  out: 1.25}
+  claude-sonnet-4-6:          {in: 3.00,  out: 15.00}
+  claude-sonnet-4-6-20251022: {in: 3.00,  out: 15.00}
+  claude-sonnet-4-20250514:   {in: 3.00,  out: 15.00}  # 当前线上 chat 用
+  claude-opus-4-6:            {in: 15.00, out: 75.00}
+  claude-opus-4-6-20251022:   {in: 15.00, out: 75.00}
+
+  # ─── Claude 3.5 (legacy 兼容) ───
+  claude-3-5-sonnet-20241022: {in: 3.00,  out: 15.00}
+  claude-3-5-haiku-20241022:  {in: 1.00,  out: 5.00}
+
+# 估算 "次询问" 时的默认假设(用户在 Flutter 充值 sheet 看到)
+# 真实使用平均 ~3000 input + ~500 output tokens(基于 R47 P9 sample)
+estimate_assumptions:
+  default_model: "claude-sonnet-4-6"
+  avg_input_tokens: 3000
+  avg_output_tokens: 500

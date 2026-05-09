@@ -124,7 +124,7 @@ class RunPaperTradeTool(Tool):
         trade = await engine.close_position(
             trade_id=payload["trade_id"],
             exit_price=float(payload["price"]),
-            exit_reason=payload.get("exit_reason", "manual"),
+            reason=payload.get("exit_reason", "manual"),
         )
         if trade is None:
             return {"ok": False, "action": action, "reason": "close_position_failed_or_not_found"}

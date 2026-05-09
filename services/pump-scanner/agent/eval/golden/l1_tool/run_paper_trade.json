@@ -35,7 +35,7 @@
         "action": "buy", "price": 100,
         "user_id": "u-1", "token_address": "0xabc",
         "token_symbol": "X", "chain": "SOL",
-        "amount_usd": 50, "sl_pct": -10, "tp_pct": 30
+        "amount_usd": 50, "sl_pct": 10, "tp_pct": 30
       },
       "expected_outcome": "ok"
     },
@@ -50,14 +50,13 @@
       "expected_outcome": "ok"
     },
     {
-      "name": "sell_with_trade_id_no_db_execute_error",
-      "description": "DB 不通时 engine.close_position 抛 → EXECUTE_ERROR",
+      "name": "sell_with_trade_id_no_db_returns_ok_false",
+      "description": "DB 不通时 close_position 内部 try/except 捕获返 None → tool 返 ok:true output.ok=false reason=close_position_failed_or_not_found",
       "input": {
         "action": "sell", "price": 132,
         "trade_id": "trade-eval-1", "exit_reason": "manual"
       },
-      "expected_outcome": "execute_error",
-      "expected_failure_mode": "EXECUTE_ERROR",
+      "expected_outcome": "ok",
       "skip_idempotent_check": true
     },
     {
@@ -66,7 +65,7 @@
         "action": "buy", "price": 100,
         "user_id": "u-1", "strategy_id": "s-1",
         "token_address": "0xabc", "token_symbol": "X", "chain": "SOL",
-        "amount_usd": 50, "sl_pct": -10, "tp_pct": 30,
+        "amount_usd": 50, "sl_pct": 10, "tp_pct": 30,
         "trigger_context": {"score": 85}
       },
       "expected_outcome": "ok"

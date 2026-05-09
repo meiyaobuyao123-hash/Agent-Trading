@@ -11,7 +11,13 @@ import 'register_page.dart';
 class LoginPage extends StatefulWidget {
   /// 登录成功后回调(由 main.dart 决定 push 主 App)
   final VoidCallback onLoggedIn;
-  const LoginPage({super.key, required this.onLoggedIn});
+
+  /// R49 — 可选关闭回调
+  /// 非空时:左上角显示 X,允许用户不登录返回(从 tab gate 弹出的场景)
+  /// 空时:无关闭按钮(冷启首次免责接受后强制登录的场景,本期已废)
+  final VoidCallback? onClose;
+
+  const LoginPage({super.key, required this.onLoggedIn, this.onClose});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -76,7 +82,26 @@ class _LoginPageState extends State<LoginPage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const SizedBox(height: 40),
+              // R49 — onClose 非空(从 tab gate 弹出的场景)显示左上 X
+              if (widget.onClose != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: GestureDetector(
+                    onTap: widget.onClose,
+                    behavior: HitTestBehavior.opaque,
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: c.cardGlass,
+                        border: Border.all(color: c.border, width: 1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(CupertinoIcons.xmark, color: c.textPrimary, size: 18),
+                    ),
+                  ),
+                ),
+              SizedBox(height: widget.onClose != null ? 16 : 40),
               // Logo
               Row(
                 children: [

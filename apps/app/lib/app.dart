@@ -156,17 +156,11 @@ class _DisclaimerGateState extends State<_DisclaimerGate> {
     if (!_checked) {
       return const Scaffold(backgroundColor: Colors.black);
     }
-    // 顺序:免责声明 → 登录 → 主 App
+    // R49 — 顺序改为:免责声明 → 主 App(游客可逛)
+    // 登录改为按需(切到 Agent / Profile tab 时由 MainShell 弹出 LoginPage)
     if (!_disclaimerAccepted) {
       return DisclaimerPage(
         onAccepted: () => setState(() => _disclaimerAccepted = true),
-      );
-    }
-    if (!AuthService.instance.isLoggedIn) {
-      return LoginPage(
-        onLoggedIn: () {
-          // AuthService 内部已 notifyListeners → _onAuthChanged → setState
-        },
       );
     }
     return const MainShell();
@@ -193,6 +187,31 @@ class _MainShellState extends State<MainShell> {
     HistoryScreen(),
     ProfileScreen(),
   ];
+
+  // R49 — 切 tab 拦截:idx=2 (Agent) / idx=4 (Profile) 需登录
+  static const _gatedTabs = {2, 4};
+
+  /// 处理 tab 点击:需登录的 tab 在未登录时弹 LoginPage(可关闭)
+  Future<void> _handleTabTap(int targetIdx) async {
+    if (targetIdx == _currentIndex) return;
+    if (_gatedTabs.contains(targetIdx) && !AuthService.instance.isLoggedIn) {
+      // 弹登录页(可关闭),用户登录成功 → 切到目标 tab;关闭 → 留在原 tab
+      final loggedIn = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (ctx) => LoginPage(
+            onLoggedIn: () => Navigator.of(ctx).pop(true),
+            onClose: () => Navigator.of(ctx).pop(false),
+          ),
+        ),
+      );
+      if (loggedIn == true && mounted) {
+        setState(() => _currentIndex = targetIdx);
+      }
+      return;
+    }
+    setState(() => _currentIndex = targetIdx);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -269,7 +288,7 @@ class _MainShellState extends State<MainShell> {
                 final item = tabItems[i];
                 final isActive = i == _currentIndex;
                 return _buildTabItem(c, item, isActive, () {
-                  setState(() => _currentIndex = i);
+                  _handleTabTap(i);
                 });
               }),
             ),

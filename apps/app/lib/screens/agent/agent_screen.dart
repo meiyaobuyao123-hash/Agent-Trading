@@ -6,7 +6,9 @@ import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
 import '../../services/credit_service.dart';
 import '../../services/wallet_service.dart';
+import '../../services/auth_service.dart';
 import '../credit/credit_page.dart';
+import '../auth/login_page.dart';
 import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../../widgets/agent/thesis_card.dart';
@@ -522,6 +524,23 @@ class _ChatTabState extends State<_ChatTab>
   Future<void> _send() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _sending) return;
+
+    // R49 gate — 未登录:弹登录页,登录成功后继续发送;关闭则放弃
+    if (!AuthService.instance.isLoggedIn) {
+      final loggedIn = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (ctx) => LoginPage(
+            onLoggedIn: () => Navigator.of(ctx).pop(true),
+            onClose: () => Navigator.of(ctx).pop(false),
+          ),
+        ),
+      );
+      if (loggedIn != true) return;
+      // 登录成功 → 拉一次余额再走后续流程
+      await CreditService.instance.fetchBalance();
+      if (!mounted) return;
+    }
 
     // R47 P3 gate — 余额预检(已登录已就绪;同 Web 体验)
     final bal = CreditService.instance.balance;

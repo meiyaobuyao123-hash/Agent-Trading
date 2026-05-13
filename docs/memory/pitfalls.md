@@ -1,5 +1,10 @@
 # 踩坑记录
 
+## 多 user SaaS 架构 vs 单 user toolkit 心智
+- **WorkingMemory 是进程单例 deque(maxlen=200,跨所有用户)**: `agent/memory/working_memory.py:18` 没 user_id 字段,所有用户混在 200 条 deque,**进程重启 wipe**。R58 撤前端暴露面。要多 user 用 → 加 user_id 索引 + 持久化
+- **SemanticMemory.get_all_active() 不 filter user_id**: `routes_agent.py:1057` 返所有用户规则。R58 撤前端暴露面
+- **Flutter endpoint 路径错静默返 {}**: `agent_service.dart` 用 `try/catch (_) { return {}; }` 吞 404 — UI 永远显 0。R58 发现 `/api/agent/performance` 路径错(后端只有 `/performance/{strategy_id}`)。新 endpoint 前后端路径必须对齐
+
 ## Credit Service / DB
 - **credit_transactions.type CHECK 约束**: 允许 `{recharge, consume, adjust, refund}`,**不接受 `admin_grant`**。给用户记入式增值用 `source_type='adjust'`
 - **add_credit 失败时 UPDATE 已 commit**: 先 UPDATE user_credits 后 INSERT credit_transactions;若 INSERT 失败 throw,user_credits 仍 +N(脏数据)。**重试前先回滚或检查 balance**,否则 +N 两次。R57 给创始人 $200 翻车 balance $400 手动 SQL 改回

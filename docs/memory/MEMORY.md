@@ -1,5 +1,18 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-13 R58 — 删 AI 洞察 Tab + 揭露 3 个跨用户隐私 bug)
+
+**R58 — 删 AI 洞察 Tab**(2026-05-13):
+
+审 Agent 屏 AI 洞察 Tab 5 个卡 × 4 维度,发现:
+1. **Agent 表现 永远 0/0%/0%** — Flutter 调 `/api/agent/performance`(无 ID),后端只有 `/performance/{strategy_id}` 必传 → 永远 404。endpoint bug
+2. **Agent 学到的规则 / 我的规则 跨用户共享** — `semantic_memory.get_all_active()`(`routes_agent.py:1057`)**不 filter user_id**。R47 P3 后多用户付费 SaaS = 隐私 bug
+3. **短期记忆 = 进程单例 200 deque** — `working_memory.py:18` 用 `deque(maxlen=200)` 跨所有用户 + 重启 wipe
+4. **市场状态 Shadow Badge** — `REGIME_SHADOW_MODE=true` 默认,真没用 regime 决策。"Shadow"标签用户不懂
+5. **视觉 3 套设计语言混搭** — App 整体 Light 白底,AI 洞察 5 卡硬编码 `Color(0xFF161B22)` GitHub 黑
+
+**改动**(只 Flutter):TabController 3→2,删 ai_insights_tab.dart/review_page.dart/memory_management_page.dart(~1344 行) + agent_service.dart 删 3 个 method。后端 0 改。隐私 bug 不修(撤了暴露面),留 R59+ 改 user_id。
+
 ## ⚠️ 上线状态(2026-05-13 R57 — 删开发期 demo + Flutter 链 icon 美化 + 创始人测试款)
 
 **R57 — 一次性清理 + UI 美化**(2026-05-13):

@@ -12,9 +12,9 @@ import '../auth/login_page.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../../widgets/balance_chip.dart';
 import 'strategy_detail_page.dart';
-import 'ai_insights_tab.dart';
 
-/// Agent 策略中心 — 对话 + 策略管理 + AI 洞察
+/// Agent 策略中心 — 策略对话 + 我的策略
+/// R58:删 AI 洞察 Tab(memory/regime/performance 卡跨用户共享 + endpoint bug + 视觉不搭)
 class AgentScreen extends StatefulWidget {
   const AgentScreen({super.key});
 
@@ -32,7 +32,7 @@ class _AgentScreenState extends State<AgentScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 3, vsync: this);
+    _tab = TabController(length: 2, vsync: this);
     // 首次进入 Agent 页面时弹出合规声明
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAgentDisclaimer();
@@ -168,7 +168,6 @@ class _AgentScreenState extends State<AgentScreen>
               tabs: [
                 Tab(text: S.of(context).chatTab),
                 Tab(text: S.of(context).myStrategyTab),
-                const Tab(text: 'AI 洞察'),
               ],
             ),
           ),
@@ -178,7 +177,6 @@ class _AgentScreenState extends State<AgentScreen>
           children: const [
             _ChatTab(),
             _MyStrategiesTab(),
-            const AiInsightsTab(),
           ],
         ),
       ),

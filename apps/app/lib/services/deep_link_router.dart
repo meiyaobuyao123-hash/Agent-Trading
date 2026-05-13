@@ -15,12 +15,11 @@
 // 设计:GlobalKey<NavigatorState> 注入,Service 层无需 BuildContext。
 //      未识别的 link 默认回主页(不抛异常)。
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-import '../screens/agent/hitl_approval_page.dart';
-import '../screens/agent/review_page.dart';
-import '../screens/agent/memory_management_page.dart';
+// R58:ReviewPage / MemoryManagementPage 已删 — `aitrading://review` 和 `aitrading://memory`
+// 推送类型现在回主页占位,等 R59+ 策略健康度 PRD 落地时再接
+// hitl 推送当前用 _DeepLinkPlaceholder 占位,真接 HitlApprovalPage 留 R57+(local_auth + 钱包真签)
 
 class DeepLinkRouter {
   /// 主导航 GlobalKey,App 启动时通过 main.dart 的 MaterialApp.navigatorKey 注入
@@ -78,19 +77,11 @@ class DeepLinkRouter {
         }
         return _navHome();
       case 'review':
-        // segs[1] = daily/weekly/monthly
-        await nav.push(MaterialPageRoute(builder: (_) => const ReviewPage()));
-        return true;
       case 'memory':
-        if (segs.length >= 2 && segs[1] == 'proposals') {
-          // 跳到 review 页(rule_proposals 在那里)
-          await nav.push(MaterialPageRoute(builder: (_) => const ReviewPage()));
-          return true;
-        }
-        await nav.push(
-          MaterialPageRoute(builder: (_) => const MemoryManagementPage()),
-        );
-        return true;
+        // R58:ReviewPage / MemoryManagementPage 已撤(跨用户隐私 bug + UI 风格不搭)
+        // 后续 R59+ 策略健康度 PRD 落地后,这些 deep link 应导向"策略健康度"页面
+        debugPrint('[DeepLink] $url — review/memory page removed in R58, fallback to home');
+        return _navHome();
       case 'token':
         if (segs.length >= 3) {
           // TokenDetailPage 需要 chain + address

@@ -4,6 +4,21 @@
 
 ---
 
+## 2026-05-13 R58 — 删 AI 洞察 Tab(3 个隐私 bug + endpoint bug 揭露)
+
+**做了什么**:删 Agent 屏 AI 洞察 Tab(~1344 行 Dart) + agent_service 3 个 method。TabController 3→2。
+
+**审计发现的真 bug**:
+- `/api/agent/performance` Flutter 调时无 strategy_id,后端只有 `/performance/{strategy_id}` → 永远 404 → 0
+- `semantic_memory.get_all_active()` 不 filter user_id → 跨用户共享(隐私 bug)
+- `WorkingMemory(deque(maxlen=200))` 进程单例 → 跨用户 + 重启 wipe
+- `REGIME_SHADOW_MODE=true` 默认,真没用 regime 决策
+- 视觉 3 套设计语言(Light/黑/粉嫩)混搭
+
+**讨论结论**:跨 user 隐私 + endpoint bug 修要 2 周,修完 95% 用户仍空;直接撤前端暴露面。后端 endpoint 保留供 R59+ "策略健康度"复用。
+
+---
+
 ## 2026-05-13 R57 — 删开发期 demo + Flutter 链 icon 美化 + 创始人 $200
 
 **做了什么**:

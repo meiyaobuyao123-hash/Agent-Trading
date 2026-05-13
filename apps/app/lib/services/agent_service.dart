@@ -554,41 +554,12 @@ class AgentService {
     } catch (_) { return null; }
   }
 
-  /// 获取 Agent 表现分析
-  Future<Map<String, dynamic>> getPerformance() async {
-    try {
-      final resp = await _client.get(
-        Uri.parse('$_apiBase/api/agent/performance'),
-        headers: _headers,
-      ).timeout(_timeout);
-      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
-      return {};
-    } catch (_) { return {}; }
-  }
-
-  /// 获取 Agent 记忆数据
-  Future<Map<String, dynamic>> getMemory() async {
-    try {
-      final resp = await _client.get(
-        Uri.parse('$_apiBase/api/agent/memory'),
-        headers: _headers,
-      ).timeout(_timeout);
-      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
-      return {};
-    } catch (_) { return {}; }
-  }
-
-  /// 获取 Regime 状态
-  Future<Map<String, dynamic>> getRegime() async {
-    try {
-      final resp = await _client.get(
-        Uri.parse('$_apiBase/api/agent/regime'),
-        headers: _headers,
-      ).timeout(_timeout);
-      if (resp.statusCode == 200) return jsonDecode(resp.body) as Map<String, dynamic>;
-      return {};
-    } catch (_) { return {}; }
-  }
+  // R58 — getPerformance() / getMemory() / getRegime() 已删除
+  //   随 AI 洞察 Tab 一起撤掉。原因:
+  //   • /api/agent/performance 路径错(后端只有 /performance/{strategy_id})— 永远 0
+  //   • semantic_memory.get_all_active() 不过滤 user_id — 跨用户共享(隐私 bug)
+  //   • working_memory 是进程单例 200 条 deque — 跨用户 + 重启 wipe
+  //   后续做"策略健康度"PRD 时,改 working/semantic memory 加 user_id,再恢复展示。
 
   /// 回测策略
   Future<Map<String, dynamic>> backtest(String strategyId, {int days = 7}) async {

@@ -1,14 +1,293 @@
 # Project Memory — Agent-Trading
 
-## ⚠️ 上线状态(2026-05-04 R39 进行中)
+## ⚠️ 上线状态(2026-05-13 R57 — 删开发期 demo + Flutter 链 icon 美化 + 创始人测试款)
+
+**R57 — 一次性清理 + UI 美化**(2026-05-13):
+
+1. **删 Agent 屏 3 个"试一试"demo banner**(`apps/app/lib/screens/agent/agent_screen.dart`):
+   - 试一试 AI 分析报告(W3 D3)— 用户从没要求过这个能力,只是开发期测 ThesisCard
+   - 试一试 HITL 审批流程(W3 D4)— 弹"输入任意字符串当签名",根本不该面向用户
+   - 试一试 共创 7 阶段(W3 D5)— 手动切 stage 是反人类 UX
+   - 删 ~240 行 demo 代码 + 6 unused import;ThesisCard/HitlApprovalPage/CocreationStepper 组件保留
+   - 真实触发:策略命中 → APNs push → deep link;chat agent 根据对话自然推进 stage
+   - HITL 签名占位下一 sprint 接 `local_auth` + 钱包真签(R57+)
+
+2. **Flutter 链 icon 美化(对齐 Web R56)**:`credit_page.dart` `_ChainBadge` CustomPainter 28×28 圆角方块 + 品牌色;Solana 紫绿渐变 / Ethereum #627EEA 菱形 / Base #0052FF C 缺口 / BSC #F0B90B 4 菱形
+
+3. **去预估文案**(Web `/app/credit` + Flutter):"约 X 次询问" → "USD"/"USDC"(token 用量决定真实成本)
+
+4. **创始人测试款 $200**:meiyaobuyao123@gmail.com(uid `2e0d42ac-851c-437f-a18f-124347c45564`)`credit_service.add_credit(uid, 200, source_type='adjust')`。坑:首试 source_type='admin_grant' 被 constraint 拒(只许 recharge/consume/adjust/refund)+ INSERT 失败但 UPDATE 已 commit → balance $400 手动 SQL 改回 $200。政策:仅此一笔。
+
+## ⚠️ 上线状态(2026-05-08 R47 P9 — 阈值 $2000 + Reflect per-user 计费 + FOMO 订正)
+
+**R47 P9**(2026-05-08):3 个 correction 落地。
+
+1. **金额阈值统一 $2000**:doc 04-spec 原 L3 升级 $200 / HITL 触发 $500、代码 multi_role_orchestrator $30,3 处不一致。全部对齐 $2000(超过才进 L3 多模型 Opus 辩论;否则 L2 单 Sonnet)。doc 5 处 + 代码 2 处。
+2. **Reflect Loop per-user 计费**:cron 由跨用户聚合 1 次平台吞钱 → `run_per_user_cycle()` 每个有 trade 的 user 单独反思 + 扣自己 credit;余额不足跳过。reflection.run_reflection 加 user_id + trigger 参数,调 credit_service.deduct 写流水(request_id=`reflect:daily`)。
+3. **FOMO Terminal 是独立产品**(用户官网验证):Benchmark $17M Series A,移动端为主,4 链。之前误归 Axiom Pulse(Pulse 是 Axiom 内功能名),现订正。
+
+文件:
+- docs/agent-pm/04-agent-spec.md(L107/L342/L418/L419/L689)
+- services/pump-scanner/agent/multi_role_orchestrator.py(L10/L75 docstring + L91 代码)
+- services/pump-scanner/agent/memory/reflection.py(签名 + deduct call)
+- services/pump-scanner/agent/loops/reflect_loop.py(`run_per_user_cycle` + 透传)
+- services/pump-scanner/main.py(cron 切换)
+- services/pump-scanner/tests/test_reflect_per_user_billing.py(6 新)
+
+测试:6 新 + reflect 13 + max_turns 4 + hitl 17 = 40 全过(无回归)。
+
+---
+
+## ⚠️ 上线状态(2026-05-07 R47 P6 — HITL 重新分层 + 单笔上限调整)
+
+**R47 P6**(2026-05-07,commit `c46f305`):
+
+用户反转 R42 P0.3 "全自动无撤销" 决策:
+- 单笔金额上限 $50 → $500(默认),用户可调到 $5000
+- HITL 分层:< $500 全自动 / ≥ $500 半自动 10s 撤销 / sell 永远 auto
+- HR01 硬防线从硬编码 $500 改为联动 strategy.max_position_usd
+
+后端改 11 个文件:
+- promote-to-live 默认 $500 钳位 $5000
+- hitl_router.decide_automation_level
+- migration 047_pending_semi_auto_trades 新表
+- agent/semi_auto_service.py 完整 CRUD(create/cancel/fetch_due/mark_executed/list_user)
+- agent/loops/semi_auto_executor.py 1s tick cron + main.py APScheduler 接入
+- /api/agent/trades/pending GET + cancel POST
+- action_dispatcher live 路径分流 auto / semi
+- safety_policy.yaml HR01 type=function fn=hr01_within_strategy_max
+- safety_engine 新加 hr01_within_strategy_max 函数 + 注册
+- trade_executor safety_ctx 注入 max_position_usd
+
+防 race 设计:
+- mark_executed 用 UPDATE WHERE status='pending' RETURNING(原子)
+- cancel_pending 加 execute_after > now 时间窗检查,不让 race 到 cron 已执行的窗口外
+- cron + cancel 同时跑,后到的 UPDATE 不命中 RETURNING → 跳过
+
+测试:
+- tests/test_hitl_semi_auto.py 16 单测全过(decide 6 + HR01 6 + service 2 + integration 2)
+- 累计 109/109(85 历史 + 16 P6 + 8 P5)不回归
+
+部署:
+- 服务器 git pull + migration 047 + restart pump-scanner-api/pump-scanner active
+- Semi-Auto Trade Executor 1s cron 真在跑(journalctl 已确认)
+
+E2E 6 场景验证全过:
+1. decide_automation_level 阈值正确($499 auto / $500 semi / sell always auto)
+2. create_pending 入表($1000 buy 成功)
+3. 1s 后用户撤销成功
+4. 重复撤销返 already_cancelled
+5. **新建 pending → 等 12s → cron 自动执行 → status=executed + tx_hash=DRY_RUN_xxx**(DRY_RUN 闸正确拦截)
+6. HR01 联动验证($400≤$500 通过 / $600>$500 拒 / $4000≤$5000 通过 / paper 跳过)
+
+GA 待办(R48):
+- 删 DRY_RUN_LIVE_TRADES env(允许真发链)
+- Flutter HITL 倒计时撤销页 + 推送 wire(留下一会话)
+- Web /app/approvals 页加倒计时 + SWR 1s 轮询(留下一会话)
+- migration 046 audit trigger 用 postgres user 跑
+
+## ⚠️ 上线状态(2026-05-07 R47 P5 — live 交易链路 user_id 透传接通)
+
+**R47 P5**(2026-05-07,commit `f4e92d0`):
+
+audit 发现 paper 链路 100% 通(3150 trades 数据为证),但 **live 链路因 user_id 没透传 100% 必断**:
+- ActionDispatcher → execute_trade(无 user_id)
+- → _resolve_wallet(user_id=None) → 跳 user_wallets DB
+- → 走 env TRADE_WALLET_PRIVATE_KEY ← 没配
+- → "No wallet configured" 失败
+
+修 4 处 + DRY_RUN 安全闸(共 5 修):
+1. `trade_executor.execute_trade` 签名加 user_id;调 dex_router/_execute_trade_ave/_resolve_wallet 透传
+2. `dex_router.execute` 顶部预解析钱包(传 user_id 给 _resolve_wallet)→ 后续子函数无需重新解析
+3. `action_dispatcher` 调 execute_trade 传 user_id=event.user_id + safety_ctx
+4. `position_monitor` SL/TP + CRISIS 紧急清仓 都透传 pos.user_id
+5. **新增 DRY_RUN_LIVE_TRADES env 闸**:true 时返 mock TradeResult 不真发链(trace 验证用)— 服务器已配 true,GA 前必须删
+
+测试:tests/test_trade_executor_user_id.py 8 单测全过,93/93 累计不回归(85 历史 + 8 新)
+
+修复后链路:
+  event → ActionDispatcher → execute_trade(user_id=X) → dex_router.execute(user_id=X) → 预解析 _resolve_wallet → 优先 user_wallets AES 解密 → wallet_address+private_key → Jupiter 签名 + _broadcast_solana → tx_hash → agent_executions confirmed → position_monitor 30s 扫到 → SL/TP execute_trade(action=sell, user_id=X) → 平仓 + agent_risk_events
+
+服务器:git pull + restart pump-scanner-api/pump-scanner active + position_monitor 30s tick 在跑
+
+下一步可做:
+- 服务器 DRY_RUN_LIVE_TRADES=true 已配 → 跑 promote-to-live + 等 hot_coin event → trace 全流程不真发链
+- 用户充 \$2 USDC + 0.01 SOL → 真发 \$1 测试 swap(改 DRY_RUN=false)
+
+GA 必修:
+- 删 DRY_RUN_LIVE_TRADES env(GA 前)
+- HTTPS 443 已开通(R47 P4 腾讯云 Lighthouse 安全组加规则)
+- migration 046 audit trigger(用 postgres user 跑)
+
+## ⚠️ 上线状态(2026-05-07 R47 P4 — 风控 audit 4 真 bug 全修)
+
+**R47 P4**(2026-05-07,commit `972acc5`):
+
+实事求是 audit 18 项风控,7 chaos test,发现:
+- 真生效 5 项 / 空跑 9 项 / disabled 2 项 / **致命 bug 2 项**
+
+**致命 bug 1 — sl_pct 单位歧义**:用户说 "止损 30%" → LLM 写 `0.3`(ratio)→ paper_engine 当 `0.3%` 用 → 所有 token 一动 0.3% 立即 SL → 87 closed 95% 误触发,平均 PnL=-3.79%,3063 stuck open 全 sl=0.1 ratio。修:schemas ge=1 le=90 + ratio reject validator + LLM prompt 改 percent 整数 + _normalize 自动 ratio→percent + paper_engine 防御 sl_pct<1 跳过 + 历史数据修复 SQL(3063 仓 0.1→10)+ 11 单测全过
+
+**致命 bug 2 — Kill Switch 无鉴权**:实战 chaos test 实际触发(2026-05-07 我自己 1 行 curl 把全平台 Kill Switch trip 了 global_state=blocked,然后发现 ADMIN_TOKEN 空 = 任何人通过)。修:production 必须配 ADMIN_TOKEN,否则 503;development 可空。+ 服务器配 `ADMIN_TOKEN=cENjLv0EgVw7s428DShxTm09lX6Aov+D`(请运维保管)
+
+**P0.2 schema/audit 部分完成**:agent_strategies 表已有 mode CHECK(R42 P0.4),migration 046 加 daily_loss/consecutive_losses + audit trigger 因 owner 权限被拒,留 R48 用 postgres 跑
+
+**P1 GA 加固**:GeoBlock 默认开,仅 ENVIRONMENT=development + DISABLE_GEO_BLOCK=true 才 disable;DEV bypass 双 env 才开,production 强制 503
+
+部署:server pull + restart pump-scanner-api active + 数据修复 SQL 跑通(3063 仓 sl_pct 0.1→10) + 全部 chaos 重测通
+
+文件:agent/schemas.py + agent/llm_parser.py + agent/paper_engine.py + agent/tools/t07_run_paper_trade.py + api/auth.py + api/app.py + api/routes_admin.py + migrations/046_strategies_mode.sql + scripts/fix_paper_trades_unit.sql + tests/test_paper_engine_units.py
+
+风控真生效现状(R47 P4 后):
+- ✅ input_filter prompt injection 拦截(真实 chaos test 触发 4 次)
+- ✅ output_filter LLM 输出 C1 命中(5 次 warn)
+- ✅ R47 余额 gate / token 计费(实战验证)
+- ✅ Kill Switch 鉴权(P4 修了致命漏洞)
+- ✅ Paper SL/TP cron 30s(逻辑修对了 — 用户说 30% 现在写 30,不是 0.3)
+- ✅ Paper 历史数据 fixed(3063 仓 sl_pct 0.1→10)
+- 🟡 Position Monitor 30s tick 跑(扫的 agent_executions 0 条,等真交易接通)
+- 🟡 HITL 5/15/60min cron(空跑,等真用户)
+- 🟡 trade_executor risk_params(0 真交易,等接通)
+
+GA 必修(留 R48):HTTPS / migration 046 用 postgres 跑 / Flutter google_sign_in iOS Simulator 实测 / Android Google client / Etherscan key
+
+ADMIN_TOKEN(server .env):**cENjLv0EgVw7s428DShxTm09lX6Aov+D**
+
+## ⚠️ 上线状态(2026-05-07 R47 P3 — Web/App chat gate + Flutter Google Sign-In)
+
+**R47 P3**(2026-05-07,commits `4a135ab` + `aa33352`):
+
+3 个用户暴露的真问题全 fix:
+
+1. **Web chat 未登录可发消息只报错** — `chat/page.tsx send()` 加双 gate(未登录弹 LoginModal,余额≤0 显示"去充值"CTA → 跳 /app/credit)
+2. **Flutter agent_service 不发 Bearer token** — `_headers` 加 `Authorization: Bearer $token`,401 自动 logout;chat send 加余额预检对话框
+3. **Flutter Google Sign-In** — google_sign_in: ^6.2.2 + iOS Info.plist + 后端多 audience(env GOOGLE_IOS_CLIENT_ID)+ login_page 真接按钮
+
+iOS OAuth client `151316463137-hghpoocsn9pgmmc8tegb8vs1hhv0od43.apps.googleusercontent.com`(Firebase 自动创,Bundle ID 完美匹配 com.aitrading.aitradingApp)。
+
+服务器 .env 已配 GOOGLE_IOS_CLIENT_ID + 部署 active。
+
+## ⚠️ 上线状态(2026-05-07 R47 P2 — USDC 充值闭环 4 链 + Flutter)
+
+**R47 P2**(2026-05-07 commits `f988b8e` + `cc5f1dd` + `8a445ee`):
+
+充值收款地址(用户提供):
+- Solana: `66p5tnV6Fd7x5QmRE6X772PMVmVUVgozRzATJ4Ns9iQn`
+- EVM(eth/base/bsc 共用): `0xC862ff9Fd79D180950E546DBB8b108d5c9c38582`
+
+后端 USDC 监听 cron(60s tick,4 链):
+- `agent/loops/credit_recharge_loop.py`,接 main.py APScheduler
+- Solana 用标准 JSON-RPC(getSignaturesForAddress + getTransaction jsonParsed,解析 tokenBalances 差值);fallback list publicnode → mainnet-beta → ankr → Helius 兜底
+- EVM(eth/base/bsc)用 eth_getLogs + Transfer topic + padded our addr;每链 3-4 个公共 RPC fallback
+- BSC USDC 18 decimals 关键覆盖(其他 6 dec)— 单测验证防多发 10^12 倍 credit
+- 命中 → confirm_recharge_order;单链失败不影响其他链
+- 15 单测全过;cron 线上 60s tick 无报错
+
+Web `/app/credit`:
+- RechargeModal 加 4 链选择器(Solana/Base/Ethereum/BSC + USDC 标准 + 确认时间)
+- PayModal 文案按链动态适配
+
+Flutter App R46+R47(全套):
+- R46:auth_service(JWT+secure_storage)+ login/register 页 + DisclaimerGate 接 LoginPage + api_client Bearer token + 401 logout
+- R47:credit_service + credit_page(余额 + 充值 sheet + PayDialog QR + 订单 + 流水)+ BalanceChip(agent AppBar)+ profile 算力入口
+- pubspec + qr_flutter
+- flutter analyze 干净
+
+下一步用户实操:从自己 Phantom/MetaMask 转 $1.0XXX USDC 到对应收款地址 → 60-120s 自动 confirm
+
+## ⚠️ 上线状态(2026-05-07 R47.1 — 登录入口 UX 优化上线)
+
+**R47.1 — 登录 UX 改造**(2026-05-07,helix-marketing 重 build):
+1. **登录按钮上移到主 Nav 右侧**(普遍站惯例)— 未登录:`[登录 / 注册]`;已登录:`[余额胶囊]` + 头像 dropdown(打开 Agent / 算力 / 钱包 / 登出)
+2. **LoginModal 全站 Modal** — `useLoginModal` store 控制;遮罩 backdrop-blur + helix-modal-pop 280ms 上浮;含邮箱/密码登录 + 注册 + Continue with Google
+3. **Google 跳转过渡**(修"生硬")— 点击后全屏 z-110 overlay(Loader2 + Google logo + "正在跳转到 Google");280ms 后才真跳;sessionStorage 存 redirectTo 让 callback 回原意图页
+4. **SubNav 简化** — 删用户/余额/登出,只保留 Agent 子页签
+5. **/app/login 改成跳 / + 弹 modal**;**axios 401 弹 modal**(不再硬跳 login 页)
+
+文件:Nav 重写 / LoginModal 新建 / store +`useLoginModal` / api.ts 401 弹 modal / globals.css +helix-modal-pop / layout.tsx 挂载
+
+## ⚠️ 上线状态(2026-05-07 R47 — Credit 算力体系上线)
+
+**R47 — Credit 算力 + Token 计费**(2026-05-07,commits `3b9f10f` + `b2f633b`):
+- 后端:migration 045_credits(user_credits / credit_transactions / recharge_orders 三表)+ agent/credit_service.py(calc_cost 成本+万分之五 markup / deduct/add/can_proceed / recharge order CRUD / estimate_remaining_messages)+ api/routes_credit.py(5 endpoints:/balance, /recharge-orders POST/GET, /transactions, /admin/grant)
+- chat handler 接 gate:pre-call `can_proceed` 拒余额<$0.0001 用户 + post-call 用 `_llm_parser._last_usage` 真 token 数 deduct(stream + 非 stream 都改)
+- LLMParser 加 `_last_usage = {"in":0, "out":0, "model":MODEL}` 累加器,parse 顶部 reset,每轮 messages.create 后从 `response.usage.input_tokens`/`output_tokens` 累加
+- 16 单测全过;R40+R46 43 测试不回归
+- 服务器:跑 migration 045 + git pull + restart pump-scanner-api(active)
+- 公网 E2E 验证通:新用户 $0 → chat 拒(返"余额不足");种 $1 → chat 成功扣 $0.0381(11594 in / 218 out × sonnet 价 × 1.0005);余额 $0.9619;tx 流水正确
+- Web:`/app/credit` 页(余额卡 + 充值 modal + 订单列表 + 交易历史)+ SubNav 余额胶囊(余额低/0 高亮警告)+ /app/credit 加 SubNav nav;helix-marketing 重 build active
+- DEV bypass:user_id=00000000-0000-0000-0000-000000000001 不扣费
+
+定价:Haiku $0.25/$1.25,Sonnet $3/$15,Opus $15/$75 per MTok × 1.0005 markup
+
+延后 R48:USDC 充值监听 cron(Solana)+ Flutter R46+R47 + HTTPS
+
+**R47 风险公告**(用户已知):暂不上 HTTPS = HTTP 明文密码/JWT 中间人风险 + Google OAuth 必须 testing 模式 + iOS App ATS 默认禁 HTTP — GA 前必须做(Let's Encrypt 1 小时配完)
+
+文档:`docs/agent-pm/19-credit-system-spec.md`(完整规范)
+
+## ⚠️ 上线状态(2026-05-06 R46 — 账户体系上线)
+
+**R46 — 邮箱/Google 登录 + 多钱包归属**(2026-05-06):
+- 后端:migration 044_users + agent/auth_service.py(bcrypt 12 + JWT HS256 + Google ID token verify)+ api/routes_auth.py(register/login/google/me/logout)+ api/auth.py 改用 AUTH_JWT_SECRET(向后兼容 SUPABASE_JWT_SECRET)
+- 14 单测全过(密码 round trip / JWT 过期错 secret / Google mock verify)
+- 服务器配 AUTH_JWT_SECRET + 跑 migration 044 + venv install bcrypt+google-auth
+- 公网 E2E:`curl POST /api/auth/register` 返 token + user_id + `/me` 返 user info ✅
+- Web:@react-oauth/google 集成 + login 页改邮箱/密码登录注册 + Google button + lib/api 加 authLogin/authRegister/authGoogle/authMe/persistAuth + lib/store hydrate/logout + SubNav 显示 user + 登出
+- 多钱包归属:R42 P1 user_wallets.user_id 已就绪,登录后自动按 user_id 隔离
+- Flutter:留下次会话(google_sign_in 包 + iOS Info.plist + Android google-services.json 配置)
+
+GA 配置:`AUTH_JWT_SECRET` + `GOOGLE_CLIENT_ID`(后端)+ `NEXT_PUBLIC_GOOGLE_CLIENT_ID`(Web)
+
+## ⚠️ 上线状态(2026-05-06 R45 — EVM MEV 全接通)
+
+**R45 — EVM MEV 接通 + Web/App 同步**(2026-05-06):
+- 后端 trade_executor 加 `EVM_RPC_MEV_PROTECTED` 字典
+  - `eth` → `https://rpc.flashbots.net/fast`(Flashbots Protect,免费,drop-in 替换 RPC URL)
+  - `bsc / base` → 第一版 fallback 公共 RPC + log warning(后续接 bloXroute / 1inch Fusion)
+- `_broadcast_evm(chain, signed_tx, mev_protected=True)` 走 Flashbots
+- Web `<SpeedSection chain={chain}>`:Solana → MEV slider;EVM → MEV toggle("已启用 / 未启用")+ 按链文案
+- Flutter strategy_detail_page 加 chain 感知文案
+- 测试 9 个全过(`tests/test_evm_mev.py`)
+- 文档 18-trade-execution-spec §10 + memory 三件套同步
+
+**Why**:R44.4 之前 EVM MEV slider 灰掉标"暂未接通",用户问"是没概念还是没做"。MEV 本来是 EVM 鼻祖(Flashbots/MEV-Boost 90%+ ETH 出块),不是没概念,是没做。R45 接通。
+
+## ⚠️ 上线状态(2026-05-05 R41 完结 — chat 8/8 全接)
 
 | 维度 | 状态 |
 |---|---|
-| 团队内测推送 | ✅ 可以(R37 P0 全过 + R38 官网上线 + R39 chat agent 大修) |
-| **真付费用户上线** | ⚠️ **接近** — 主功能 OK,但 chat 8 项集成 7 项没接(audit 已扫,memory 在做) |
-| 总对齐设计 | ~85%(R36 70% → R37 85%) |
-| Helix 官网 | ✅ http://www.ai100trading.cn 已上线(3002 + nginx 路径分流,portal 老路径保留) |
-| Anthropic API quota | ✅ 已切 $500/月 workspace key |
+| 团队内测推送 | ✅ 可以 |
+| **真付费用户上线** | ✅ **可以** — chat 8 项集成全接通(R39 v5 + R40 + R41) |
+| 总对齐设计 | ~95%(R36 70% → R37 85% → R40 92% → R41 95%) |
+| Helix 官网 | ✅ http://www.ai100trading.cn 已上线 |
+| Anthropic API quota | ✅ $500/月 workspace key |
+| 服务器 head | `3065f6d`(agent-v1) |
+
+**R41 — chat 接最后 3 项**(2026-05-05,commit `3065f6d`):
+1. ✅ semantic_memory(`mem.semantic.get_all_active()` top 5 注 ctx.active_semantic_rules)
+2. ✅ output_filter(LLM 输出过 C1 blocklist;违规 sanitize + 写 audit warn;stream 路径 yield warning event)
+3. ✅ working_memory(chat 末尾 `mem.working.add({kind:chat, user_msg, ai_msg_head, has_strategy})`)
+- 同时改 R40 `MemoryManager()` → `get_memory_manager()` 单例(缓存生效)
+- 9 新测试覆盖,累计 29/29(R39v5+R40 20 + R41 9)
+
+**R40 — chat 6 模块集成**(2026-05-05,commit `5010ca0`):
+1. ✅ rollout_gate(`agent_v1` 默认 100% 灰度埋点)
+2. ✅ input_filter(`filter_combined` 5 类 + c1_blocklist;实测拦"稳赚不赔/all in/跳过 HITL"命中 implicit_promise)
+3. ✅ cost_guard(`check_before_call` BLOCKED/HARD_STOP 拦 + EMERGENCY/HARD_DEGRADE log 降级)
+4. ✅ audit_log(`_audit_log_safety_event` 写 security_audit_log;BLOCK 时 severity=critical;DB unavail 不抛)
+5. ✅ prompt_loader(P01 chat_clarify 灰度 meta 注 context;**lazy load_from_disk 修**)
+6. ✅ episodic_memory(MemoryManager.episodic.search(limit=3) 注 context.recent_episodes;数据空属内测期合理)
+
+**R39 v5 — chat conversation memory**(2026-05-04,commits `d16b2c8` + `d83a591` 热修):
+- `_ChatConv` 进程级 dict + 30min TTL + 40 messages 上限
+- `_truncate_history(max_user_turns=8)` 按真用户回合截断,不切 anthropic tool_use/tool_result 配对
+- `parse_strategy(_stream)` 加 `conversation_history` + 三元组返回 / `final_messages` 事件
+- 三轮 curl 实测:T1 拉 30 token → T2 不重复调工具直接分析特征+create_strategy → T3 准确指认第 3 名 RUPT 市值
+
+**测试**:R39 v5 + R40 单元测试 20 个全过(`tests/test_routes_chat_r40_guards.py`);R37 累计 1264/1265 全过
+
+**部署稳定**:pump-scanner-api active + port 8000 LISTEN + /health 200 + Flutter App 已经在打 /api/price/batch
 
 **R38 — Helix 官网上线**(2026-05-04):
 - 独立 repo `~/Desktop/helix-marketing`(Next.js 16 + Tailwind v4 + WebGL warp field)

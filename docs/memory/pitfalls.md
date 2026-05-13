@@ -1,5 +1,14 @@
 # 踩坑记录
 
+## Credit Service / DB
+- **credit_transactions.type CHECK 约束**: 允许 `{recharge, consume, adjust, refund}`,**不接受 `admin_grant`**。给用户记入式增值用 `source_type='adjust'`
+- **add_credit 失败时 UPDATE 已 commit**: 先 UPDATE user_credits 后 INSERT credit_transactions;若 INSERT 失败 throw,user_credits 仍 +N(脏数据)。**重试前先回滚或检查 balance**,否则 +N 两次。R57 给创始人 $200 翻车 balance $400 手动 SQL 改回
+- **add_credit 没 ref 参数**: 签名只有 `(user_id, amount, source_type, note=...)`,传 `ref=...` → TypeError
+
+## Flutter — 开发期 Demo 残留
+- **W3 D3/D4/D5 demo banner 不要进生产**: Agent 屏顶部"试一试 X (Demo)" 是开发自测脚手架,CEO/PM 视角 = 不专业。R57 全删
+- **Face ID 占位 + 文本框签名**: HITL 审批弹"输入任意字符串当签名"是 placeholder,生产必须接 `local_auth` + 钱包真签
+
 ## Python
 - **Python 3.9**: 不支持 `X | None`，用 `Optional[X]` / `List[str]`
 - **dict.get(key, fallback) 不防 None**: `d.get("k", default)` 如果 key 存在但值为 None，返回 None 而非 default。用 `d.get("k") or default`

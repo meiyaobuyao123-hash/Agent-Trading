@@ -202,6 +202,7 @@ class TradeExecutor:
         safety_ctx: Optional[Dict[str, Any]] = None,
         risk_params: Optional[Dict[str, Any]] = None,
         user_id: Optional[str] = None,        # R47 P5 — 透传给 _resolve_wallet 拉 user_wallets
+        request_id: Optional[str] = None,     # R59 P0 — idempotency key 防 retry 双发 tx
     ) -> TradeResult:
         """
         执行买入或卖出交易 — PRD-009: 通过 DexRouter 多 DEX 路由
@@ -250,6 +251,48 @@ class TradeExecutor:
                 token_address=token_address,
                 action=action,
             )
+
+        # ── R59 P0:Idempotency check ─────────────────────────
+        # request_id 是调用方(action_dispatcher / position_monitor)算的确定 hash:
+        # f"{strategy_id}-{signal_id}-{action}-{int(amount_usd*100)}"
+        # 同一 request_id 已有 agent_executions row(任意状态)→ 不再 broadcast,
+        # 返回 cached 结果(若已 confirmed)或 in-progress(若 pending/submitted)。
+        # 防 retry 双发 tx 导致用户钱包双扣。
+        if request_id:
+            try:
+                from database import get_db
+                existing = (
+                    get_db().table("agent_executions")
+                    .select("id,status,tx_hash,executed_price,amount_usd,error_message")
+                    .eq("request_id", request_id).limit(1).execute()
+                )
+                if existing.data:
+                    row = existing.data[0]
+                    status = row.get("status", "")
+                    log.warning(
+                        "[trade_executor] R59 idempotency hit request_id=%s status=%s — skip broadcast",
+                        request_id, status,
+                    )
+                    if status in ("confirmed", "submitted"):
+                        return TradeResult(
+                            success=True,
+                            tx_hash=row.get("tx_hash") or "",
+                            from_amount=amount_usd,
+                            to_amount=0.0,
+                            price=float(row.get("executed_price") or 0),
+                            chain=chain, token_address=token_address, action=action,
+                            error=None,
+                        )
+                    else:
+                        # pending / failed → 返失败,调用方决定
+                        return TradeResult(
+                            success=False,
+                            error=f"duplicate request_id {request_id} status={status}",
+                            chain=chain, token_address=token_address, action=action,
+                        )
+            except Exception as e:
+                # idempotency 查询失败不阻断真交易(degrade gracefully)
+                log.warning("[trade_executor] R59 idempotency check error: %s", e)
 
         # ── R42 P0.2:risk_params 真用(取代 hardcoded)─────────
         rp = risk_params or {}
@@ -349,6 +392,7 @@ class TradeExecutor:
                 priority_fee_sol=priority_fee_sol,   # R42 P0.2
                 mev_bribe_sol=mev_bribe_sol,         # R42 P0.2
                 user_id=user_id,                     # R47 P5 — 透传给 dex_router 预解析钱包
+                request_id=request_id,                # R59 P0 — idempotency 写入 agent_executions
             )
 
             # 转换 RouteResult → TradeResult
@@ -881,8 +925,13 @@ class TradeExecutor:
         result: TradeResult,
         user_id: str = "",
         strategy_id: str = "",
+        request_id: Optional[str] = None,    # R59 P0: idempotency
     ):
-        """记录交易执行到 agent_executions 表"""
+        """记录交易执行到 agent_executions 表
+
+        R59 P0: 持久化 request_id 让下次重试时 idempotency check 命中
+        (UNIQUE INDEX 由 migration 048 保证)。
+        """
         try:
             from database import get_db
             row = {
@@ -901,9 +950,16 @@ class TradeExecutor:
                 row["user_id"] = user_id
             if strategy_id:
                 row["strategy_id"] = strategy_id
+            if request_id:
+                row["request_id"] = request_id
             get_db().table("agent_executions").insert(row).execute()
         except Exception as e:
-            log.error(f"Failed to record execution: {e}")
+            # R59 P0: 若 UNIQUE 约束触发(同 request_id 已存在)— 静默 ignore
+            # 因为说明上一次成功已记,这次是 retry,不需重复 insert
+            if "duplicate key" in str(e).lower() or "23505" in str(e):
+                log.debug("[trade_executor] R59 _record_execution dup request_id=%s — skip", request_id)
+            else:
+                log.error(f"Failed to record execution: {e}")
 
 
     # ── 代币余额查询 ─────────────────────────────────────────

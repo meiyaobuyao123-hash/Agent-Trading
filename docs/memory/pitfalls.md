@@ -1,5 +1,17 @@
 # 踩坑记录
 
+## 资金安全 — 不可不审清单(R59 audit 揭露)
+- **local_db._get_conn() autocommit=True 全局 pool**:多步 SQL 必须用 `_Tx` context manager 临时切 autocommit=False(`credit_service.py` 模板)。R57 漂复现过
+- **tx_hash 必须 app 预检 + DB UNIQUE 双防**:RPC re-org / cron 重叠 → 同 tx_hash 双处理。UNIQUE INDEX (chain, chain_tx_hash) WHERE status='confirmed'
+- **trade broadcast retry 必须 idempotency key**:request_id `f"{strategy_id}-{event_id}-{side}-{int(amount*100)}"`,float 用 `int(round(*100))` 防精度
+- **dex_router pre-resolve 失败必须 fail-fast**:子路径 `_resolve_wallet()` 无 user_id 会落到 DEV_WALLET 替用户签。execute() user_id 在但 resolve 返空 → 返失败,子路径直接用入参
+- **position_monitor 必须 atomic claim**:K8s 双进程 `_selling` set 不共享 → 双 SL/TP。`UPDATE status='closing' WHERE status='confirmed'`,0 行=已被 grab
+- **strategy endpoint 必须 owner check**:R59 发现 /performance/{id} + /backtest + /rename 全漏过
+
+## agent_executions.status 取值约定
+`pending` / `submitted` / `confirmed`(open 持仓!) / `closing`(R59 atomic 中间态) / `closed` / `failed`
+load_positions 拉 `status='confirmed'+action='buy'` 视为 open — 不是 'open',容易写错。
+
 ## 多 user SaaS 架构 vs 单 user toolkit 心智
 - **WorkingMemory 是进程单例 deque(maxlen=200,跨所有用户)**: `agent/memory/working_memory.py:18` 没 user_id 字段,所有用户混在 200 条 deque,**进程重启 wipe**。R58 撤前端暴露面。要多 user 用 → 加 user_id 索引 + 持久化
 - **SemanticMemory.get_all_active() 不 filter user_id**: `routes_agent.py:1057` 返所有用户规则。R58 撤前端暴露面

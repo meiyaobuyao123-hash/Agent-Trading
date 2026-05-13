@@ -1,5 +1,25 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-13 R59 — Profile 页层级 + 6 条 P0 资金 bug 全修)
+
+**R59 — Profile UX + 资深架构师 P0 audit 修**(2026-05-13):
+
+3 个 Explore agent 扫后端 26 条 punch,R59 修 6 条 P0(R60/R61 留隔离+精度)。
+
+**A. Profile 页**:已登录 = 账户身份 → 算力 → 钱包 → 通知 → 外观 → 关于;未登录 = 登录卡 + 外观/关于。监听 AuthService + CreditService ChangeNotifier。
+
+**B. 6 条 P0**:
+1. `credit_service.add_credit/deduct` 加 `_Tx` context manager(autocommit=False 包 UPDATE+INSERT,失败 rollback)— 修 R57 创始人 $200→$400 漂
+2. `confirm_recharge_order` + migration 048 UNIQUE INDEX (chain,chain_tx_hash WHERE confirmed) — 修 RPC re-org 双入账
+3. `trade_executor`/`action_dispatcher`/`position_monitor` 加 `request_id` idempotency + migration 048 agent_executions UNIQUE — 修 broadcast timeout retry 双 tx
+4. `dex_router.execute` user_id-aware pre-resolve fail-fast + `_execute_jupiter`/`_execute_oneinch` 不再二次 `_resolve_wallet` — 修 DEV_WALLET 替用户签
+5. `routes_agent.py` `/performance/{id}` `/backtest` `/rename` 加 owner check — 修横向越权
+6. `position_monitor._execute_exit` atomic claim `UPDATE status='closing' WHERE status='confirmed'` — 修 K8s 双进程双 SL/TP
+
+**Migration 048**(`local_pg/048_trade_idempotency.sql`):2 个 UNIQUE INDEX。
+
+**R60 留** (~1 周):4 层 memory user_id 隔离 + safety_engine 持久化 + chat 并发锁。**R61 留** (~3-5 天):USDC decimals 动态查 + 拆单防绕过 + Decimal 精度审。
+
 ## ⚠️ 上线状态(2026-05-13 R58 — 删 AI 洞察 Tab + 揭露 3 个跨用户隐私 bug)
 
 **R58 — 删 AI 洞察 Tab**(2026-05-13):

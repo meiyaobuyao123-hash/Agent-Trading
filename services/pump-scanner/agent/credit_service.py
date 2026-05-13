@@ -127,6 +127,41 @@ def _get_conn():
     return _gc()
 
 
+# ── R59 P0:事务上下文 manager ─────────────────────────────
+# local_db._get_conn() 返的 conn 是 autocommit=True 的全局 pool,
+# 这意味着每条 SQL 立刻 commit。add_credit/deduct 涉及 UPDATE + INSERT
+# 两步,中间 INSERT 失败会导致 UPDATE 已 commit = balance 漂(R57 复现)。
+# 此 context manager 临时切到 autocommit=False,失败 rollback,成功 commit,
+# 最后还原 autocommit=True(因为全局 pool 共享)。
+class _Tx:
+    """临时事务上下文 — 强制 autocommit=False 包住一组 SQL。"""
+
+    def __init__(self):
+        self.conn = None
+
+    def __enter__(self):
+        self.conn = _get_conn()
+        # 切到手动事务
+        self._old_autocommit = getattr(self.conn, "autocommit", True)
+        self.conn.autocommit = False
+        return self.conn
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is None:
+                self.conn.commit()
+            else:
+                self.conn.rollback()
+        finally:
+            # 恢复 autocommit(全局 pool 默认 True,其他调用方依赖)
+            try:
+                self.conn.autocommit = self._old_autocommit
+            except Exception:
+                pass
+        # 不吞异常
+        return False
+
+
 def _ensure_user_credit_row(cur, user_id: str) -> None:
     """如果 user_credits 没行就 insert 一个 default row(并发安全用 ON CONFLICT)。"""
     cur.execute(
@@ -246,40 +281,42 @@ def deduct(
         return get_balance(user_id)
 
     try:
-        conn = _get_conn()
-        with conn.cursor() as cur:
-            _ensure_user_credit_row(cur, user_id)
-            # 原子扣费 + 累计 total_consumed
-            cur.execute(
-                """
-                UPDATE user_credits
-                   SET balance_usd     = balance_usd - %s,
-                       total_consumed  = total_consumed + %s,
-                       updated_at      = now()
-                 WHERE user_id = %s
-                RETURNING balance_usd
-                """,
-                (cost, cost, user_id),
-            )
-            row = cur.fetchone()
-            new_balance = Decimal(str(row[0])) if row else Decimal(0)
-            # 写交易流水
-            cur.execute(
-                """
-                INSERT INTO credit_transactions
-                  (user_id, type, amount_usd, balance_after, model, tokens_in, tokens_out, request_id)
-                VALUES (%s, 'consume', %s, %s, %s, %s, %s, %s)
-                """,
-                (user_id, -cost, new_balance, model, tokens_in, tokens_out, request_id),
-            )
-        conn.commit()
+        # R59 P0:UPDATE + INSERT 包同一事务,任一失败回滚 UPDATE。
+        # 防漏扣 audit log(UPDATE 成功但 INSERT 失败 → 用户钱扣了但流水缺)。
+        new_balance = Decimal(0)
+        with _Tx() as conn:
+            with conn.cursor() as cur:
+                _ensure_user_credit_row(cur, user_id)
+                # 原子扣费 + 累计 total_consumed
+                cur.execute(
+                    """
+                    UPDATE user_credits
+                       SET balance_usd     = balance_usd - %s,
+                           total_consumed  = total_consumed + %s,
+                           updated_at      = now()
+                     WHERE user_id = %s
+                    RETURNING balance_usd
+                    """,
+                    (cost, cost, user_id),
+                )
+                row = cur.fetchone()
+                new_balance = Decimal(str(row[0])) if row else Decimal(0)
+                # 写交易流水(INSERT 失败时 _Tx.__exit__ 自动 rollback UPDATE)
+                cur.execute(
+                    """
+                    INSERT INTO credit_transactions
+                      (user_id, type, amount_usd, balance_after, model, tokens_in, tokens_out, request_id)
+                    VALUES (%s, 'consume', %s, %s, %s, %s, %s, %s)
+                    """,
+                    (user_id, -cost, new_balance, model, tokens_in, tokens_out, request_id),
+                )
         log.info(
             "[credit] deduct user=%s model=%s tokens=%d/%d cost=$%s balance=$%s",
             user_id[:8], model, tokens_in, tokens_out, cost, new_balance,
         )
         return new_balance
     except Exception as e:
-        log.error("[credit] deduct fail: %s", e)
+        log.error("[credit] deduct fail (UPDATE+INSERT 已回滚): %s", e)
         return get_balance(user_id)
 
 
@@ -298,56 +335,59 @@ def add_credit(
     if not user_id or amount_usd <= 0:
         return get_balance(user_id)
     try:
-        conn = _get_conn()
-        with conn.cursor() as cur:
-            _ensure_user_credit_row(cur, user_id)
-            # 原子加 + 累计 total_recharged(只在 recharge 时累)
-            if source_type == "recharge":
+        # R59 P0:UPDATE + INSERT 包同一事务,任一失败回滚 UPDATE。
+        # 防 R57 复现的 balance 漂(给创始人 $200 → $400)。
+        new_balance = Decimal(0)
+        with _Tx() as conn:
+            with conn.cursor() as cur:
+                _ensure_user_credit_row(cur, user_id)
+                # 原子加 + 累计 total_recharged(只在 recharge 时累)
+                if source_type == "recharge":
+                    cur.execute(
+                        """
+                        UPDATE user_credits
+                           SET balance_usd     = balance_usd + %s,
+                               total_recharged = total_recharged + %s,
+                               updated_at      = now()
+                         WHERE user_id = %s
+                        RETURNING balance_usd
+                        """,
+                        (amount_usd, amount_usd, user_id),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE user_credits
+                           SET balance_usd = balance_usd + %s,
+                               updated_at  = now()
+                         WHERE user_id = %s
+                        RETURNING balance_usd
+                        """,
+                        (amount_usd, user_id),
+                    )
+                row = cur.fetchone()
+                new_balance = Decimal(str(row[0])) if row else Decimal(0)
+                import json as _json
                 cur.execute(
                     """
-                    UPDATE user_credits
-                       SET balance_usd     = balance_usd + %s,
-                           total_recharged = total_recharged + %s,
-                           updated_at      = now()
-                     WHERE user_id = %s
-                    RETURNING balance_usd
+                    INSERT INTO credit_transactions
+                      (user_id, type, amount_usd, balance_after, recharge_order_id, chain_tx_hash, meta)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
                     """,
-                    (amount_usd, amount_usd, user_id),
+                    (
+                        user_id, source_type, amount_usd, new_balance,
+                        recharge_order_id, chain_tx_hash,
+                        _json.dumps(meta or {}, ensure_ascii=False),
+                    ),
                 )
-            else:
-                cur.execute(
-                    """
-                    UPDATE user_credits
-                       SET balance_usd = balance_usd + %s,
-                           updated_at  = now()
-                     WHERE user_id = %s
-                    RETURNING balance_usd
-                    """,
-                    (amount_usd, user_id),
-                )
-            row = cur.fetchone()
-            new_balance = Decimal(str(row[0])) if row else Decimal(0)
-            import json as _json
-            cur.execute(
-                """
-                INSERT INTO credit_transactions
-                  (user_id, type, amount_usd, balance_after, recharge_order_id, chain_tx_hash, meta)
-                VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb)
-                """,
-                (
-                    user_id, source_type, amount_usd, new_balance,
-                    recharge_order_id, chain_tx_hash,
-                    _json.dumps(meta or {}, ensure_ascii=False),
-                ),
-            )
-        conn.commit()
+            # _Tx.__exit__ 自动 commit
         log.info(
             "[credit] add user=%s type=%s amount=$%s balance=$%s",
             user_id[:8], source_type, amount_usd, new_balance,
         )
         return new_balance
     except Exception as e:
-        log.error("[credit] add_credit fail: %s", e)
+        log.error("[credit] add_credit fail (UPDATE+INSERT 已回滚): %s", e)
         return get_balance(user_id)
 
 
@@ -552,26 +592,62 @@ def list_recharge_orders(user_id: str, limit: int = 20) -> List[Dict[str, Any]]:
 def confirm_recharge_order(
     order_id: int,
     chain_tx_hash: str,
+    chain: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     """cron 监听到 USDC 入账后调:把 order 标 confirmed + 加 user balance。
     返 {user_id, amount, new_balance}。失败返 None(订单已 confirmed/expired/不存在)。
+
+    R59 P0:防 tx_hash 重复入账(RPC fork/re-org/cron 重跑)。
+    - migration 048 加了 UNIQUE INDEX (chain, chain_tx_hash) WHERE status='confirmed'
+    - 这里再加 application-level 预检:同 tx_hash 已 confirmed → 静默返 None
+    - UPDATE 时若 INSERT 违反 UNIQUE → conn.rollback + 返 None(不抛)
     """
     try:
         conn = _get_conn()
         with conn.cursor() as cur:
-            cur.execute(
-                """
-                UPDATE recharge_orders
-                   SET status        = 'confirmed',
-                       chain_tx_hash = %s,
-                       confirmed_at  = now()
-                 WHERE id = %s
-                   AND status = 'pending'
-                   AND expires_at > now()
-                RETURNING user_id, amount_usd, amount_base
-                """,
-                (chain_tx_hash, order_id),
-            )
+            # R59 P0:application-level 预检 — 这 tx 是否已确认过任何订单
+            if chain_tx_hash:
+                cur.execute(
+                    """
+                    SELECT 1 FROM recharge_orders
+                     WHERE chain_tx_hash = %s
+                       AND status = 'confirmed'
+                     LIMIT 1
+                    """,
+                    (chain_tx_hash,),
+                )
+                if cur.fetchone():
+                    log.warning(
+                        "[credit] R59 P0 tx_hash %s 已 confirmed 过 — 跳过",
+                        chain_tx_hash[:16] if chain_tx_hash else "?",
+                    )
+                    return None
+
+            try:
+                cur.execute(
+                    """
+                    UPDATE recharge_orders
+                       SET status        = 'confirmed',
+                           chain_tx_hash = %s,
+                           confirmed_at  = now()
+                     WHERE id = %s
+                       AND status = 'pending'
+                       AND expires_at > now()
+                    RETURNING user_id, amount_usd, amount_base
+                    """,
+                    (chain_tx_hash, order_id),
+                )
+            except Exception as e:
+                # R59 P0:UNIQUE INDEX 触发(同 chain+tx_hash 已 confirmed)
+                if "duplicate key" in str(e).lower() or "23505" in str(e):
+                    conn.rollback()
+                    log.warning(
+                        "[credit] R59 P0 UNIQUE 拒绝 tx_hash=%s order=%s — 已确认过",
+                        chain_tx_hash[:16] if chain_tx_hash else "?", order_id,
+                    )
+                    return None
+                raise
+
             row = cur.fetchone()
             if not row:
                 return None

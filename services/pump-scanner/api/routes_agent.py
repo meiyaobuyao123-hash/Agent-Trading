@@ -1090,7 +1090,22 @@ async def strategy_performance(
     days: int = Query(30, ge=1, le=90),
     user_id: str = Depends(get_current_user),
 ):
-    """获取策略表现指标（胜率/PNL/夏普率）"""
+    """获取策略表现指标（胜率/PNL/夏普率）
+
+    R59 P0 fix: 加 owner check,防止任何登录用户读别人的策略表现。
+    """
+    # R59 — 必须先校验 strategy 归属 current user
+    try:
+        db = get_db()
+        res = db.table("agent_strategies").select("user_id").eq("id", strategy_id).single().execute()
+        if not res.data or res.data.get("user_id") != user_id:
+            raise HTTPException(status_code=404, detail="Strategy not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        log.warning("strategy_performance owner check failed: %s", e)
+        raise HTTPException(status_code=404, detail="Strategy not found")
+
     from agent.performance_analytics import get_strategy_performance
     result = await get_strategy_performance(strategy_id, days)
     return result
@@ -1160,10 +1175,13 @@ async def backtest(
 
     if strategy_id:
         # 从 DB 查策略 spec
+        # R59 P0 fix: 加 owner check,防止任何登录用户回测别人的策略
         try:
             db = get_db()
             res = db.table("agent_strategies").select("*").eq("id", strategy_id).single().execute()
             if res.data:
+                if res.data.get("user_id") != user_id:
+                    raise HTTPException(status_code=404, detail="Strategy not found")
                 spec = {
                     "name": res.data.get("name", ""),
                     "conditions": res.data.get("conditions", {}),
@@ -1171,6 +1189,8 @@ async def backtest(
                     "actions": res.data.get("actions", []),
                     "data_sources": res.data.get("data_sources", []),
                 }
+        except HTTPException:
+            raise
         except Exception as e:
             log.warning(f"查询策略 {strategy_id}: {e}")
 
@@ -1648,6 +1668,9 @@ async def rename_strategy(
     strategy = _strategy_mgr.get_strategy(strategy_id)
     if not strategy:
         raise HTTPException(status_code=404, detail="策略不存在")
+    # R59 P0 fix: 加 owner check,防止任何登录用户改别人策略名
+    if strategy.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="无权限操作")
 
     ok = _strategy_mgr.rename_strategy(strategy_id, new_name)
     if not ok:

@@ -127,6 +127,7 @@ class DexRouter:
         priority_fee_sol: float = 0.0005,    # R42 P0.2:Solana 优先 Gas Fee
         mev_bribe_sol: float = 0.0,          # R42 P0.2:Solana Jito MEV 贿赂(0=不走 Jito)
         user_id: Optional[str] = None,       # R47 P5:透传给 _resolve_wallet 拉 user_wallets
+        request_id: Optional[str] = None,    # R59 P0:idempotency key 写入 agent_executions
     ) -> RouteResult:
         """
         多 DEX 路由执行
@@ -150,10 +151,11 @@ class DexRouter:
                 "Jito bundle (P1 待接)" if mev_bribe_sol > 0 else "公共 mempool + 高优先",
             )
 
-        # R47 P5 — 预解析钱包(若入参未提供)。
+        # R47 P5 + R59 P0 — 预解析钱包(若入参未提供)。
         # 传 user_id 给 _resolve_wallet → 优先从 user_wallets AES 解密拉私钥(R42 P1 路径),
-        # 否则 fallback env。预解析后的 wallet/priv 透传给所有 _execute_* 子函数,避免
-        # 子函数内部再次调 _resolve_wallet 时丢 user_id 上下文(原 bug)。
+        # 否则 fallback env。预解析后的 wallet/priv 透传给所有 _execute_* 子函数。
+        # R59 P0 fix: 若 user_id 提供但预解析失败 → fail-fast,不再 silent fallback 让子路径
+        # 调 _resolve_wallet 时丢 user_id → 用 DEV_WALLET 替用户签字(audit 揭露的真 bug)。
         if (not wallet_address or not private_key) and user_id:
             try:
                 executor = self._get_okx_executor()
@@ -167,8 +169,23 @@ class DexRouter:
                         "[dex_router] R47 P5 钱包预解析成功 user=%s chain=%s addr=%s..%s",
                         user_id[:8], chain, resolved_addr[:6], resolved_addr[-4:],
                     )
+                else:
+                    # R59 P0:user_id 在但拉不到钱包 → fail-fast 不冒 dev wallet 风险
+                    log.error(
+                        "[dex_router] R59 P0 钱包预解析返空 user=%s chain=%s — 拒绝执行避免 DEV_WALLET fallback",
+                        user_id[:8], chain,
+                    )
+                    return RouteResult(
+                        success=False,
+                        error="Wallet resolution failed for user — refusing to fall back to DEV_WALLET",
+                        chain=chain, token_address=token_address, action=action,
+                    )
             except Exception as e:
-                log.warning("[dex_router] R47 P5 钱包预解析失败: %s", e)
+                log.error("[dex_router] R59 P0 钱包预解析异常 user=%s: %s — fail-fast", user_id[:8], e)
+                return RouteResult(
+                    success=False, error=f"Wallet resolution error: {e}",
+                    chain=chain, token_address=token_address, action=action,
+                )
 
         try:
             # 确定交易方向
@@ -254,7 +271,7 @@ class DexRouter:
                  "price_impact": q.price_impact, "error": q.error}
                 for q in quotes
             ]
-            await self._record_routing(result)
+            await self._record_routing(result, request_id=request_id)
 
             return result
 
@@ -584,21 +601,25 @@ class DexRouter:
         wallet_address: Optional[str],
         private_key: Optional[str],
     ) -> RouteResult:
-        """通过 Jupiter 执行交易"""
+        """通过 Jupiter 执行交易
+
+        R59 P0 fix: 直接用 execute() 预解析过的 wallet_address/private_key,
+        不再调 executor._resolve_wallet() — 那会丢 user_id 上下文 fallback 到 DEV_WALLET。
+        """
         try:
             from agent.dex.jupiter import get_jupiter_dex
             from agent.trade_executor import TradeExecutor
 
-            # 需要钱包
-            executor = self._get_okx_executor()
-            wallet_addr, priv_key = executor._resolve_wallet(
-                chain, wallet_address, private_key,
-            )
-            if not wallet_addr or not priv_key:
+            # R59 P0:execute() 已预解析(user_id-aware)→ 直接用入参,**不再二次解析**
+            if not wallet_address or not private_key:
                 return RouteResult(
-                    success=False, error="No wallet configured",
+                    success=False,
+                    error="No wallet configured (pre-resolve required, no fallback)",
                     chain=chain, token_address=token_address, action=action,
                 )
+            wallet_addr = wallet_address
+            priv_key = private_key
+            executor = self._get_okx_executor()  # 仍需要 executor._broadcast_solana
 
             jup = get_jupiter_dex()
 
@@ -697,19 +718,23 @@ class DexRouter:
         wallet_address: Optional[str],
         private_key: Optional[str],
     ) -> RouteResult:
-        """通过 1inch 执行交易"""
+        """通过 1inch 执行交易
+
+        R59 P0 fix: 同 _execute_jupiter,直接用 execute() 预解析过的 wallet/priv。
+        """
         try:
             from agent.dex.oneinch import get_oneinch_dex
 
-            executor = self._get_okx_executor()
-            wallet_addr, priv_key = executor._resolve_wallet(
-                chain, wallet_address, private_key,
-            )
-            if not wallet_addr or not priv_key:
+            # R59 P0:不再二次 _resolve_wallet — execute() 已 user_id-aware 预解析
+            if not wallet_address or not private_key:
                 return RouteResult(
-                    success=False, error="No wallet configured",
+                    success=False,
+                    error="No wallet configured (pre-resolve required, no fallback)",
                     chain=chain, token_address=token_address, action=action,
                 )
+            wallet_addr = wallet_address
+            priv_key = private_key
+            executor = self._get_okx_executor()
 
             inch = get_oneinch_dex()
             chain_id = ONEINCH_CHAIN_ID.get(chain, 1)
@@ -847,7 +872,7 @@ class DexRouter:
 
     # ── 记录路由决策 ─────────────────────────────────────────
 
-    async def _record_routing(self, result: RouteResult):
+    async def _record_routing(self, result: RouteResult, request_id: Optional[str] = None):
         """v1.1 Q12: 记录路由决策到 agent_executions"""
         try:
             from database import get_db
@@ -871,8 +896,19 @@ class DexRouter:
                 "fallback_used": result.fallback_used,
                 "split_count": result.split_count,
             }
+            # R59 P0:idempotency key 写入,下次同 request_id retry 时 trade_executor
+            # 顶部 SELECT 命中 → 短路不重复 broadcast
+            if request_id:
+                row["request_id"] = request_id
 
-            db.table("agent_executions").insert(row).execute()
+            try:
+                db.table("agent_executions").insert(row).execute()
+            except Exception as e:
+                # UNIQUE INDEX 触发(同 request_id 已存在)→ 说明重复执行,静默
+                if "duplicate key" in str(e).lower() or "23505" in str(e):
+                    log.debug("[dex_router] R59 _record_routing dup request_id=%s — skip", request_id)
+                    return
+                raise
             log.info(
                 f"Routing recorded: dex={result.dex_used}, "
                 f"fallback={result.fallback_used}, splits={result.split_count}"

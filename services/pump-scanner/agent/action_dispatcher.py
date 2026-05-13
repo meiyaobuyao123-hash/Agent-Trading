@@ -369,7 +369,17 @@ class ActionDispatcher:
                     log.error("[hitl] R47 P6 semi pending create fail, fallback auto: %s", e)
                     # fallback: 直接发(不阻塞业务,但 audit 留痕)
 
-        # auto 路径(原 R47 P5 修复):透传 user_id + safety_ctx
+        # R59 P0:idempotency key — 同一 strategy 同一 signal 同一 side+金额
+        # 任何 retry 都算同一笔交易,防 trade_executor → dex_router 重发 tx。
+        # 用 cents(int) 防止 float 精度问题(amount_usd=100.0 vs 100.00 同 key)。
+        request_id = (
+            f"{event.strategy_id or 'no_strategy'}"
+            f"-{event.id or event.token_address or 'no_event'}"
+            f"-{action_type}"
+            f"-{int(round(amount_usd * 100))}"
+        )
+
+        # auto 路径(原 R47 P5 修复):透传 user_id + safety_ctx + request_id
         result = await executor.execute_trade(
             chain=chain,
             token_address=token_address,
@@ -382,6 +392,7 @@ class ActionDispatcher:
                 "strategy_id": event.strategy_id,
                 "mode": strategy_mode,
             },
+            request_id=request_id,    # R59 P0
         )
 
         if result.success:

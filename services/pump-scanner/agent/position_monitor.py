@@ -176,7 +176,37 @@ class PositionMonitor:
         self, eid: str, pos: PositionInfo,
         exit_price: float, trigger: str, pnl_pct: float,
     ):
-        """执行退出"""
+        """执行退出。
+
+        R59 P0 fix: atomic claim via UPDATE WHERE status='confirmed',防止多进程并发
+        (K8s scale-out / 双 PM 实例)同一 position 被双重 close + 双重 SL/TP。
+
+        agent_executions.status 取值:pending / submitted / confirmed(open) / closed / failed。
+        load_positions 拉 status='confirmed' + action='buy' 视为 open 持仓。
+        atomic claim: UPDATE status='closing' WHERE id=eid AND status='confirmed' → 0 行命中
+        说明已被其他 PM 进程 grab,静默退出不重复 SL/TP。
+        """
+        # 先 atomic claim — Postgres 行级 UPDATE 内置原子
+        try:
+            db = get_db()
+            claim = db.table("agent_executions").update({
+                "status": "closing",
+            }).eq("id", eid).eq("status", "confirmed").execute()
+
+            if not claim.data:
+                # 已被另一进程 grab(status 不再是 confirmed),静默退出
+                log.debug(
+                    "[PositionMonitor] %s 已被其他进程 grab,跳过 close",
+                    eid[:8],
+                )
+                return
+        except Exception as e:
+            log.warning(
+                "[PositionMonitor] atomic claim 失败 %s: %s — 仍尝试 close(兜底)",
+                eid[:8], e,
+            )
+            # 兜底:claim 失败不阻断,继续尝试(单 PM 进程时无影响)
+
         self._selling.add(eid)
         try:
             from agent.trade_executor import get_trade_executor
@@ -187,7 +217,9 @@ class PositionMonitor:
                 f"entry=${pos.entry_price:.6f} exit=${exit_price:.6f} pnl={pnl_pct:+.1f}%"
             )
 
-            # 执行卖出 — R47 P5 透传 user_id → user_wallets 解密路径
+            # 执行卖出 — R47 P5 透传 user_id + R59 P0 idempotency
+            # request_id 用 eid + trigger,防 PM 进程内多次扫到同一 trigger 重发
+            sell_request_id = f"exit-{eid}-{trigger}"
             result = await executor.execute_trade(
                 chain=pos.chain,
                 token_address=pos.token_address,
@@ -197,6 +229,7 @@ class PositionMonitor:
                 wallet_address=pos.wallet_address or None,
                 private_key=pos.private_key or None,
                 user_id=pos.user_id or None,    # R47 P5
+                request_id=sell_request_id,      # R59 P0
                 safety_ctx={
                     "user_id": pos.user_id,
                     "strategy_id": pos.strategy_id,
@@ -389,15 +422,29 @@ class PositionMonitor:
             if eid in self._selling:
                 continue
 
+            # R59 P0 fix: atomic claim,防止多 PM 进程并发 CRISIS 双发卖单
+            try:
+                claim = get_db().table("agent_executions").update({
+                    "status": "closing",
+                }).eq("id", eid).eq("status", "confirmed").execute()
+                if not claim.data:
+                    log.debug("[CRISIS] %s 已被其他进程 grab,跳过", eid[:8])
+                    continue
+            except Exception as e:
+                log.warning("[CRISIS] atomic claim 失败 %s: %s — 仍尝试 close", eid[:8], e)
+
             self._selling.add(eid)
             try:
                 from agent.trade_executor import get_trade_executor
                 executor = get_trade_executor()
 
                 success = False
+                # R59 P0 — CRISIS 也用 idempotency key,2 次 retry 共用同一 request_id
+                # 防 broadcast 已成功但 response timeout → retry 双发 tx
+                crisis_request_id = f"crisis-{eid}"
                 for attempt in range(2):  # 最多重试 1 次
                     try:
-                        # R47 P5 — 紧急清仓也透传 user_id
+                        # R47 P5 — 紧急清仓也透传 user_id + R59 idempotency
                         result = await executor.execute_trade(
                             chain=pos.chain,
                             token_address=pos.token_address,
@@ -407,6 +454,7 @@ class PositionMonitor:
                             wallet_address=pos.wallet_address or None,
                             private_key=pos.private_key or None,
                             user_id=pos.user_id or None,
+                            request_id=crisis_request_id,    # R59 P0
                             safety_ctx={
                                 "user_id": pos.user_id,
                                 "strategy_id": pos.strategy_id,

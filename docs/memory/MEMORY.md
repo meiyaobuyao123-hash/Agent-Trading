@@ -1,5 +1,23 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 上线状态(2026-05-13 R57 — 删开发期 demo + Flutter 链 icon 美化 + 创始人测试款)
+
+**R57 — 一次性清理 + UI 美化**(2026-05-13):
+
+1. **删 Agent 屏 3 个"试一试"demo banner**(`apps/app/lib/screens/agent/agent_screen.dart`):
+   - 试一试 AI 分析报告(W3 D3)— 用户从没要求过这个能力,只是开发期测 ThesisCard
+   - 试一试 HITL 审批流程(W3 D4)— 弹"输入任意字符串当签名",根本不该面向用户
+   - 试一试 共创 7 阶段(W3 D5)— 手动切 stage 是反人类 UX
+   - 删 ~240 行 demo 代码 + 6 unused import;ThesisCard/HitlApprovalPage/CocreationStepper 组件保留
+   - 真实触发:策略命中 → APNs push → deep link;chat agent 根据对话自然推进 stage
+   - HITL 签名占位下一 sprint 接 `local_auth` + 钱包真签(R57+)
+
+2. **Flutter 链 icon 美化(对齐 Web R56)**:`credit_page.dart` `_ChainBadge` CustomPainter 28×28 圆角方块 + 品牌色;Solana 紫绿渐变 / Ethereum #627EEA 菱形 / Base #0052FF C 缺口 / BSC #F0B90B 4 菱形
+
+3. **去预估文案**(Web `/app/credit` + Flutter):"约 X 次询问" → "USD"/"USDC"(token 用量决定真实成本)
+
+4. **创始人测试款 $200**:meiyaobuyao123@gmail.com(uid `2e0d42ac-851c-437f-a18f-124347c45564`)`credit_service.add_credit(uid, 200, source_type='adjust')`。坑:首试 source_type='admin_grant' 被 constraint 拒(只许 recharge/consume/adjust/refund)+ INSERT 失败但 UPDATE 已 commit → balance $400 手动 SQL 改回 $200。政策:仅此一笔。
+
 ## ⚠️ 上线状态(2026-05-08 R47 P9 — 阈值 $2000 + Reflect per-user 计费 + FOMO 订正)
 
 **R47 P9**(2026-05-08):3 个 correction 落地。

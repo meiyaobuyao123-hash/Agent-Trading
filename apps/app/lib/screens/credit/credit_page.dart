@@ -132,7 +132,7 @@ class _CreditPageState extends State<CreditPage> with SingleTickerProviderStateM
                           ),
                         ),
                         Text(
-                          '约 ${_balance?.estimatedMessagesLeft ?? 0} 次询问',
+                          'USD',
                           style: TextStyle(color: c.textTertiary, fontSize: 12),
                         ),
                         const SizedBox(height: 16),
@@ -430,16 +430,154 @@ class _ChainOpt {
   final String label;
   final String sub;
   final String tokenStd;
-  final String emoji;
-  const _ChainOpt(this.id, this.label, this.sub, this.tokenStd, this.emoji);
+  const _ChainOpt(this.id, this.label, this.sub, this.tokenStd);
 }
 
 const _CHAINS = [
-  _ChainOpt('solana', 'Solana', '确认 ~30 秒', 'USDC SPL', '🌟'),
-  _ChainOpt('base', 'Base', '确认 ~30 秒', 'USDC ERC-20', '🔷'),
-  _ChainOpt('ethereum', 'Ethereum', '确认 1-2 分钟', 'USDC ERC-20', '💠'),
-  _ChainOpt('bsc', 'BSC', '确认 ~10 秒', 'USDC BEP-20', '💎'),
+  _ChainOpt('solana', 'Solana', '确认 ~30 秒', 'USDC SPL'),
+  _ChainOpt('base', 'Base', '确认 ~30 秒', 'USDC ERC-20'),
+  _ChainOpt('ethereum', 'Ethereum', '确认 1-2 分钟', 'USDC ERC-20'),
+  _ChainOpt('bsc', 'BSC', '确认 ~10 秒', 'USDC BEP-20'),
 ];
+
+// R56 v2 — 扁平品牌 icon(替换 emoji)
+class _ChainBadge extends StatelessWidget {
+  final String chain;
+  final double size;
+  const _ChainBadge({required this.chain, this.size = 24});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: CustomPaint(painter: _ChainBadgePainter(chain)),
+    );
+  }
+}
+
+class _ChainBadgePainter extends CustomPainter {
+  final String chain;
+  _ChainBadgePainter(this.chain);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = size.height;
+    final rrect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(0, 0, w, h),
+      Radius.circular(w * 0.28),
+    );
+
+    if (chain == 'solana') {
+      // dark bg + 3 平行斜带(紫→绿渐变)
+      canvas.drawRRect(rrect, Paint()..color = const Color(0xFF0C0A1A));
+      final grad = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFF9945FF), Color(0xFF14F195)],
+      ).createShader(Rect.fromLTWH(0, 0, w, h));
+      final paint = Paint()..shader = grad;
+      // 3 个平行四边形条带(向右下倾斜)
+      final stripeH = h * 0.13;
+      final gap = h * 0.08;
+      final startY = (h - stripeH * 3 - gap * 2) / 2;
+      final skew = w * 0.15;
+      for (int i = 0; i < 3; i++) {
+        final y = startY + i * (stripeH + gap);
+        final path = Path()
+          ..moveTo(w * 0.16, y)
+          ..lineTo(w * 0.82 - skew, y)
+          ..lineTo(w * 0.82, y + stripeH)
+          ..lineTo(w * 0.16 + skew, y + stripeH)
+          ..close();
+        canvas.drawPath(path, paint);
+      }
+    } else if (chain == 'ethereum') {
+      // 蓝底 + 白色钻石(上下两个三角拼接)
+      canvas.drawRRect(rrect, Paint()..color = const Color(0xFF627EEA));
+      final white = Paint()..color = Colors.white;
+      final whiteSoft = Paint()..color = Colors.white.withOpacity(0.6);
+      final cx = w / 2;
+      final top = h * 0.20;
+      final mid = h * 0.58;
+      final bot = h * 0.82;
+      final half = w * 0.22;
+      // 上半部分(左暗右亮)
+      final pUpLeft = Path()
+        ..moveTo(cx, top)
+        ..lineTo(cx - half, mid)
+        ..lineTo(cx, mid - h * 0.05)
+        ..close();
+      canvas.drawPath(pUpLeft, white);
+      final pUpRight = Path()
+        ..moveTo(cx, top)
+        ..lineTo(cx + half, mid)
+        ..lineTo(cx, mid - h * 0.05)
+        ..close();
+      canvas.drawPath(pUpRight, whiteSoft);
+      // 下半部分
+      final pDownLeft = Path()
+        ..moveTo(cx, bot)
+        ..lineTo(cx - half, mid + h * 0.02)
+        ..lineTo(cx, mid + h * 0.04)
+        ..close();
+      canvas.drawPath(pDownLeft, white);
+      final pDownRight = Path()
+        ..moveTo(cx, bot)
+        ..lineTo(cx + half, mid + h * 0.02)
+        ..lineTo(cx, mid + h * 0.04)
+        ..close();
+      canvas.drawPath(pDownRight, whiteSoft);
+    } else if (chain == 'base') {
+      // 蓝底 + 白色圆环带缺口("C" 形)
+      canvas.drawRRect(rrect, Paint()..color = const Color(0xFF0052FF));
+      final cx = w / 2;
+      final cy = h / 2;
+      final r = w * 0.28;
+      final ring = Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = w * 0.085
+        ..strokeCap = StrokeCap.butt;
+      // 大圆环
+      canvas.drawCircle(Offset(cx, cy), r, ring);
+      // 右侧缺口(用底色矩形遮一小段)
+      final notch = Rect.fromCenter(
+        center: Offset(cx + r, cy),
+        width: w * 0.18,
+        height: w * 0.18,
+      );
+      canvas.drawRect(notch, Paint()..color = const Color(0xFF0052FF));
+    } else {
+      // bsc — 金底 + 4 个小菱形 + 中心菱形
+      canvas.drawRRect(rrect, Paint()..color = const Color(0xFF0C0A1A));
+      final p = Paint()..color = const Color(0xFFF0B90B);
+      final cx = w / 2;
+      final cy = h / 2;
+      final s = w * 0.13;
+      void diamond(double dx, double dy, double scale) {
+        final path = Path()
+          ..moveTo(dx, dy - s * scale)
+          ..lineTo(dx + s * scale, dy)
+          ..lineTo(dx, dy + s * scale)
+          ..lineTo(dx - s * scale, dy)
+          ..close();
+        canvas.drawPath(path, p);
+      }
+      // 上下左右 4 个外圈菱形
+      diamond(cx, cy - w * 0.25, 1.0);
+      diamond(cx, cy + w * 0.25, 1.0);
+      diamond(cx - w * 0.25, cy, 1.0);
+      diamond(cx + w * 0.25, cy, 1.0);
+      // 中心菱形(略大)
+      diamond(cx, cy, 1.3);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChainBadgePainter old) => old.chain != chain;
+}
 
 const _PRESETS = [10, 50, 100, 500];
 
@@ -770,7 +908,7 @@ class _ChainCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(opt.emoji, style: const TextStyle(fontSize: 18)),
+                _ChainBadge(chain: opt.id, size: 22),
                 const SizedBox(width: 8),
                 Text(
                   opt.label,
@@ -881,9 +1019,9 @@ class _AmountCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 4),
-            // 真实"次询问"算法(基于后端 pricing.yaml Sonnet 单价)
+            // R56: 去掉预估"次询问"误导文案,只显示 USDC
             Text(
-              '约 ${_formatNum(estimatedMessages)} 次 · Sonnet',
+              'USDC',
               style: TextStyle(color: c.textTertiary, fontSize: 11),
             ),
           ],

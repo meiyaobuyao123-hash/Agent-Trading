@@ -9,16 +9,10 @@ import '../../services/wallet_service.dart';
 import '../../services/auth_service.dart';
 import '../credit/credit_page.dart';
 import '../auth/login_page.dart';
-import '../../widgets/strategy_detail_sheet.dart';
 import '../../widgets/wallet_import_sheet.dart';
-import '../../widgets/agent/thesis_card.dart';
 import '../../widgets/balance_chip.dart';
-import '../../widgets/agent/cocreation_stepper.dart';
-import '../../models/thesis.dart';
-import '../../models/pending_approval.dart';
 import 'strategy_detail_page.dart';
 import 'ai_insights_tab.dart';
-import 'hitl_approval_page.dart';
 
 /// Agent 策略中心 — 对话 + 策略管理 + AI 洞察
 class AgentScreen extends StatefulWidget {
@@ -250,14 +244,6 @@ class _ChatTabState extends State<_ChatTab>
   String? _pendingPrompt;
   String? _strategyError;
 
-  /// W3 D3: ThesisCard demo
-  Thesis? _demoThesis;
-  bool _loadingThesis = false;
-  String? _thesisErr;
-
-  /// W3 D5: 共创 stepper demo — 用户点 banner 后循环演示 7 阶段
-  CocreationStage? _demoCocreationStage;
-
   @override
   bool get wantKeepAlive => true;
 
@@ -283,243 +269,12 @@ class _ChatTabState extends State<_ChatTab>
     super.dispose();
   }
 
-  /// W3 D3 ThesisCard Demo — 优先调真实后端 /api/thesis(MOCK_MODE 返 fixture),
-  /// 失败时 fallback 本地 hardcoded mock,确保 UI 一定能展示
-  Future<void> _loadDemoThesis() async {
-    if (_loadingThesis) return;
-    setState(() {
-      _loadingThesis = true;
-      _thesisErr = null;
-    });
-    try {
-      final raw = await AgentService.instance.requestThesis(
-        chain: 'solana',
-        address: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
-        level: 'auto',
-      );
-      Thesis t;
-      if (raw != null) {
-        t = Thesis.fromJson(raw);
-      } else {
-        t = _localMockThesis();
-        _thesisErr = '后端不可用,使用本地 demo 数据';
-      }
-      setState(() {
-        _demoThesis = t;
-        _loadingThesis = false;
-      });
-    } catch (e) {
-      setState(() {
-        _demoThesis = _localMockThesis();
-        _thesisErr = '后端调用失败,使用本地 demo: $e';
-        _loadingThesis = false;
-      });
-    }
-  }
-
-  Widget _buildThesisDemoSection() {
-    final scheme = Theme.of(context).colorScheme;
-    if (_demoThesis != null) {
-      // 已加载 → 显示 ThesisCard + 关闭按钮
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_thesisErr != null)
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              color: Colors.amber.withValues(alpha: 0.15),
-              child: Row(children: [
-                const Icon(Icons.info_outline, size: 14, color: Colors.amber),
-                const SizedBox(width: 6),
-                Expanded(child: Text(_thesisErr!,
-                  style: const TextStyle(fontSize: 11, color: Colors.amber))),
-                IconButton(
-                  iconSize: 16,
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.close, size: 16),
-                  onPressed: () => setState(() {
-                    _demoThesis = null;
-                    _thesisErr = null;
-                  }),
-                ),
-              ]),
-            ),
-          ThesisCard(thesis: _demoThesis!),
-          if (_thesisErr == null)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextButton.icon(
-                icon: const Icon(Icons.close, size: 14),
-                label: const Text('关闭 Demo', style: TextStyle(fontSize: 12)),
-                onPressed: () => setState(() => _demoThesis = null),
-              ),
-            ),
-        ],
-      );
-    }
-    // 未加载 → 显示触发按钮
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-      child: Material(
-        color: scheme.primaryContainer.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: _loadingThesis ? null : _loadDemoThesis,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(children: [
-              if (_loadingThesis)
-                const SizedBox(
-                  width: 16, height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              else
-                Icon(Icons.auto_awesome, size: 18, color: scheme.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  _loadingThesis ? '生成中…' : '试一试 AI 分析报告(Demo)',
-                  style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600,
-                    color: scheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-              if (!_loadingThesis)
-                Icon(Icons.arrow_forward, size: 14, color: scheme.primary),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHitlDemoBanner() {
-    final scheme = Theme.of(context).colorScheme;
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-      child: Material(
-        color: Colors.orange.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: _openHitlDemo,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(children: [
-              const Icon(Icons.fingerprint, size: 18, color: Colors.orange),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '🛡 试一试 HITL 审批流程(Demo)',
-                  style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              const Icon(Icons.arrow_forward, size: 14, color: Colors.orange),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// W3 D5 Cocreation Stepper Demo Banner — 点击展开/隐藏 stepper,
-  /// 展开后显示当前阶段,再点切换到下一阶段(循环演示 7 阶段)
-  Widget _buildCocreationDemoBanner() {
-    final scheme = Theme.of(context).colorScheme;
-    if (_demoCocreationStage != null) {
-      return Column(children: [
-        CocreationStepper(current: _demoCocreationStage!),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Row(children: [
-            Expanded(
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.skip_next, size: 16),
-                label: const Text('下一阶段', style: TextStyle(fontSize: 12)),
-                onPressed: () => setState(() {
-                  final values = CocreationStage.values;
-                  final next = (_demoCocreationStage!.index + 1) % values.length;
-                  _demoCocreationStage = values[next];
-                }),
-              ),
-            ),
-            const SizedBox(width: 8),
-            TextButton(
-              child: const Text('关闭 Demo', style: TextStyle(fontSize: 12)),
-              onPressed: () => setState(() => _demoCocreationStage = null),
-            ),
-          ]),
-        ),
-      ]);
-    }
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-      child: Material(
-        color: scheme.primary.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => setState(() => _demoCocreationStage = CocreationStage.idle),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            child: Row(children: [
-              Icon(Icons.auto_awesome, size: 18, color: scheme.primary),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  '🪄 试一试 共创 7 阶段 (Demo)',
-                  style: TextStyle(
-                    fontSize: 13, fontWeight: FontWeight.w600,
-                    color: scheme.onSurface,
-                  ),
-                ),
-              ),
-              Icon(Icons.arrow_forward, size: 14, color: scheme.primary),
-            ]),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// 后端不可用时的本地 fallback(纯演示)
-  Thesis _localMockThesis() => Thesis(
-        thesisId: 'demo-local-001',
-        chain: 'solana',
-        tokenAddress: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
-        tokenSymbol: 'TRUMP',
-        level: 'L2',
-        direction: 'bullish',
-        conviction: 0.72,
-        entryZone: const EntryZone(low: 1.10, high: 1.20),
-        stopLoss: 0.95,
-        targetPrice: const [1.45, 1.80, 2.40],
-        risks: const [
-          '代币年龄仅 48h,流动性可能突然枯竭',
-          'Top10 持仓 58%,有大户砸盘风险',
-        ],
-        summary30w: '短期看涨,但建议小仓位试水,设硬止损 0.95',
-        evidence: [
-          EvidenceItem(layer: 'smart_money_signals', text: '+45000 USD net 24h', ts: DateTime.now().toUtc()),
-          EvidenceItem(layer: 'hot_coins.score', text: '78', ts: DateTime.now().toUtc()),
-        ],
-        similarPastCases: [
-          SimilarCase(
-            tokenSymbol: 'PEPE',
-            occurredAt: DateTime(2026, 3, 15),
-            outcome: 'win',
-            similarity: 0.78,
-          ),
-        ],
-        costUsd: 0.025,
-        latencyMs: 4200,
-        ts: DateTime.now().toUtc(),
-      );
+  // R57 — 删除开发期 W3 D3/D4/D5 三个 demo banner:
+  //   • 试一试 AI 分析报告 (Demo) — Thesis 应由后端策略命中后自动生成,推送到用户
+  //   • 试一试 HITL 审批流程 (Demo) — 真审批应由策略触发 → APNs push → deep link 进 HitlApprovalPage
+  //   • 试一试 共创 7 阶段 (Demo) — 共创 stage 由 chat agent 根据对话自然推进,不该手动切
+  // HitlApprovalPage / ThesisCard / CocreationStepper 三个组件本身保留,供真实流程调用。
+  // FaceID + 签名占位将在 R57+ 接 local_auth + 钱包真签替换。
 
   Future<void> _send() async {
     final text = _controller.text.trim();
@@ -686,42 +441,10 @@ class _ChatTabState extends State<_ChatTab>
   }
 
   @override
-  void _openHitlDemo() {
-    final now = DateTime.now();
-    final mockApproval = PendingApproval(
-      approvalId: 'mock-demo-001',
-      strategyId: 'strat-mock-1',
-      triggerConditionsMatched: const [
-        '聪明钱净流入 > \$30000(24h 内 2 个 Elite 钱包买入)',
-        '1h 涨幅 > 15%',
-        '流动性 > \$100K',
-      ],
-      thesisId: 'thesis-1',
-      tokenSymbol: 'TRUMP',
-      tokenAddress: 'TRUMPmGjJgGgqPZkMP9KrYwoRrsAtwHzuKbMHvYn3D9',
-      chain: 'solana',
-      amountUsd: 250.0,
-      status: 'pending',
-      createdAt: now.subtract(const Duration(seconds: 30)),
-      expiresAt: now.add(const Duration(minutes: 14, seconds: 30)),
-    );
-    final mockThesis = _localMockThesis();
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => HitlApprovalPage(approval: mockApproval, thesis: mockThesis),
-    ));
-  }
-
-  @override
   Widget build(BuildContext context) {
     super.build(context); // AutomaticKeepAliveClientMixin 要求
     return Column(
       children: [
-        // W3 D3 ThesisCard Demo Banner
-        _buildThesisDemoSection(),
-        // W3 D4 HITL Demo Banner
-        _buildHitlDemoBanner(),
-        // W3 D5 Cocreation Stepper Demo Banner
-        _buildCocreationDemoBanner(),
         Expanded(
           child: ListView.builder(
             controller: _scrollController,

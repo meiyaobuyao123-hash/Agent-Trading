@@ -4,6 +4,25 @@
 
 ---
 
+## 2026-05-13 R57 — 删开发期 demo + Flutter 链 icon 美化 + 创始人 $200
+
+**做了什么**:
+1. Web `/app/credit` 链 icon emoji → SVG `<ChainIcon>` 品牌色;Flutter `_ChainBadge` CustomPainter 4 链
+2. 去预估文案 Web "次询问" → "USD",Flutter → "USDC"
+3. 给 meiyaobuyao123@gmail.com 服务端 $200(`add_credit(uid, 200, source_type='adjust')`)
+4. Agent 屏 3 个"试一试" demo banner 全删(~240 行 + 6 unused import)
+
+**讨论结论**:
+- CEO + 操盘 PM 视角:Demo 按钮 + Face ID 占位 + "输入任意字符串"当签名,不专业
+- 真实触发应是:Thesis 策略命中后自动 + 推送;HITL 推送 deep link;共创 stage 由 chat 自然推进
+- 三个组件 ThesisCard / HitlApprovalPage / CocreationStepper 保留,只删 banner 入口
+- HITL 签名:R57+ 接 local_auth + 钱包真签;本次先删假占位
+- 创始人款仅此一笔,不开口子
+
+**被否定**:保留 Demo 当隐藏开发者按钮 / 整删 HitlApprovalPage
+
+---
+
 ## 2026-05-08 R47 P9 — 阈值统一 $2000 + Reflect per-user 计费 + FOMO 订正
 
 ### 用户抛 3 个 correction

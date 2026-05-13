@@ -4,6 +4,26 @@
 
 ---
 
+## 2026-05-13 R59 — Profile 页层级 + 6 条 P0 资金 bug 全修
+
+**做了什么**:Profile 页 UX 优化 + 资深架构师 audit Agent 后端 26 条 punch,修 6 条 P0。
+
+**A. Profile 页**:已登录 = 身份 → 算力 → 钱包 → 通知 → 外观 → 关于;未登录 = 登录卡 + 外观/关于。监听 ChangeNotifier。
+
+**B. 6 条 P0**:
+1. credit_service `_Tx` 包 UPDATE+INSERT 同事务(local_db autocommit=True 是 R57 创始人 $200→$400 漂的根因)
+2. confirm_recharge_order + migration 048 UNIQUE — 防 RPC 双入账
+3. trade_executor/dispatcher/monitor 加 request_id + agent_executions UNIQUE — 防 retry 双 tx
+4. dex_router fail-fast pre-resolve + 子路径不二次 _resolve_wallet — 防 DEV_WALLET fallback
+5. /performance/{id} + /backtest + /rename 加 owner check — 防横向越权
+6. position_monitor atomic claim `UPDATE status='closing' WHERE status='confirmed'` — 防 K8s 双进程双 SL/TP
+
+**坑**:status 用 'confirmed' 不是 'open';autocommit=True 是 pool 全局;float 精度用 int(round(*100))。
+
+**被否定**:子路径加 user_id — fail-fast pre-resolve 更干净。
+
+---
+
 ## 2026-05-13 R58 — 删 AI 洞察 Tab(3 个隐私 bug + endpoint bug 揭露)
 
 **做了什么**:删 Agent 屏 AI 洞察 Tab(~1344 行 Dart) + agent_service 3 个 method。TabController 3→2。

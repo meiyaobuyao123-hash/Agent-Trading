@@ -1,4 +1,3 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -115,23 +114,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       backgroundColor: c.bg,
       body: CustomScrollView(
         slivers: [
-          // ── 顶部 AppBar(透明,跟下面 header 顺接)──
+          // R59.3:AppBar 简化 — 去掉 BackdropFilter blur(light page 没东西 blur)
           SliverAppBar(
             pinned: true,
-            backgroundColor: Colors.transparent,
-            flexibleSpace: ClipRect(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                child: Container(color: Colors.transparent),
-              ),
-            ),
+            backgroundColor: c.bg,
+            elevation: 0,
+            scrolledUnderElevation: 0,
             title: Text(
               S.of(context).profileTitle,
               style: TextStyle(
                 color: c.textPrimary,
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                letterSpacing: -0.3,
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
               ),
             ),
           ),
@@ -158,55 +153,74 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
+    // R59.3 — 加 stagger fade-in 动效:每个 section 延迟 70ms 入场
+    final commonTail = _buildCommonTail(context);
+    final tailCount = commonTail.length;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // R59.2 — 1. Premium Hero(融合身份+算力,Liquid Glass + radial gradient)
-        const Padding(
-          padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-          child: _HeroAccountCard(),
+        // 1. Premium Hero(融合身份+算力)
+        _StaggeredFadeIn(
+          index: 0,
+          child: const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: _HeroAccountCard(),
+          ),
         ),
         const SizedBox(height: 24),
-        // 2. 我的钱包 single-card hero(默认钱包) — 详细管理走子页
-        const _WalletSection(),
-        const SizedBox(height: 24),
-        // 4. 通知设置 section
-        _GroupedSection(
-          title: S.of(context).notificationSettings,
-          rows: [
-            _GroupedToggleRow(
-              icon: Icons.bolt_rounded,
-              iconColor: const Color(0xFFF59E0B),
-              title: S.of(context).newCoinPush,
-              subtitle: S.of(context).newCoinPushDesc,
-              value: _notifNewCoin,
-              onChanged: (v) => _onToggleNotif('notif_new_coin', v),
-            ),
-            _GroupedToggleRow(
-              icon: Icons.local_fire_department_rounded,
-              iconColor: const Color(0xFFEF4444),
-              title: S.of(context).hotCoinAlert,
-              subtitle: S.of(context).hotCoinAlertDesc,
-              value: _notifHotCoin,
-              onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
-            ),
-            _GroupedToggleRow(
-              icon: Icons.smart_toy_rounded,
-              iconColor: const Color(0xFF8B5CF6),
-              title: S.of(context).agentNotification,
-              subtitle: S.of(context).agentNotificationDesc,
-              value: _notifAgent,
-              onChanged: (v) => _onToggleNotif('notif_agent', v),
-            ),
-          ],
+        // 2. 我的钱包 single-card hero
+        _StaggeredFadeIn(
+          index: 1,
+          child: const _WalletSection(),
         ),
         const SizedBox(height: 24),
-        // 5. 外观 + 关于 — 跟未登录态共用
-        ..._buildCommonTail(context),
-        // 6. 底部危险区域 — 登出(R59.2 加 red tint bg)
+        // 3. 通知设置 section
+        _StaggeredFadeIn(
+          index: 2,
+          child: _GroupedSection(
+            title: S.of(context).notificationSettings,
+            rows: [
+              _GroupedToggleRow(
+                icon: Icons.bolt_rounded,
+                iconColor: const Color(0xFFF59E0B),
+                title: S.of(context).newCoinPush,
+                subtitle: S.of(context).newCoinPushDesc,
+                value: _notifNewCoin,
+                onChanged: (v) => _onToggleNotif('notif_new_coin', v),
+              ),
+              _GroupedToggleRow(
+                icon: Icons.local_fire_department_rounded,
+                iconColor: const Color(0xFFEF4444),
+                title: S.of(context).hotCoinAlert,
+                subtitle: S.of(context).hotCoinAlertDesc,
+                value: _notifHotCoin,
+                onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
+              ),
+              _GroupedToggleRow(
+                icon: Icons.smart_toy_rounded,
+                iconColor: const Color(0xFF8B5CF6),
+                title: S.of(context).agentNotification,
+                subtitle: S.of(context).agentNotificationDesc,
+                value: _notifAgent,
+                onChanged: (v) => _onToggleNotif('notif_agent', v),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
+        // 4. 外观/语言/关于 sections — staggered
+        for (int i = 0; i < tailCount; i++)
+          tailCount > 0 && commonTail[i] is _GroupedSection
+              ? _StaggeredFadeIn(index: 3 + i, child: commonTail[i])
+              : commonTail[i],
+        // 5. 底部登出(staggered 最后)
         const SizedBox(height: 16),
-        _DangerLogoutCard(onTap: _confirmLogout),
-        const SizedBox(height: 40),
+        _StaggeredFadeIn(
+          index: 3 + tailCount,
+          child: _DangerLogoutCard(onTap: _confirmLogout),
+        ),
+        const SizedBox(height: 28),
       ],
     );
   }
@@ -404,18 +418,16 @@ class _HeroAccountCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(22),
       child: Stack(
         children: [
-          // ── 底层:深紫 → 深蓝 radial gradient ──
+          // ── 底层:深紫 → 深蓝 radial gradient(R59.3 简化两段)──
           Container(
             decoration: const BoxDecoration(
               gradient: RadialGradient(
-                center: Alignment(0.8, -0.6),
-                radius: 1.5,
+                center: Alignment(0.85, -0.5),
+                radius: 1.6,
                 colors: [
-                  Color(0xFF3D2C7E),  // 深紫(顶右)
-                  Color(0xFF1A1F4D),  // 中过渡
-                  Color(0xFF0F1729),  // 深蓝(底左)
+                  Color(0xFF2A1F5C),  // 深紫
+                  Color(0xFF0F1729),  // 深蓝
                 ],
-                stops: [0.0, 0.5, 1.0],
               ),
             ),
           ),
@@ -463,7 +475,7 @@ class _HeroAccountCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
+                    const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -481,12 +493,13 @@ class _HeroAccountCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 3),
                           Text(
                             email,
                             style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.55),
-                              fontSize: 11.5,
+                              color: Colors.white.withValues(alpha: 0.5),
+                              fontSize: 11,
+                              letterSpacing: 0.1,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -494,43 +507,10 @@ class _HeroAccountCard extends StatelessWidget {
                         ],
                       ),
                     ),
-                    // VIP / lvl chip placeholder(后续接用户等级)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.08),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.diamond_outlined,
-                            size: 11,
-                            color: const Color(0xFFFFD700)
-                                .withValues(alpha: 0.9),
-                          ),
-                          const SizedBox(width: 3),
-                          const Text(
-                            'PRO',
-                            style: TextStyle(
-                              color: Color(0xFFFFD700),
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                    // R59.3:删 PRO badge(fake data),留白
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 22),
                 // 渐变 divider
                 Container(
                   height: 1,
@@ -538,30 +518,30 @@ class _HeroAccountCard extends StatelessWidget {
                     gradient: LinearGradient(
                       colors: [
                         Colors.white.withValues(alpha: 0.0),
-                        Colors.white.withValues(alpha: 0.15),
+                        Colors.white.withValues(alpha: 0.12),
                         Colors.white.withValues(alpha: 0.0),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
                 // 算力段
                 Row(
                   children: [
                     Icon(
                       Icons.bolt_rounded,
-                      size: 14,
+                      size: 13,
                       color: const Color(0xFF34D399)
-                          .withValues(alpha: 0.95),
+                          .withValues(alpha: 0.9),
                     ),
                     const SizedBox(width: 5),
                     Text(
                       '算力余额',
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.65),
-                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.6),
+                        fontSize: 11,
                         fontWeight: FontWeight.w500,
-                        letterSpacing: 0.4,
+                        letterSpacing: 0.6,
                       ),
                     ),
                     const Spacer(),
@@ -591,54 +571,41 @@ class _HeroAccountCard extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.baseline,
                   textBaseline: TextBaseline.alphabetic,
                   children: [
-                    // 渐变 fill 大数字
-                    ShaderMask(
-                      shaderCallback: (rect) => LinearGradient(
-                        colors: isLow
-                            ? const [
-                                Color(0xFFFCA5A5),
-                                Color(0xFFEF4444),
-                              ]
-                            : const [
-                                Color(0xFFFFFFFF),
-                                Color(0xFF6EE7B7),
-                              ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ).createShader(rect),
-                      child: Text(
-                        '\$$balanceStr',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 36,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: -1.0,
-                          height: 1.0,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
+                    // R59.3:纯白大数字(去 ShaderMask 渐变)— 反差最大可读性最好
+                    Text(
+                      '\$$balanceStr',
+                      style: TextStyle(
+                        color: isLow
+                            ? const Color(0xFFFCA5A5)
+                            : Colors.white,
+                        fontSize: 40,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -1.2,
+                        height: 0.95,
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
-                    const SizedBox(width: 6),
+                    const SizedBox(width: 7),
                     Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.only(bottom: 5),
                       child: Text(
                         'USD',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.45),
-                          fontSize: 12,
+                          color: Colors.white.withValues(alpha: 0.4),
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5,
+                          letterSpacing: 0.6,
                         ),
                       ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 20),
                 // 2 action buttons
                 Row(
                   children: [
@@ -653,7 +620,7 @@ class _HeroAccountCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: _HeroActionButton(
                         label: '流水',
@@ -683,7 +650,7 @@ class _HeroAccountCard extends StatelessWidget {
 class _LiquidGlassHighlightPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Specular highlight 椭圆 — 右上角光源
+    // 1. Specular highlight 椭圆 — 右上角光源(R59.3:alpha 0.22 → 0.16)
     final specularRect = Rect.fromCircle(
       center: Offset(size.width * 0.85, size.height * -0.1),
       radius: size.width * 0.6,
@@ -691,51 +658,29 @@ class _LiquidGlassHighlightPainter extends CustomPainter {
     final specularPaint = Paint()
       ..shader = RadialGradient(
         colors: [
-          Colors.white.withValues(alpha: 0.22),
+          Colors.white.withValues(alpha: 0.16),
           Colors.white.withValues(alpha: 0.0),
         ],
         stops: const [0.0, 1.0],
       ).createShader(specularRect);
     canvas.drawOval(specularRect, specularPaint);
 
-    // 2. 第二个柔和高光 — 左下角微 cyan glow
-    final softGlowRect = Rect.fromCircle(
-      center: Offset(size.width * 0.1, size.height * 0.9),
-      radius: size.width * 0.5,
-    );
-    final softPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          const Color(0xFF06B6D4).withValues(alpha: 0.18),
-          const Color(0xFF06B6D4).withValues(alpha: 0.0),
-        ],
-      ).createShader(softGlowRect);
-    canvas.drawOval(softGlowRect, softPaint);
-
-    // 3. 静态微光粒子(模拟玻璃内反光点)
+    // R59.3:删 cyan glow(跟 specular 重复,克制)
+    // 2. 静态微光粒子(12 个,克制版)
     final particlePaint = Paint()..style = PaintingStyle.fill;
-    // 使用固定 seed 让粒子稳定(不每帧随机)
     const positions = <List<double>>[
-      [0.15, 0.18, 1.4, 0.08],   // [xRatio, yRatio, radius, alpha]
-      [0.32, 0.42, 1.8, 0.12],
-      [0.55, 0.25, 1.2, 0.10],
-      [0.72, 0.65, 2.0, 0.14],
-      [0.88, 0.35, 1.5, 0.09],
-      [0.25, 0.78, 1.6, 0.11],
-      [0.48, 0.88, 1.3, 0.08],
-      [0.65, 0.12, 1.7, 0.13],
-      [0.92, 0.72, 1.4, 0.10],
-      [0.08, 0.55, 1.5, 0.09],
-      [0.38, 0.62, 1.2, 0.11],
-      [0.78, 0.48, 1.9, 0.12],
-      [0.18, 0.35, 1.3, 0.10],
-      [0.52, 0.55, 1.6, 0.09],
-      [0.82, 0.18, 1.4, 0.13],
-      [0.42, 0.15, 1.5, 0.08],
-      [0.62, 0.82, 1.7, 0.10],
-      [0.12, 0.72, 1.3, 0.09],
-      [0.95, 0.55, 1.8, 0.11],
-      [0.28, 0.28, 1.4, 0.12],
+      [0.18, 0.22, 1.4, 0.10],   // [xRatio, yRatio, radius, alpha]
+      [0.42, 0.38, 1.6, 0.12],
+      [0.65, 0.18, 1.2, 0.09],
+      [0.78, 0.55, 1.8, 0.11],
+      [0.32, 0.72, 1.5, 0.10],
+      [0.55, 0.88, 1.3, 0.08],
+      [0.88, 0.72, 1.4, 0.10],
+      [0.12, 0.58, 1.6, 0.09],
+      [0.48, 0.55, 1.5, 0.10],
+      [0.72, 0.32, 1.4, 0.11],
+      [0.22, 0.45, 1.2, 0.09],
+      [0.92, 0.45, 1.7, 0.10],
     ];
     for (final p in positions) {
       particlePaint.color = Colors.white.withValues(alpha: p[3]);
@@ -746,23 +691,23 @@ class _LiquidGlassHighlightPainter extends CustomPainter {
       );
     }
 
-    // 4. Edge bleed — 顶部 + 右侧 highlight inner stroke
+    // 3. Edge bleed — 顶部 highlight gradient
     final topGlow = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
         end: Alignment.bottomCenter,
         colors: [
-          Colors.white.withValues(alpha: 0.18),
+          Colors.white.withValues(alpha: 0.14),
           Colors.white.withValues(alpha: 0.0),
         ],
-        stops: const [0.0, 0.15],
+        stops: const [0.0, 0.18],
       ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
     canvas.drawRect(
         Rect.fromLTWH(0, 0, size.width, size.height), topGlow);
 
-    // 5. Inner highlight 1px stroke 顶部
+    // 4. Inner highlight 1px stroke 顶部
     final stroke = Paint()
-      ..color = Colors.white.withValues(alpha: 0.18)
+      ..color = Colors.white.withValues(alpha: 0.16)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     canvas.drawLine(
@@ -820,9 +765,9 @@ class _HeroActionButton extends StatelessWidget {
             boxShadow: primary
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
+                      color: const Color(0xFF10B981).withValues(alpha: 0.22),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
                     ),
                   ]
                 : null,
@@ -1108,16 +1053,12 @@ class _GroupedToggleRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 4),
-          Transform.scale(
-            scale: 0.85,
-            child: Switch(
-              value: value,
-              onChanged: onChanged,
-              activeThumbColor: Colors.white,
-              activeTrackColor: c.primary,
-              inactiveThumbColor: Colors.white,
-              inactiveTrackColor: const Color(0xFFE5E7EB),
-            ),
+          // R59.3:用 Switch.adaptive — iOS 自动 CupertinoSwitch,native 大小
+          Switch.adaptive(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: Colors.white,
+            activeTrackColor: c.primary,
           ),
         ],
       ),
@@ -1382,10 +1323,10 @@ class _WalletHeroCard extends StatelessWidget {
       };
 
   String get _chainLabel => switch (wallet.chain) {
-        'solana' => 'SOLANA',
-        'eth' => 'ETHEREUM',
+        'solana' => 'Solana',
+        'eth' => 'Ethereum',
         'bsc' => 'BSC',
-        'base' => 'BASE',
+        'base' => 'Base',
         _ => wallet.chain.toUpperCase(),
       };
 
@@ -1531,9 +1472,9 @@ class _WalletHeroCard extends StatelessWidget {
                             _chainLabel,
                             style: TextStyle(
                               color: c.textTertiary,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w600,
-                              letterSpacing: 0.6,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              letterSpacing: 0.2,
                             ),
                           ),
                         ],
@@ -2086,6 +2027,40 @@ class _LoginPromptCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// R59.3 · Staggered fade-in 入场动效
+// 每个 section 按 index 延迟 70ms 入场,fade 0→1 + slide-up 6px
+// 280ms easeOutCubic
+// ═══════════════════════════════════════════════════════════════════
+class _StaggeredFadeIn extends StatelessWidget {
+  final int index;
+  final Widget child;
+  const _StaggeredFadeIn({required this.index, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.0, end: 1.0),
+      duration: Duration(milliseconds: 280 + (index * 70)),
+      curve: Interval(
+        (index * 70) / (280 + index * 70).clamp(1, 10000),
+        1.0,
+        curve: Curves.easeOutCubic,
+      ),
+      builder: (context, t, child_) {
+        return Opacity(
+          opacity: t.clamp(0.0, 1.0),
+          child: Transform.translate(
+            offset: Offset(0, (1 - t) * 6),
+            child: child_,
+          ),
+        );
+      },
+      child: child,
     );
   }
 }

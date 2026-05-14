@@ -26,7 +26,7 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 # Claude 模型
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-opus-4-7"  # R63: chat 主对话 + 策略创建升 Opus 4.7(用户最常碰的入口用最强模型)
 
 # 系统提示词
 SYSTEM_PROMPT = """你是加密货币量化交易策略专家。将用户的自然语言描述转化为完整、可执行的策略。

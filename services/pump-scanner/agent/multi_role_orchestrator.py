@@ -224,7 +224,7 @@ class MultiRoleOrchestrator:
             client = anthropic.Anthropic(api_key=self._api_key)
             response = await asyncio.to_thread(
                 client.messages.create,
-                model="claude-sonnet-4-20250514",
+                model="claude-opus-4-7",  # R63: L3 ≥$2000 大额决策辩论升 Opus 4.7
                 max_tokens=500,
                 messages=[{"role": "user", "content": prompt}],
             )

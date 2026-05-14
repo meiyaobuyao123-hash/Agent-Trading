@@ -48,10 +48,13 @@ def _load_pricing_yaml() -> Dict[str, Any]:
             "markup": 1.0,
             "recharge_fee_rate": 0.01,
             "models": {
+                # R63 emergency fallback(yaml 加载失败兜底)— 同 pricing.yaml
                 "claude-sonnet-4-6":         {"in": 3.0, "out": 15.0},
                 "claude-sonnet-4-20250514":  {"in": 3.0, "out": 15.0},
-                "claude-haiku-4-5":          {"in": 0.25, "out": 1.25},
-                "claude-opus-4-6":           {"in": 15.0, "out": 75.0},
+                "claude-haiku-4-5":          {"in": 1.0, "out": 5.0},      # R52 修正(4 倍贵于 Haiku 3.5)
+                "claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0},
+                "claude-opus-4-6":           {"in": 5.0, "out": 25.0},     # R52 降价(老 4.1 是 $15/$75)
+                "claude-opus-4-7":           {"in": 5.0, "out": 25.0},     # R63 加(chat 主对话用)
             },
             "estimate_assumptions": {
                 "default_model": "claude-sonnet-4-6",

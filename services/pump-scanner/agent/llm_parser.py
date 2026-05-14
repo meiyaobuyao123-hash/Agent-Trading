@@ -887,30 +887,69 @@ class LLMParser:
             return json.dumps({"error": str(e)[:100]}, ensure_ascii=False)
 
     async def _execute_backtest(self, request: Dict[str, Any]) -> str:
-        """执行回测并返回格式化结果"""
+        """执行回测并返回格式化结果
+
+        R66 修复:之前写错 `from agent.backtester import Backtester` —
+        backtester 模块**没有** Backtester class,只有 `backtest_strategy`
+        async 函数(签名:strategy_spec dict + days + risk_params)。
+
+        同时把输出字段对齐 R60(net/gross 双口径胜率收益 + fee_assumptions
+        + max_drawdown_pct=null collecting),让用户看到诚实数字而不是 0/0/0。
+        """
         try:
             strategy_id = request.get("strategy_id", "")
-            days = request.get("days", 7)
+            days = int(request.get("days", 7) or 7)
+            if not strategy_id:
+                return "回测需要 strategy_id。请先创建策略,再说\"回测我刚才那条\"。"
 
-            from agent.backtester import Backtester
-            bt = Backtester()
-            result = await asyncio.to_thread(bt.run, strategy_id, days=days)
+            from agent.backtester import backtest_strategy
+            from agent.strategy_manager import StrategyManager
+            sm = StrategyManager()
+            strategy = sm.get_strategy(strategy_id)
+            if not strategy:
+                return f"找不到 strategy_id={strategy_id[:8]} 的策略。请先创建策略再回测。"
 
-            if result and result.get("triggers", 0) > 0:
+            # R60 — backtest_strategy 接 strategy_spec dict + 可选 risk_params
+            risk_params = (strategy.get("filters") or {}).get("risk_params")
+            result = await backtest_strategy(
+                strategy, days=days, risk_params=risk_params,
+            )
+
+            triggers = int(result.get("trigger_count", 0) or 0)
+            if triggers <= 0:
                 return (
-                    f"## 📊 回测结果（{days}天）\n"
-                    f"- 触发次数：{result.get('triggers', 0)}\n"
-                    f"- 胜率：{result.get('win_rate', 0)*100:.1f}%\n"
-                    f"- 平均收益：{result.get('avg_pnl', 0)*100:.1f}%\n"
-                    f"- 最大回撤：{result.get('max_drawdown', 0)*100:.1f}%\n"
-                    f"- 累计PNL：{result.get('total_pnl', 0)*100:.1f}%\n"
-                    f"- 夏普率：{result.get('sharpe', 0):.2f}"
+                    f"## 📊 回测结果({days}天)\n"
+                    f"过去 {days} 天该策略**未触发**任何信号。\n\n"
+                    "**建议**:① 放宽 conditions 阈值;② 增加回测天数;③ 改信号源(热币 → pump.fun 新币)。"
                 )
+
+            net_win = float(result.get("simulated_win_rate", 0) or 0) * 100
+            gross_win = float(result.get("gross_win_rate", 0) or 0) * 100
+            net_ret = float(result.get("avg_return_pct", 0) or 0)
+            gross_ret = float(result.get("gross_return_pct", 0) or 0)
+            fee_a = result.get("fee_assumptions") or {}
+            fee_single = float(fee_a.get("fee_single_pct", 0) or 0)
+            fee_rt = float(fee_a.get("fee_round_trip_pct", 0) or 0)
+            fee_chain = fee_a.get("chain", "solana")
+            fee_src = fee_a.get("source", "default")
+            max_dd = result.get("max_drawdown_pct")
+            if isinstance(max_dd, (int, float)):
+                dd_line = f"- 最大回撤:**{max_dd:.1f}%**"
             else:
-                return f"## 📊 回测结果（{days}天）\n过去{days}天该策略未触发任何交易信号。建议放宽条件或增加回测时间范围。"
+                dd_line = "- 最大回撤:数据收集中(~1 周后启用)"
+
+            return (
+                f"## 📊 回测结果({days}天)\n"
+                f"- 触发次数:**{triggers}**\n"
+                f"- 胜率(扣手续费):**{net_win:.1f}%** · 不扣 {gross_win:.1f}%\n"
+                f"- 平均涨幅(扣手续费):**{net_ret:+.2f}%** · 不扣 {gross_ret:+.2f}%\n"
+                f"{dd_line}\n\n"
+                f"_手续费假设:{fee_chain} 单边 {fee_single:.2f}% / 往返 {fee_rt:.2f}%"
+                f"({'用户自定义' if fee_src == 'user' else '默认'})_"
+            )
         except Exception as e:
-            log.warning("Backtest execution error: %s", e)
-            return f"回测执行出错：{str(e)[:100]}。请确保策略已创建成功后再进行回测。"
+            log.warning("Backtest execution error: %s", e, exc_info=True)
+            return f"回测执行出错:{str(e)[:120]}。请确保策略已创建成功后再进行回测。"
 
     def _normalize_spec(self, raw: Dict[str, Any]) -> Dict[str, Any]:
         """

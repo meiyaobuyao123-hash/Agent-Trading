@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/locale_provider.dart';
@@ -11,7 +10,6 @@ import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../credit/credit_page.dart';
 import '../auth/login_page.dart';
-import '../../services/push_notification_service.dart';
 
 // ═══════════════════════════════════════════════════════════════════
 // R59.1 — 「我的」页 iOS Settings 范式重做
@@ -34,14 +32,15 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  bool _notifNewCoin = false;
-  bool _notifHotCoin = false;
-  bool _notifAgent = false;
+  // R59.4 — 删 3 个 fake 通知 toggle(后端 0 接 user preference,纯 dead UI)
+  //          相关 _notif* state / _loadNotifSettings / _onToggleNotif /
+  //          _requestPushPermission / push_notification_service import 全清。
+  //          真要做 per-user 推送 → R60+ 加 user_notification_preferences 表 +
+  //          后端 cron 真接通后再恢复 UI。
 
   @override
   void initState() {
     super.initState();
-    _loadNotifSettings();
     AuthService.instance.addListener(_onAuthChanged);
     CreditService.instance.addListener(_onCreditChanged);
     if (AuthService.instance.isLoggedIn) {
@@ -66,44 +65,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   void _onCreditChanged() {
     if (mounted) setState(() {});
-  }
-
-  Future<void> _loadNotifSettings() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (mounted) {
-      setState(() {
-        _notifNewCoin = prefs.getBool('notif_new_coin') ?? false;
-        _notifHotCoin = prefs.getBool('notif_hot_coin') ?? false;
-        _notifAgent = prefs.getBool('notif_agent') ?? false;
-      });
-    }
-  }
-
-  Future<void> _onToggleNotif(String key, bool value) async {
-    if (value) {
-      try {
-        await _requestPushPermission();
-      } catch (_) {}
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(key, value);
-    if (mounted) {
-      setState(() {
-        switch (key) {
-          case 'notif_new_coin': _notifNewCoin = value; break;
-          case 'notif_hot_coin': _notifHotCoin = value; break;
-          case 'notif_agent': _notifAgent = value; break;
-        }
-      });
-    }
-  }
-
-  Future<void> _requestPushPermission() async {
-    try {
-      await PushNotificationService.initialize();
-    } catch (e) {
-      debugPrint('[Push] Permission request failed: $e');
-    }
   }
 
   @override
@@ -154,6 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     // R59.3 — 加 stagger fade-in 动效:每个 section 延迟 70ms 入场
+    // R59.4 — 删「通知设置」section(3 个 toggle 是 dead UI,后端未接 user preference)
     final commonTail = _buildCommonTail(context);
     final tailCount = commonTail.length;
 
@@ -175,49 +137,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
           child: const _WalletSection(),
         ),
         const SizedBox(height: 24),
-        // 3. 通知设置 section
-        _StaggeredFadeIn(
-          index: 2,
-          child: _GroupedSection(
-            title: S.of(context).notificationSettings,
-            rows: [
-              _GroupedToggleRow(
-                icon: Icons.bolt_rounded,
-                iconColor: const Color(0xFFF59E0B),
-                title: S.of(context).newCoinPush,
-                subtitle: S.of(context).newCoinPushDesc,
-                value: _notifNewCoin,
-                onChanged: (v) => _onToggleNotif('notif_new_coin', v),
-              ),
-              _GroupedToggleRow(
-                icon: Icons.local_fire_department_rounded,
-                iconColor: const Color(0xFFEF4444),
-                title: S.of(context).hotCoinAlert,
-                subtitle: S.of(context).hotCoinAlertDesc,
-                value: _notifHotCoin,
-                onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
-              ),
-              _GroupedToggleRow(
-                icon: Icons.smart_toy_rounded,
-                iconColor: const Color(0xFF8B5CF6),
-                title: S.of(context).agentNotification,
-                subtitle: S.of(context).agentNotificationDesc,
-                value: _notifAgent,
-                onChanged: (v) => _onToggleNotif('notif_agent', v),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 24),
-        // 4. 外观/语言/关于 sections — staggered
+        // 3. 外观/语言/关于 sections — staggered
         for (int i = 0; i < tailCount; i++)
           tailCount > 0 && commonTail[i] is _GroupedSection
-              ? _StaggeredFadeIn(index: 3 + i, child: commonTail[i])
+              ? _StaggeredFadeIn(index: 2 + i, child: commonTail[i])
               : commonTail[i],
-        // 5. 底部登出(staggered 最后)
+        // 4. 底部登出
         const SizedBox(height: 16),
         _StaggeredFadeIn(
-          index: 3 + tailCount,
+          index: 2 + tailCount,
           child: _DangerLogoutCard(onTap: _confirmLogout),
         ),
         const SizedBox(height: 28),
@@ -977,94 +905,8 @@ class _GroupedRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// R59.1 · Grouped Toggle Row(section 内的 switch 行)
-// ═══════════════════════════════════════════════════════════════════
-class _GroupedToggleRow extends StatelessWidget {
-  final IconData icon;
-  final Color? iconColor;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _GroupedToggleRow({
-    required this.icon,
-    this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final iconC = iconColor ?? c.primary;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
-      child: Row(
-        children: [
-          // R59.2 — 圆形 gradient chip(替代 R59.1 圆角 tint 方块)
-          Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [iconC, iconC.withValues(alpha: 0.7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: iconC.withValues(alpha: 0.25),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: Icon(icon, size: 16, color: Colors.white),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    color: c.textPrimary,
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: TextStyle(
-                    color: c.textSecondary,
-                    fontSize: 11.5,
-                    height: 1.35,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 4),
-          // R59.3:用 Switch.adaptive — iOS 自动 CupertinoSwitch,native 大小
-          Switch.adaptive(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: Colors.white,
-            activeTrackColor: c.primary,
-          ),
-        ],
-      ),
-    );
-  }
-}
+// R59.4 — _GroupedToggleRow 删除(随通知 section 一起撤,本页无 switch 行)
+//          将来 R60+ user_notification_preferences 真接通时再恢复。
 
 // ═══════════════════════════════════════════════════════════════════
 // R59.2 · 底部"危险区域" — 独立卡 + red tint bg

@@ -1,28 +1,16 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../app.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/locale_provider.dart';
 import '../../services/wallet_service.dart';
 import '../../services/auth_service.dart';
-import '../../services/credit_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../credit/credit_page.dart';
-import '../auth/login_page.dart';
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.1 — 「我的」页 iOS Settings 范式重做
-//
-// 设计原则:
-// 1. Apple-ID 风格账户 header(非卡片,直接显示在顶部)
-// 2. Hero 算力余额卡(渐变 mint + 大字数字 + inline buttons)
-// 3. Grouped list section:多个 row 共享一个圆角白卡 + 内部细线分割
-// 4. 登出移到底部"危险区域"
-//
-// 旧 _SettingItem / _ToggleItem / _AccountIdentityCard / _CreditBalanceCard
-// / _SectionLabel 已全部撤掉,改用统一的 _GroupedSection + _GroupedRow + _GroupedToggleRow。
-// ═══════════════════════════════════════════════════════════════════
+import '../../services/push_notification_service.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -32,39 +20,57 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  // R59.4 — 删 3 个 fake 通知 toggle(后端 0 接 user preference,纯 dead UI)
-  //          相关 _notif* state / _loadNotifSettings / _onToggleNotif /
-  //          _requestPushPermission / push_notification_service import 全清。
-  //          真要做 per-user 推送 → R60+ 加 user_notification_preferences 表 +
-  //          后端 cron 真接通后再恢复 UI。
+  bool _notifNewCoin = false;
+  bool _notifHotCoin = false;
+  bool _notifAgent = false;
 
   @override
   void initState() {
     super.initState();
-    AuthService.instance.addListener(_onAuthChanged);
-    CreditService.instance.addListener(_onCreditChanged);
-    if (AuthService.instance.isLoggedIn) {
-      CreditService.instance.fetchBalance();
+    _loadNotifSettings();
+  }
+
+  Future<void> _loadNotifSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() {
+        _notifNewCoin = prefs.getBool('notif_new_coin') ?? false;
+        _notifHotCoin = prefs.getBool('notif_hot_coin') ?? false;
+        _notifAgent = prefs.getBool('notif_agent') ?? false;
+      });
     }
   }
 
-  @override
-  void dispose() {
-    AuthService.instance.removeListener(_onAuthChanged);
-    CreditService.instance.removeListener(_onCreditChanged);
-    super.dispose();
-  }
-
-  void _onAuthChanged() {
-    if (!mounted) return;
-    setState(() {});
-    if (AuthService.instance.isLoggedIn) {
-      CreditService.instance.fetchBalance();
+  Future<void> _onToggleNotif(String key, bool value) async {
+    if (value) {
+      // 用户首次开启 → 请求 iOS 推送权限
+      try {
+        final messenger = WidgetsBinding.instance.platformDispatcher;
+        // 触发 Firebase 权限请求（如果未初始化则跳过）
+        // ignore: unused_import
+        await _requestPushPermission();
+      } catch (_) {}
+    }
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(key, value);
+    if (mounted) {
+      setState(() {
+        switch (key) {
+          case 'notif_new_coin': _notifNewCoin = value; break;
+          case 'notif_hot_coin': _notifHotCoin = value; break;
+          case 'notif_agent': _notifAgent = value; break;
+        }
+      });
     }
   }
 
-  void _onCreditChanged() {
-    if (mounted) setState(() {});
+  Future<void> _requestPushPermission() async {
+    try {
+      await PushNotificationService.initialize();
+      debugPrint('[Push] Notification permission requested from user toggle');
+    } catch (e) {
+      debugPrint('[Push] Permission request failed: $e');
+    }
   }
 
   @override
@@ -72,166 +78,183 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final c = context.colors;
 
     return Scaffold(
-      backgroundColor: c.bg,
+      backgroundColor: Colors.transparent,
       body: CustomScrollView(
         slivers: [
-          // R59.3:AppBar 简化 — 去掉 BackdropFilter blur(light page 没东西 blur)
+          // ── 顶部 AppBar ──────────────────────
           SliverAppBar(
             pinned: true,
-            backgroundColor: c.bg,
-            elevation: 0,
-            scrolledUnderElevation: 0,
+            backgroundColor: Colors.transparent,
+            flexibleSpace: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                child: Container(color: Colors.transparent),
+              ),
+            ),
             title: Text(
               S.of(context).profileTitle,
               style: TextStyle(
                 color: c.textPrimary,
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                letterSpacing: -0.3,
               ),
             ),
           ),
-          SliverToBoxAdapter(child: _buildBody(context)),
+
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // ── 钱包绑定卡 ─────────────────
+                  const _WalletCard(),
+                  const SizedBox(height: 16),
+
+                  // ── R47 算力 + R46 账户 ─────────
+                  _SectionLabel(label: '账户 & 算力'),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: Icons.bolt_rounded,
+                    title: '算力余额',
+                    value: '充值 / 流水',
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const CreditPage()),
+                    ),
+                  ),
+                  _SettingItem(
+                    icon: Icons.account_circle_outlined,
+                    title: AuthService.instance.email ?? '未登录',
+                    value: AuthService.instance.displayName ?? '',
+                    onTap: null,
+                  ),
+                  _SettingItem(
+                    icon: Icons.logout_rounded,
+                    title: '登出',
+                    value: '',
+                    onTap: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('确认登出?'),
+                          content: const Text('登出后下次启动需要重新登录'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.of(context).pop(true),
+                              child: const Text('登出', style: TextStyle(color: Color(0xFFEF4444))),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await AuthService.instance.logout();
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 16),
+
+                  // ── 通知设置 ───────────────────
+                  _SectionLabel(label: S.of(context).notificationSettings),
+                  const SizedBox(height: 8),
+                  _ToggleItem(
+                    icon: Icons.bolt_rounded,
+                    title: S.of(context).newCoinPush,
+                    subtitle: S.of(context).newCoinPushDesc,
+                    value: _notifNewCoin,
+                    onChanged: (v) => _onToggleNotif('notif_new_coin', v),
+                  ),
+                  _ToggleItem(
+                    icon: Icons.local_fire_department_rounded,
+                    title: S.of(context).hotCoinAlert,
+                    subtitle: S.of(context).hotCoinAlertDesc,
+                    value: _notifHotCoin,
+                    onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
+                  ),
+                  _ToggleItem(
+                    icon: Icons.smart_toy_rounded,
+                    title: S.of(context).agentNotification,
+                    subtitle: S.of(context).agentNotificationDesc,
+                    value: _notifAgent,
+                    onChanged: (v) => _onToggleNotif('notif_agent', v),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── 外观设置 ───────────────────
+                  _SectionLabel(label: S.of(context).appearanceSettings),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: context.isDark
+                        ? Icons.dark_mode_rounded
+                        : Icons.light_mode_rounded,
+                    title: S.of(context).darkMode,
+                    value: context.isDark ? S.of(context).darkModeOn : S.of(context).darkModeOff,
+                    onTap: () => themeNotifier.toggle(),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── 语言设置 ───────────────────
+                  _SectionLabel(label: S.of(context).languageSettings),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: Icons.language_rounded,
+                    title: S.of(context).language,
+                    value: LocaleProvider.displayName(localeProvider.locale),
+                    onTap: () => _showLanguagePicker(context),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ── 关于 ───────────────────────
+                  _SectionLabel(label: S.of(context).about),
+                  const SizedBox(height: 8),
+                  _SettingItem(
+                    icon: Icons.info_outline_rounded,
+                    title: S.of(context).version,
+                    value: 'v1.0.0',
+                    onTap: null,
+                  ),
+                  _SettingItem(
+                    icon: Icons.data_object_rounded,
+                    title: S.of(context).dataSource,
+                    value: 'pump.fun · OKX · Binance',
+                    onTap: null,
+                  ),
+                  _SettingItem(
+                    icon: Icons.warning_amber_rounded,
+                    title: S.of(context).riskWarning,
+                    value: '',
+                    onTap: () => _showRiskDisclaimer(context),
+                  ),
+
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildBody(BuildContext context) {
-    final isLoggedIn = AuthService.instance.isLoggedIn;
-    if (!isLoggedIn) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _LoginPromptCard(),
-          ),
-          const SizedBox(height: 24),
-          ..._buildCommonTail(context),
-        ],
-      );
-    }
-
-    // R59.3 — 加 stagger fade-in 动效:每个 section 延迟 70ms 入场
-    // R59.4 — 删「通知设置」section(3 个 toggle 是 dead UI,后端未接 user preference)
-    final commonTail = _buildCommonTail(context);
-    final tailCount = commonTail.length;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // R59.5 — 1. Apple Cash 风账户 Header(头像 + name + email 居中,无卡背景)
-        const _StaggeredFadeIn(
-          index: 0,
-          child: _AccountHeader(),
+  void _showComingSoon(BuildContext context) {
+    final c = context.colors;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          S.of(context).comingSoon,
+          style: TextStyle(color: c.textPrimary),
         ),
-        // 2. 算力余额卡 — 独立 light mint 卡(回到 R59.0 视觉风格)
-        _StaggeredFadeIn(
-          index: 1,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16),
-            child: _HeroCreditCard(),
-          ),
-        ),
-        const SizedBox(height: 24),
-        // 3. 我的钱包 single-card hero
-        _StaggeredFadeIn(
-          index: 2,
-          child: const _WalletSection(),
-        ),
-        const SizedBox(height: 24),
-        // 4. 外观/语言/关于 sections — staggered
-        for (int i = 0; i < tailCount; i++)
-          tailCount > 0 && commonTail[i] is _GroupedSection
-              ? _StaggeredFadeIn(index: 3 + i, child: commonTail[i])
-              : commonTail[i],
-        // 5. 底部登出
-        const SizedBox(height: 16),
-        _StaggeredFadeIn(
-          index: 3 + tailCount,
-          child: _DangerLogoutCard(onTap: _confirmLogout),
-        ),
-        const SizedBox(height: 28),
-      ],
-    );
-  }
-
-  List<Widget> _buildCommonTail(BuildContext context) {
-    return [
-      _GroupedSection(
-        title: S.of(context).appearanceSettings,
-        rows: [
-          _GroupedRow(
-            icon: context.isDark
-                ? Icons.dark_mode_rounded
-                : Icons.light_mode_rounded,
-            iconColor: const Color(0xFF6366F1),
-            title: S.of(context).darkMode,
-            trailingText: context.isDark
-                ? S.of(context).darkModeOn
-                : S.of(context).darkModeOff,
-            onTap: () => themeNotifier.toggle(),
-          ),
-          _GroupedRow(
-            icon: Icons.language_rounded,
-            iconColor: const Color(0xFF14B8A6),
-            title: S.of(context).language,
-            trailingText: LocaleProvider.displayName(localeProvider.locale),
-            onTap: () => _showLanguagePicker(context),
-          ),
-        ],
-      ),
-      const SizedBox(height: 24),
-      _GroupedSection(
-        title: S.of(context).about,
-        rows: [
-          _GroupedRow(
-            icon: Icons.info_outline_rounded,
-            iconColor: const Color(0xFF3B82F6),
-            title: S.of(context).version,
-            trailingText: 'v1.0.0',
-          ),
-          _GroupedRow(
-            icon: Icons.data_object_rounded,
-            iconColor: const Color(0xFF8B5CF6),
-            title: S.of(context).dataSource,
-            trailingText: 'pump.fun · OKX',
-          ),
-          _GroupedRow(
-            icon: Icons.warning_amber_rounded,
-            iconColor: const Color(0xFFEF4444),
-            title: S.of(context).riskWarning,
-            onTap: () => _showRiskDisclaimer(context),
-          ),
-        ],
-      ),
-    ];
-  }
-
-  Future<void> _confirmLogout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('确认登出?'),
-        content: const Text('登出后下次启动需要重新登录'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('登出',
-                style: TextStyle(color: Color(0xFFEF4444))),
-          ),
-        ],
+        backgroundColor: c.cardGlass,
+        behavior: SnackBarBehavior.floating,
       ),
     );
-    if (confirm == true) {
-      await AuthService.instance.logout();
-    }
   }
 
   void _showRiskDisclaimer(BuildContext context) {
@@ -285,10 +308,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Text(S.of(context).languageSettings,
                 style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: c.textPrimary)),
             const SizedBox(height: 14),
+            // Follow system
             _languageOption(ctx, c, null, S.of(context).followSystem),
+            // zh
             _languageOption(ctx, c, const Locale('zh'), '中文'),
+            // en
             _languageOption(ctx, c, const Locale('en'), 'English'),
+            // ja
             _languageOption(ctx, c, const Locale('ja'), '日本語'),
+            // ko
             _languageOption(ctx, c, const Locale('ko'), '한국어'),
           ],
         ),
@@ -326,1092 +354,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// R59.5 · 顶部账户 Header(Apple Cash 风,居中无卡背景)
-// 64px 圆形 gradient 头像 + 居中 name + email,通透不抢戏
-// ═══════════════════════════════════════════════════════════════════
-class _AccountHeader extends StatelessWidget {
-  const _AccountHeader();
+// ─── 钱包管理卡 ──────────────────────────────────────
+class _WalletCard extends StatefulWidget {
+  const _WalletCard();
 
   @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final email = AuthService.instance.email ?? '';
-    final displayName = AuthService.instance.displayName;
-    final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
-    final nameText = displayName != null && displayName.isNotEmpty
-        ? displayName
-        : email.split('@').first;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          // 64px 圆形头像 — mint→aqua gradient
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF34D399), Color(0xFF06B6D4)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(32),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF06B6D4).withValues(alpha: 0.25),
-                  blurRadius: 14,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              initial,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            nameText,
-            style: TextStyle(
-              color: c.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w700,
-              letterSpacing: -0.3,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            email,
-            style: TextStyle(
-              color: c.textSecondary,
-              fontSize: 12.5,
-              letterSpacing: 0.1,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
+  State<_WalletCard> createState() => _WalletCardState();
 }
 
-// ═══════════════════════════════════════════════════════════════════
-// R59.5 · 算力余额卡 — 浅 mint gradient + 黑字大数字(回到 light 风格)
-// 跟 App 整体 light 主题统一,不再用深色 Liquid Glass
-// ═══════════════════════════════════════════════════════════════════
-class _HeroCreditCard extends StatelessWidget {
-  const _HeroCreditCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final balance = CreditService.instance.balance;
-    final balanceUsd = balance?.balanceUsd ?? 0.0;
-    final isLow = balance != null && balanceUsd < 1.0;
-    final isCritical = balance != null && balanceUsd < 0.01;
-    final balanceStr = balanceUsd < 0.01
-        ? balanceUsd.toStringAsFixed(4)
-        : balanceUsd.toStringAsFixed(2);
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: isLow
-              ? const [Color(0xFFFEF2F2), Color(0xFFFFF7ED)]
-              : const [Color(0xFFECFDF5), Color(0xFFF0FDFA)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: isLow
-              ? const Color(0xFFEF4444).withValues(alpha: 0.16)
-              : const Color(0xFF10B981).withValues(alpha: 0.18),
-          width: 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: (isLow
-                    ? const Color(0xFFEF4444)
-                    : const Color(0xFF10B981))
-                .withValues(alpha: 0.06),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Label 行
-          Row(
-            children: [
-              Icon(
-                Icons.bolt_rounded,
-                size: 16,
-                color: isLow
-                    ? const Color(0xFFEF4444)
-                    : const Color(0xFF10B981),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                '算力余额',
-                style: TextStyle(
-                  color: c.textSecondary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: 0.3,
-                ),
-              ),
-              const Spacer(),
-              if (isCritical)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color:
-                        const Color(0xFFEF4444).withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(5),
-                  ),
-                  child: const Text(
-                    '余额不足',
-                    style: TextStyle(
-                      color: Color(0xFFEF4444),
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // 大数字
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: [
-              Text(
-                '\$$balanceStr',
-                style: TextStyle(
-                  color: isLow
-                      ? const Color(0xFFEF4444)
-                      : c.textPrimary,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -1.2,
-                  height: 0.95,
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
-              ),
-              const SizedBox(width: 7),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 5),
-                child: Text(
-                  'USD',
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.6,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          // 2 buttons — 充值 mint solid / 流水 mint outline
-          Row(
-            children: [
-              Expanded(
-                child: _HeroActionButton(
-                  label: isLow ? '立即充值' : '充值',
-                  icon: Icons.add_rounded,
-                  primary: true,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const CreditPage()),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _HeroActionButton(
-                  label: '流水',
-                  icon: Icons.receipt_long_outlined,
-                  primary: false,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const CreditPage()),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.5 · 充值/流水 action button — light 版
-// 充值 = mint solid + 白字  /  流水 = 白底 + mint outline + mint 字
-// ═══════════════════════════════════════════════════════════════════
-class _HeroActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool primary;
-  final VoidCallback onTap;
-  const _HeroActionButton({
-    required this.label,
-    required this.icon,
-    required this.primary,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const mint = Color(0xFF10B981);
-    const mintDark = Color(0xFF059669);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(11),
-        onTap: onTap,
-        child: Container(
-          height: 44,
-          decoration: BoxDecoration(
-            gradient: primary
-                ? const LinearGradient(
-                    colors: [Color(0xFF34D399), mint],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : null,
-            color: primary ? null : Colors.white,
-            borderRadius: BorderRadius.circular(11),
-            border: primary
-                ? null
-                : Border.all(
-                    color: mint.withValues(alpha: 0.35),
-                    width: 1,
-                  ),
-            boxShadow: primary
-                ? [
-                    BoxShadow(
-                      color: mint.withValues(alpha: 0.20),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                icon,
-                size: 16,
-                color: primary ? Colors.white : mintDark,
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  color: primary ? Colors.white : mintDark,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.2,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.1 · 通用 Grouped Section(替代旧 _SectionLabel + 独立卡)
-// ═══════════════════════════════════════════════════════════════════
-class _GroupedSection extends StatelessWidget {
-  final String? title;
-  final List<Widget> rows;
-  const _GroupedSection({this.title, required this.rows});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (title != null)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-            child: Text(
-              title!,
-              style: TextStyle(
-                color: c.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
-        Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 2,
-                offset: const Offset(0, 1),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Column(
-              children: _withDividers(context, rows),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  static List<Widget> _withDividers(BuildContext context, List<Widget> rows) {
-    final out = <Widget>[];
-    for (var i = 0; i < rows.length; i++) {
-      out.add(rows[i]);
-      if (i < rows.length - 1) {
-        out.add(Container(
-          height: 0.5,
-          margin: const EdgeInsets.only(left: 52),
-          color: const Color(0xFFE5E7EB),
-        ));
-      }
-    }
-    return out;
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.1 · Grouped Row(section 内单行,跟 iOS Settings 一致)
-// ═══════════════════════════════════════════════════════════════════
-class _GroupedRow extends StatelessWidget {
-  final IconData icon;
-  final Color? iconColor;
-  final String title;
-  final String? subtitle;
-  final String? trailingText;
-  final Widget? trailing;
-  final VoidCallback? onTap;
-  const _GroupedRow({
-    required this.icon,
-    this.iconColor,
-    required this.title,
-    this.subtitle,
-    this.trailingText,
-    this.trailing,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final iconC = iconColor ?? c.primary;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Row(
-            children: [
-              // R59.2 — 圆形 gradient chip
-              Container(
-                width: 30,
-                height: 30,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [iconC, iconC.withValues(alpha: 0.72)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [
-                    BoxShadow(
-                      color: iconC.withValues(alpha: 0.2),
-                      blurRadius: 5,
-                      offset: const Offset(0, 1.5),
-                    ),
-                  ],
-                ),
-                alignment: Alignment.center,
-                child: Icon(icon, size: 15, color: Colors.white),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 14.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    if (subtitle != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        subtitle!,
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 12,
-                          height: 1.3,
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (trailing != null)
-                trailing!
-              else if (trailingText != null)
-                Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: Text(
-                    trailingText!,
-                    style: TextStyle(
-                      color: c.textTertiary,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              if (onTap != null && trailing == null) ...[
-                const SizedBox(width: 4),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  color: c.textTertiary,
-                  size: 18,
-                ),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// R59.4 — _GroupedToggleRow 删除(随通知 section 一起撤,本页无 switch 行)
-//          将来 R60+ user_notification_preferences 真接通时再恢复。
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.2 · 底部"危险区域" — 独立卡 + red tint bg
-// ═══════════════════════════════════════════════════════════════════
-class _DangerLogoutCard extends StatelessWidget {
-  final VoidCallback onTap;
-  const _DangerLogoutCard({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF2F2),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: const Color(0xFFEF4444).withValues(alpha: 0.15),
-                width: 0.8,
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: const [
-                Icon(
-                  Icons.logout_rounded,
-                  size: 16,
-                  color: Color(0xFFEF4444),
-                ),
-                SizedBox(width: 6),
-                Text(
-                  '登出',
-                  style: TextStyle(
-                    color: Color(0xFFEF4444),
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.2 · Wallet Hero Card — 默认钱包单卡(crypto wallet 卡片视觉)
-//         多钱包列表移到 _WalletManagementPage 子页
-// ═══════════════════════════════════════════════════════════════════
-class _WalletSection extends StatefulWidget {
-  const _WalletSection();
-
-  @override
-  State<_WalletSection> createState() => _WalletSectionState();
-}
-
-class _WalletSectionState extends State<_WalletSection> {
-  List<UserWallet> _wallets = [];
-
-  @override
-  void initState() {
-    super.initState();
-    _loadWallets();
-    WalletService.instance.addListener(_loadWallets);
-  }
-
-  @override
-  void dispose() {
-    WalletService.instance.removeListener(_loadWallets);
-    super.dispose();
-  }
-
-  void _loadWallets() {
-    if (mounted) setState(() => _wallets = WalletService.instance.wallets);
-  }
-
-  Future<void> _openImport() async {
-    final wallet = await showWalletImportSheet(context);
-    if (wallet != null) _loadWallets();
-  }
-
-  void _openManagement() {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => const _WalletManagementPage(),
-    ));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-
-    if (_wallets.isEmpty) {
-      // 未导入 — empty state 卡(虚线 + 主色引导)
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: _openImport,
-            borderRadius: BorderRadius.circular(14),
-            child: DottedBorderBox(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 18, vertical: 22),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [
-                              c.primary.withValues(alpha: 0.18),
-                              c.primary.withValues(alpha: 0.08),
-                            ],
-                          ),
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        alignment: Alignment.center,
-                        child: Icon(
-                          Icons.account_balance_wallet_outlined,
-                          color: c.primary,
-                          size: 17,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        '我的钱包',
-                        style: TextStyle(
-                          color: c.textPrimary,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: c.textTertiary.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          '未导入',
-                          style: TextStyle(
-                            color: c.textTertiary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                    ]),
-                    const SizedBox(height: 12),
-                    Text(
-                      '导入钱包后 Agent 可代你自动执行交易策略',
-                      style: TextStyle(
-                        color: c.textSecondary,
-                        fontSize: 12.5,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 9),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            c.primary,
-                            c.primary.withValues(alpha: 0.82),
-                          ],
-                        ),
-                        borderRadius: BorderRadius.circular(9),
-                        boxShadow: [
-                          BoxShadow(
-                            color: c.primary.withValues(alpha: 0.25),
-                            blurRadius: 8,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: const [
-                          Icon(Icons.add_rounded,
-                              color: Colors.white, size: 16),
-                          SizedBox(width: 4),
-                          Text(
-                            '导入钱包',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 13.5,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    // 已导入 — 找默认钱包(无默认则用第一个)
-    final defaultWallet = _wallets.firstWhere(
-      (w) => w.isDefault,
-      orElse: () => _wallets.first,
-    );
-    final otherCount = _wallets.length - 1;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: _openManagement,
-          borderRadius: BorderRadius.circular(16),
-          child: _WalletHeroCard(
-            wallet: defaultWallet,
-            otherCount: otherCount,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// 默认钱包 Hero 卡 — crypto wallet 卡片视觉
-class _WalletHeroCard extends StatelessWidget {
-  final UserWallet wallet;
-  final int otherCount;
-  const _WalletHeroCard({required this.wallet, required this.otherCount});
-
-  Color get _chainColor => switch (wallet.chain) {
-        'solana' => const Color(0xFF9945FF),
-        'eth' => const Color(0xFF627EEA),
-        'bsc' => const Color(0xFFF3BA2F),
-        'base' => const Color(0xFF0052FF),
-        _ => const Color(0xFF3B82F6),
-      };
-
-  String get _chainLabel => switch (wallet.chain) {
-        'solana' => 'Solana',
-        'eth' => 'Ethereum',
-        'bsc' => 'BSC',
-        'base' => 'Base',
-        _ => wallet.chain.toUpperCase(),
-      };
-
-  String get _chainShort => switch (wallet.chain) {
-        'solana' => 'SOL',
-        'eth' => 'ETH',
-        'bsc' => 'BSC',
-        'base' => 'BASE',
-        _ => wallet.chain.toUpperCase(),
-      };
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    final addr = wallet.address;
-    final addrShort = addr.length > 12
-        ? '${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}'
-        : addr;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: _chainColor.withValues(alpha: 0.08),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-        border: Border.all(
-          color: _chainColor.withValues(alpha: 0.10),
-          width: 0.8,
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: Stack(
-          children: [
-            // 右上角链色 ambient glow
-            Positioned(
-              top: -40,
-              right: -40,
-              child: Container(
-                width: 140,
-                height: 140,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: RadialGradient(
-                    colors: [
-                      _chainColor.withValues(alpha: 0.10),
-                      _chainColor.withValues(alpha: 0.0),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    // 链 chip — 圆形 gradient
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            _chainColor,
-                            _chainColor.withValues(alpha: 0.7),
-                          ],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _chainColor.withValues(alpha: 0.3),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        _chainShort,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            Flexible(
-                              child: Text(
-                                wallet.name,
-                                style: TextStyle(
-                                  color: c.textPrimary,
-                                  fontSize: 15.5,
-                                  fontWeight: FontWeight.w700,
-                                  letterSpacing: -0.2,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color:
-                                    _chainColor.withValues(alpha: 0.10),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: Text(
-                                '默认',
-                                style: TextStyle(
-                                  color: _chainColor,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.3,
-                                ),
-                              ),
-                            ),
-                          ]),
-                          const SizedBox(height: 2),
-                          Text(
-                            _chainLabel,
-                            style: TextStyle(
-                              color: c.textTertiary,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w500,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 13,
-                      color: c.textTertiary.withValues(alpha: 0.6),
-                    ),
-                  ]),
-                  const SizedBox(height: 14),
-                  // 地址
-                  GestureDetector(
-                    onTap: () {
-                      Clipboard.setData(ClipboardData(text: addr));
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(S.of(context).addressCopied),
-                        behavior: SnackBarBehavior.floating,
-                        duration: const Duration(seconds: 1),
-                      ));
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(
-                          color: const Color(0xFFE5E7EB),
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Row(children: [
-                        Icon(Icons.tag_rounded,
-                            size: 12, color: c.textTertiary),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            addrShort,
-                            style: TextStyle(
-                              color: c.textSecondary,
-                              fontSize: 12.5,
-                              fontFeatures: const [
-                                FontFeature.tabularFigures()
-                              ],
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                        ),
-                        Icon(Icons.content_copy_rounded,
-                            size: 12, color: c.textTertiary),
-                      ]),
-                    ),
-                  ),
-                  if (otherCount > 0) ...[
-                    const SizedBox(height: 12),
-                    Container(
-                      height: 0.5,
-                      color: const Color(0xFFE5E7EB),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(children: [
-                      Icon(
-                        Icons.account_balance_wallet_outlined,
-                        size: 13,
-                        color: c.textTertiary,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '管理 ${_wallets(context)} 个钱包',
-                        style: TextStyle(
-                          color: c.textSecondary,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        '查看全部',
-                        style: TextStyle(
-                          color: c.primary,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 3),
-                      Icon(
-                        Icons.arrow_forward_rounded,
-                        size: 12,
-                        color: c.primary,
-                      ),
-                    ]),
-                  ],
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  int _wallets(BuildContext context) => otherCount + 1;
-}
-
-// 虚线 box — 未导入 empty state 用
-class DottedBorderBox extends StatelessWidget {
-  final Widget child;
-  const DottedBorderBox({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return CustomPaint(
-      painter: _DottedBorderPainter(color: c.primary.withValues(alpha: 0.35)),
-      child: Container(
-        decoration: BoxDecoration(
-          color: c.primary.withValues(alpha: 0.025),
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: child,
-      ),
-    );
-  }
-}
-
-class _DottedBorderPainter extends CustomPainter {
-  final Color color;
-  _DottedBorderPainter({required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    const dashWidth = 4.0;
-    const dashGap = 4.0;
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      const Radius.circular(14),
-    );
-    final path = Path()..addRRect(rrect);
-    final metrics = path.computeMetrics();
-    for (final metric in metrics) {
-      double dist = 0.0;
-      while (dist < metric.length) {
-        final next = dist + dashWidth;
-        canvas.drawPath(
-          metric.extractPath(dist, next.clamp(0, metric.length)),
-          paint,
-        );
-        dist = next + dashGap;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.2 · 钱包管理子页(多钱包列表 — 设默认 / 复制 / 删除)
-// ═══════════════════════════════════════════════════════════════════
-class _WalletManagementPage extends StatefulWidget {
-  const _WalletManagementPage();
-
-  @override
-  State<_WalletManagementPage> createState() =>
-      _WalletManagementPageState();
-}
-
-class _WalletManagementPageState extends State<_WalletManagementPage> {
+class _WalletCardState extends State<_WalletCard> {
   List<UserWallet> _wallets = [];
 
   @override
@@ -1442,15 +393,13 @@ class _WalletManagementPageState extends State<_WalletManagementPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: c.bg,
-        title: Text(S.of(ctx).deleteWallet,
-            style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
+        title: Text(S.of(ctx).deleteWallet, style: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700)),
         content: Text(S.of(ctx).deleteWalletConfirm(wallet.name),
             style: TextStyle(color: c.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(S.of(ctx).cancel,
-                style: TextStyle(color: c.textSecondary)),
+            child: Text(S.of(ctx).cancel, style: TextStyle(color: c.textSecondary)),
           ),
           TextButton(
             onPressed: () {
@@ -1465,98 +414,194 @@ class _WalletManagementPageState extends State<_WalletManagementPage> {
   }
 
   Color _chainColor(String chain) => switch (chain) {
-        'solana' => const Color(0xFF9945FF),
-        'eth' => const Color(0xFF627EEA),
-        'bsc' => const Color(0xFFF3BA2F),
-        'base' => const Color(0xFF0052FF),
-        _ => const Color(0xFF3B82F6),
-      };
+    'solana' => const Color(0xFF9945FF),
+    'eth' => const Color(0xFF627EEA),
+    'bsc' => const Color(0xFFF3BA2F),
+    'base' => const Color(0xFF0052FF),
+    _ => const Color(0xFF3B82F6),
+  };
 
-  String _chainShort(String chain) => switch (chain) {
-        'solana' => 'SOL',
-        'eth' => 'ETH',
-        'bsc' => 'BSC',
-        'base' => 'BASE',
-        _ => chain.toUpperCase(),
-      };
+  String _chainLabel(String chain) => switch (chain) {
+    'solana' => 'SOL',
+    'eth' => 'ETH',
+    'bsc' => 'BSC',
+    'base' => 'BASE',
+    _ => chain.toUpperCase(),
+  };
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
 
-    return Scaffold(
-      backgroundColor: c.bg,
-      appBar: AppBar(
-        backgroundColor: c.bg,
-        elevation: 0,
-        title: Text(
-          '钱包管理',
-          style: TextStyle(
-            color: c.textPrimary,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios_new_rounded,
-              color: c.textPrimary, size: 18),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: context.isDark
+            ? const LinearGradient(
+                colors: [Color(0xFF1A2550), Color(0xFF0D1530)],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              )
+            : LinearGradient(
+                colors: [
+                  c.primary.withValues(alpha: 0.08),
+                  c.primary.withValues(alpha: 0.03),
+                ],
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+              ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.primary.withValues(alpha: 0.3), width: 1),
       ),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final w in _wallets) ...[
-            _WalletManageRow(
-              wallet: w,
-              chainColor: _chainColor(w.chain),
-              chainShort: _chainShort(w.chain),
-              onSetDefault: w.isDefault
-                  ? null
-                  : () => WalletService.instance.setDefault(w.id),
-              onDelete: () => _confirmDelete(w),
-            ),
-            const SizedBox(height: 10),
-          ],
-          const SizedBox(height: 8),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _openImport,
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 14),
+          Row(
+            children: [
+              Icon(Icons.account_balance_wallet_rounded, color: c.primary, size: 20),
+              const SizedBox(width: 8),
+              Text(S.of(context).myWallets, style: TextStyle(
+                color: c.textSecondary, fontSize: 12, fontWeight: FontWeight.w500,
+              )),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      c.primary,
-                      c.primary.withValues(alpha: 0.85),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: c.primary.withValues(alpha: 0.3),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
+                  color: _wallets.isEmpty
+                      ? c.surfaceAlt
+                      : c.success.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(6),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: const [
-                    Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                    SizedBox(width: 6),
-                    Text(
-                      '导入新钱包',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
+                child: Text(
+                  _wallets.isEmpty ? S.of(context).notImported : S.of(context).countUnit(_wallets.length),
+                  style: TextStyle(
+                    color: _wallets.isEmpty ? c.textTertiary : c.success,
+                    fontSize: 11, fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // 钱包列表
+          if (_wallets.isEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                S.of(context).walletImportHint,
+                style: TextStyle(color: c.textPrimary, fontSize: 14,
+                    fontWeight: FontWeight.w500, height: 1.5),
+              ),
+            )
+          else
+            ...(_wallets.map((w) => Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: c.cardGlass,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: c.glassBorder, width: 0.5),
+              ),
+              child: Row(
+                children: [
+                  // 链标识
+                  Container(
+                    width: 28, height: 28,
+                    decoration: BoxDecoration(
+                      color: _chainColor(w.chain).withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(_chainLabel(w.chain), style: TextStyle(
+                      color: _chainColor(w.chain), fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                    )),
+                  ),
+                  const SizedBox(width: 10),
+                  // 名称 + 地址
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Text(w.name, style: TextStyle(
+                            color: c.textPrimary, fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          )),
+                          if (w.isDefault) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: c.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(S.of(context).defaultLabel, style: TextStyle(
+                                color: c.primary, fontSize: 9, fontWeight: FontWeight.w700,
+                              )),
+                            ),
+                          ],
+                        ]),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${w.address.substring(0, 6)}...${w.address.substring(w.address.length - 4)}',
+                          style: TextStyle(color: c.textTertiary, fontSize: 11),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // 操作
+                  if (!w.isDefault)
+                    GestureDetector(
+                      onTap: () => WalletService.instance.setDefault(w.id),
+                      child: Padding(
+                        padding: const EdgeInsets.all(4),
+                        child: Icon(Icons.star_border_rounded,
+                            color: c.textTertiary, size: 18),
                       ),
                     ),
-                  ],
-                ),
+                  GestureDetector(
+                    onTap: () {
+                      Clipboard.setData(ClipboardData(text: w.address));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(S.of(context).addressCopied, style: TextStyle(color: c.textPrimary)),
+                        backgroundColor: c.cardGlass,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 1),
+                      ));
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.copy_rounded, color: c.textTertiary, size: 16),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _confirmDelete(w),
+                    child: Padding(
+                      padding: const EdgeInsets.all(4),
+                      child: Icon(Icons.delete_outline_rounded,
+                          color: c.danger.withValues(alpha: 0.6), size: 16),
+                    ),
+                  ),
+                ],
+              ),
+            ))),
+
+          // 导入按钮
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: _openImport,
+              icon: const Icon(Icons.add_rounded, size: 18),
+              label: Text(
+                _wallets.isEmpty ? S.of(context).importWallet : S.of(context).addWallet,
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: c.primary,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
               ),
             ),
           ),
@@ -1566,265 +611,131 @@ class _WalletManagementPageState extends State<_WalletManagementPage> {
   }
 }
 
-class _WalletManageRow extends StatelessWidget {
-  final UserWallet wallet;
-  final Color chainColor;
-  final String chainShort;
-  final VoidCallback? onSetDefault;
-  final VoidCallback onDelete;
-  const _WalletManageRow({
-    required this.wallet,
-    required this.chainColor,
-    required this.chainShort,
-    required this.onSetDefault,
-    required this.onDelete,
+// ─── Section 标签 ────────────────────────────────────
+class _SectionLabel extends StatelessWidget {
+  final String label;
+  const _SectionLabel({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+
+    return Text(
+      label,
+      style: TextStyle(
+        color: c.textSecondary,
+        fontSize: 12,
+        fontWeight: FontWeight.w600,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+// ─── 设置项 ──────────────────────────────────────────
+class _SettingItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String value;
+  final VoidCallback? onTap;
+  const _SettingItem({
+    required this.icon,
+    required this.title,
+    required this.value,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
-    final addrShort =
-        '${wallet.address.substring(0, 6)}...${wallet.address.substring(wallet.address.length - 4)}';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+        decoration: BoxDecoration(
+          color: c.cardGlass,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: c.glassBorder, width: 0.5),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: c.textSecondary, size: 18),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(title,
+                  style: TextStyle(color: c.textPrimary, fontSize: 14)),
+            ),
+            if (value.isNotEmpty)
+              Text(value,
+                  style: TextStyle(color: c.textSecondary, fontSize: 13)),
+            if (onTap != null) ...[
+              const SizedBox(width: 4),
+              Icon(Icons.chevron_right_rounded,
+                  color: c.textTertiary, size: 18),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── Toggle 项 ───────────────────────────────────────
+class _ToggleItem extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  const _ToggleItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.value,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 6, 12),
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-        border: Border.all(
-          color: const Color(0xFFE5E7EB),
-          width: 0.5,
-        ),
+        color: c.cardGlass,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.glassBorder, width: 0.5),
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [chainColor, chainColor.withValues(alpha: 0.7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              chainShort,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
-              ),
-            ),
-          ),
+          Icon(icon, color: c.textSecondary, size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(children: [
-                  Flexible(
-                    child: Text(
-                      wallet.name,
-                      style: TextStyle(
-                        color: c.textPrimary,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  if (wallet.isDefault) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: chainColor.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        S.of(context).defaultLabel,
-                        style: TextStyle(
-                          color: chainColor,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ],
-                ]),
-                const SizedBox(height: 3),
-                Text(
-                  addrShort,
-                  style: TextStyle(
-                    color: c.textTertiary,
-                    fontSize: 12,
-                    fontFeatures: const [FontFeature.tabularFigures()],
-                  ),
-                ),
+                Text(title,
+                    style:
+                        TextStyle(color: c.textPrimary, fontSize: 14)),
+                Text(subtitle,
+                    style:
+                        TextStyle(color: c.textSecondary, fontSize: 11)),
               ],
             ),
           ),
-          IconButton(
-            iconSize: 16,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(),
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: wallet.address));
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text(S.of(context).addressCopied),
-                behavior: SnackBarBehavior.floating,
-                duration: const Duration(seconds: 1),
-              ));
-            },
-            icon: Icon(Icons.copy_rounded,
-                color: c.textTertiary, size: 16),
-          ),
-          if (onSetDefault != null)
-            IconButton(
-              iconSize: 16,
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.all(6),
-              constraints: const BoxConstraints(),
-              onPressed: onSetDefault,
-              icon: Icon(Icons.star_border_rounded,
-                  color: c.textTertiary, size: 18),
-            ),
-          IconButton(
-            iconSize: 16,
-            visualDensity: VisualDensity.compact,
-            padding: const EdgeInsets.all(6),
-            constraints: const BoxConstraints(),
-            onPressed: onDelete,
-            icon: Icon(Icons.delete_outline_rounded,
-                color: c.danger.withValues(alpha: 0.7), size: 16),
+          Switch(
+            value: value,
+            onChanged: onChanged,
+            activeThumbColor: Colors.white,
+            activeTrackColor: c.primary,
+            inactiveThumbColor: c.textTertiary,
+            inactiveTrackColor: c.surfaceAlt,
           ),
         ],
       ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59 · 未登录:登录/注册引导卡(顶部) — 保留 R59 设计,微调阴影
-// ═══════════════════════════════════════════════════════════════════
-class _LoginPromptCard extends StatelessWidget {
-  const _LoginPromptCard();
-
-  @override
-  Widget build(BuildContext context) {
-    final c = context.colors;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            c.primary.withValues(alpha: 0.12),
-            c.primary.withValues(alpha: 0.04),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: c.primary.withValues(alpha: 0.22), width: 1),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.account_circle_rounded, color: c.primary, size: 24),
-            const SizedBox(width: 8),
-            Text(
-              '欢迎回来',
-              style: TextStyle(
-                color: c.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ]),
-          const SizedBox(height: 8),
-          Text(
-            '登录后解锁 Agent 自动交易、算力充值、推送通知',
-            style: TextStyle(color: c.textSecondary, fontSize: 13, height: 1.5),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    fullscreenDialog: true,
-                    builder: (ctx) => LoginPage(
-                      onLoggedIn: () => Navigator.of(ctx).pop(),
-                      onClose: () => Navigator.of(ctx).pop(),
-                    ),
-                  ),
-                );
-              },
-              style: ElevatedButton.styleFrom(
-                backgroundColor: c.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-                elevation: 0,
-              ),
-              child: const Text('登录 / 注册',
-                  style:
-                      TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// R59.3 · Staggered fade-in 入场动效
-// 每个 section 按 index 延迟 70ms 入场,fade 0→1 + slide-up 6px
-// 280ms easeOutCubic
-// ═══════════════════════════════════════════════════════════════════
-class _StaggeredFadeIn extends StatelessWidget {
-  final int index;
-  final Widget child;
-  const _StaggeredFadeIn({required this.index, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return TweenAnimationBuilder<double>(
-      tween: Tween(begin: 0.0, end: 1.0),
-      duration: Duration(milliseconds: 280 + (index * 70)),
-      curve: Interval(
-        (index * 70) / (280 + index * 70).clamp(1, 10000),
-        1.0,
-        curve: Curves.easeOutCubic,
-      ),
-      builder: (context, t, child_) {
-        return Opacity(
-          opacity: t.clamp(0.0, 1.0),
-          child: Transform.translate(
-            offset: Offset(0, (1 - t) * 6),
-            child: child_,
-          ),
-        );
-      },
-      child: child,
     );
   }
 }

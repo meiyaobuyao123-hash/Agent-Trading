@@ -1,5 +1,17 @@
 # 踩坑记录
 
+## 文档术语易错(2026-05-14)
+- **"18 种策略" = 18 Tool 不是策略**: 实际策略类型自动推断 6 种(smart_money_follow / kol_mention / hot_breakout / hot_score / pump_early / custom)
+- **"4 层 memory" = 3 层 + 反思引擎**: Working/Episodic/Semantic + ReflectionEngine
+- **回测 `max_drawdown_pct`**: 数据底层 daily_lows R60 才加,~1 周回填后才有真值,本期 null
+- **"Agent 工作流"**: 现状是规则反射弧,**没 orchestrator**;真主动工作流(每 N 分钟综合 regime + 仓位 + memory)留 R63+
+
+## R62 HITL 反转
+- R47 P6 buy ≥ $500 semi → R62 全 auto。`SEMI_AUTO_THRESHOLD_USD = float('inf')`
+- pending_semi_auto_trades 路径保留(实施过不删)
+- 风险敞口由 max_position_usd + HR01 + L3($2000) 兜底
+
+
 ## 资金安全 — 不可不审清单(R59 audit 揭露)
 - **local_db._get_conn() autocommit=True 全局 pool**:多步 SQL 必须用 `_Tx` context manager 临时切 autocommit=False(`credit_service.py` 模板)。R57 漂复现过
 - **tx_hash 必须 app 预检 + DB UNIQUE 双防**:RPC re-org / cron 重叠 → 同 tx_hash 双处理。UNIQUE INDEX (chain, chain_tx_hash) WHERE status='confirmed'

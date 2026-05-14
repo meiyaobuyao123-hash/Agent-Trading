@@ -37,9 +37,12 @@ DEFAULT_MAX_POSITION_USD = 5000.0        # 单笔默认上限(策略可覆盖)
 CONSECUTIVE_LOSS_THRESHOLD = 3           # 连续亏损暂停策略
 MAX_DRAWDOWN_PCT_30D = 30.0              # 30 天最大回撤红线
 
-# R47 P6 — HITL 半自动分层
-SEMI_AUTO_THRESHOLD_USD = 500.0          # 单笔 ≥ 此值走半自动(推送 + 倒计时撤销)
-SEMI_AUTO_CANCEL_WINDOW_SEC = 10         # 默认撤销窗口秒数
+# R47 P6 → R62 用户决策:全自动化(撤销 semi 路径)
+# 原 SEMI_AUTO_THRESHOLD_USD = $500 → 阈值改为天文数字,实际禁用半自动
+# 任何 buy 不管金额都直接 auto 发链。撤销窗口失效(没有 pending 行可撤)。
+# 风险:用户大额买入(>$500)失去 10s 后悔药,完全依赖 max_position_usd + 风控硬防线
+SEMI_AUTO_THRESHOLD_USD = float('inf')   # R62: 永远 auto
+SEMI_AUTO_CANCEL_WINDOW_SEC = 10         # 保留常量(若未来某用户想恢复 semi 单独配置)
 
 # ── 内存级 daily 累计追踪(简化版,失败降级允许)─────────────
 
@@ -85,23 +88,27 @@ def decide_automation_level(
     semi_auto_threshold_usd: float = SEMI_AUTO_THRESHOLD_USD,
     cancel_window_sec: int = SEMI_AUTO_CANCEL_WINDOW_SEC,
 ) -> Tuple[str, int]:
-    """R47 P6 — 根据金额返自动化等级 + 撤销窗口。
+    """R47 P6 → R62: 自动化等级决策(R62 改为永远 auto)。
 
     返:
       ("auto", 0)        — 全自动,直接 trade_executor.execute_trade
-      ("semi", N)        — 半自动,N 秒撤销窗口,期间用户可点撤销
+      ("semi", N)        — 半自动,N 秒撤销窗口(R62 后实际触发不到)
       ("manual", 0)      — 完全手动审批(本期不实施,留 R47 P7+)
 
-    规则:
-      side='sell' → 始终 auto(止损/止盈不允许撤销,否则风险敞口失控)
-      amount < $500 → auto
-      amount ≥ $500 → semi (默认 10 秒撤销窗口)
-      amount > strategy.max_position_usd → 由 HR01 拒(7 条硬防线第 1 条已实施)
+    R62 用户决策:取消 buy ≥ $500 走 semi 的逻辑,任何 buy 都 auto。
+    风险敞口仍由 strategy.max_position_usd 硬上限 + HR01 + 用户在 promote_to_live
+    时签的免责声明承担。
+
+    依然保留:
+      side='sell' → auto(止损/止盈,无须等)
+      amount > strategy.max_position_usd → HR01 直接拒(不走到这里)
     """
     if side == "sell":
         return ("auto", 0)
+    # R62: SEMI_AUTO_THRESHOLD_USD=inf,任何 buy 都进 auto
     if amount_usd < semi_auto_threshold_usd:
         return ("auto", 0)
+    # 不会到达这里(inf 阈值);保留逻辑兼容 — 调用方传自定义阈值仍可走 semi
     return ("semi", cancel_window_sec)
 
 

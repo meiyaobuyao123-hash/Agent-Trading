@@ -4,6 +4,20 @@
 
 ---
 
+## 2026-05-14 R62 — 取消 HITL 半自动(buy ≥ $500 → auto)+ 订正 3 个文档错误
+
+**做了什么**:
+1. 订正:"18 种策略" = **18 个 Tool**(策略类型只 6 种自动标签);"4 层 memory" = **3 层 + 反思引擎**
+2. 改 `agent/hitl_router.py:SEMI_AUTO_THRESHOLD_USD = float('inf')` → 任何 buy 全自动
+3. pending_semi_auto_trades 路径保留(R47 P6 代码不删)
+4. 6 金额本地 Python 验证全 auto
+
+**讨论结论**:
+- 用户原话"改为全自动",我留 max_position_usd + HR01 + multi_role L3 兜底
+- 顺带讨论 Agent 工作流 — 实事求是承认无 orchestrator,留 R63+
+
+---
+
 ## 2026-05-13 R59 — Profile 页层级 + 6 条 P0 资金 bug 全修
 
 **做了什么**:Profile 页 UX 优化 + 资深架构师 audit Agent 后端 26 条 punch,修 6 条 P0。

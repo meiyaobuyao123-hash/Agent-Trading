@@ -1,5 +1,29 @@
 # Project Memory — Agent-Trading
 
+## ⚠️ 关键概念订正(2026-05-14)— 之前 memory 写错的 3 件事
+
+| 错的 | 实际 |
+|---|---|
+| "**18 种策略类型**" | ❌ 是 **18 个 Tool**(T01-T18)。策略类型自动推断 **6 种**(smart_money_follow/kol_mention/hot_breakout/hot_score/pump_early/custom) |
+| "**4 层 memory**" | ❌ 是 **3 层 + 1 反思引擎**:Working(短期 24h) + Episodic(中期具体经历) + Semantic(长期抽象规则) + ReflectionEngine(每天 20:00 提炼) |
+| "max_drawdown 算" | ⚠️ token_performance 没 daily_lows,R60 加字段 + writer,~1 周数据回填够才能出真值 |
+
+## ⚠️ 上线状态(2026-05-14 R62 — 取消 HITL 半自动)
+
+**R62**(2026-05-14):用户决策,**取消 buy ≥ $500 半自动**,任何 buy 全自动直接发链。
+
+修改:
+- `agent/hitl_router.py` `SEMI_AUTO_THRESHOLD_USD = 500.0` → **`float('inf')`**
+- `decide_automation_level()` 逻辑保留兼容(可传自定义阈值)
+- pending_semi_auto_trades 表 / 1s cron / cancel endpoint **保留**(R47 P6 完整实施,以后想恢复不用重做)
+
+风险敞口承担:
+- 用户失去 10s 后悔药
+- 上限 = `strategy.max_position_usd`(默认 $500,可调 $5000)+ HR01 硬防线
+- $2000 仍走 multi_role L3 Opus 辩论
+
+本地 Python 验证 6 金额($100/$499/$500/$1000/$5000/$10000)全 `(auto, 0)` ✅
+
 ## ⚠️ 上线状态(2026-05-13 R59 — Profile 页层级 + 6 条 P0 资金 bug 全修)
 
 **R59 — Profile UX + 资深架构师 P0 audit 修**(2026-05-13):

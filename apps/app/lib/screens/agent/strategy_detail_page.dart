@@ -629,27 +629,100 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
                   style: TextStyle(color: c.textTertiary, fontSize: 12)),
             )
           : (_backtestResult!['trigger_count'] ?? _backtestResult!['triggers'] ?? 0) > 0
-              ? Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    _statItem(c, '触发', '${_backtestResult!['trigger_count'] ?? _backtestResult!['triggers'] ?? 0}次', c.textPrimary),
-                    _statItem(c, '胜率',
-                        '${((_backtestResult!['simulated_win_rate'] ?? _backtestResult!['win_rate'] ?? 0) as num).toDouble() * 100 ~/ 1}%',
-                        ((_backtestResult!['simulated_win_rate'] ?? _backtestResult!['win_rate'] ?? 0) as num).toDouble() >= 0.5 ? c.success : c.danger),
-                    _statItem(c, '收益',
-                        '${((_backtestResult!['avg_return_pct'] ?? _backtestResult!['total_pnl'] ?? 0) as num).toDouble() ~/ 1}%',
-                        ((_backtestResult!['avg_return_pct'] ?? _backtestResult!['total_pnl'] ?? 0) as num).toDouble() >= 0 ? c.success : c.danger),
-                  ]),
-                  if (_backtestResult!['sample_triggers'] != null) ...[
-                    const SizedBox(height: 8),
-                    Text('样本:${(_backtestResult!['sample_triggers'] as List).take(3).map((t) => t['token'] ?? '').join(', ')}',
-                        style: TextStyle(color: c.textTertiary, fontSize: 11)),
-                  ],
-                ])
+              ? _buildBacktestResultBody(c)
               : Padding(
                   padding: const EdgeInsets.symmetric(vertical: 6),
                   child: Text('过去 ${_backtestResult!['period_days'] ?? 7} 天未触发任何信号',
                       style: TextStyle(color: c.textTertiary, fontSize: 13)),
                 ),
+    );
+  }
+
+  // R60: 回测结果展示 — 主显 net(扣手续费),折叠区显 gross(对比)
+  Widget _buildBacktestResultBody(AppColorScheme c) {
+    final r = _backtestResult!;
+    final triggers = (r['trigger_count'] ?? r['triggers'] ?? 0) as num;
+    final netWinRate = ((r['simulated_win_rate'] ?? r['win_rate'] ?? 0) as num).toDouble();
+    final netReturn = ((r['avg_return_pct'] ?? r['total_pnl'] ?? 0) as num).toDouble();
+    final grossWinRate = (r['gross_win_rate'] as num?)?.toDouble();
+    final grossReturn = (r['gross_return_pct'] as num?)?.toDouble();
+    final feeAssum = r['fee_assumptions'] as Map<String, dynamic>?;
+    final maxDdStatus = r['max_drawdown_status'] as String?;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 主显:net 胜率 + net 收益(扣完手续费,诚实)
+        Row(children: [
+          _statItem(c, '触发', '${triggers.toInt()}次', c.textPrimary),
+          _statItem(c, '胜率', '${(netWinRate * 100).toInt()}%',
+              netWinRate >= 0.5 ? c.success : c.danger),
+          _statItem(c, '净收益', '${netReturn.toInt()}%',
+              netReturn >= 0 ? c.success : c.danger),
+        ]),
+
+        // R60: 最大回撤(数据收集中 — 不展示假 0)
+        if (maxDdStatus == 'collecting') ...[
+          const SizedBox(height: 6),
+          Row(children: [
+            Icon(Icons.info_outline_rounded, size: 11, color: c.textTertiary),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                '最大回撤:数据收集中(~1 周后启用)',
+                style: TextStyle(color: c.textTertiary, fontSize: 11),
+              ),
+            ),
+          ]),
+        ],
+
+        // R60: 手续费假设说明(灰小字)
+        if (feeAssum != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+            decoration: BoxDecoration(
+              color: c.surface.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: c.glassBorder,
+                width: 0.5,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Icon(Icons.calculate_outlined, size: 11, color: c.textTertiary),
+                  const SizedBox(width: 4),
+                  Text(
+                    '已扣 ${feeAssum['fee_single_pct']}%/单 手续费 + 滑点'
+                    '(往返 ${feeAssum['fee_round_trip_pct']}%,'
+                    '${feeAssum['source'] == 'user' ? '用户设定' : '${feeAssum['chain']} 默认'})',
+                    style: TextStyle(
+                      color: c.textSecondary,
+                      fontSize: 10.5,
+                    ),
+                  ),
+                ]),
+                if (grossWinRate != null && grossReturn != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '不扣手续费对比: 胜率 ${(grossWinRate * 100).toInt()}% / 涨幅 ${grossReturn.toInt()}%',
+                    style: TextStyle(color: c.textTertiary, fontSize: 10.5),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+
+        if (r['sample_triggers'] != null) ...[
+          const SizedBox(height: 8),
+          Text('样本:${(r['sample_triggers'] as List).take(3).map((t) => t['token'] ?? '').join(', ')}',
+              style: TextStyle(color: c.textTertiary, fontSize: 11)),
+        ],
+      ],
     );
   }
 

@@ -1173,6 +1173,8 @@ async def backtest(
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # R60: 用户策略 → 拉 risk_params 给 backtester 算手续费
+    risk_params: Optional[Dict[str, Any]] = None
     if strategy_id:
         # 从 DB 查策略 spec
         # R59 P0 fix: 加 owner check,防止任何登录用户回测别人的策略
@@ -1189,6 +1191,14 @@ async def backtest(
                     "actions": res.data.get("actions", []),
                     "data_sources": res.data.get("data_sources", []),
                 }
+                # R60: 拉 max_slippage_pct(用户自定义手续费假设)— 从顶级字段
+                # 或 risk_params JSON 字段(R42 P0.5 写入)
+                rp = res.data.get("risk_params") or {}
+                if not isinstance(rp, dict):
+                    rp = {}
+                msl = res.data.get("max_slippage_pct") or rp.get("max_slippage_pct")
+                if msl is not None:
+                    risk_params = {"max_slippage_pct": float(msl)}
         except HTTPException:
             raise
         except Exception as e:
@@ -1207,7 +1217,7 @@ async def backtest(
             if spec is None:
                 return {"error": "LLM 解析失败", "trigger_count": 0}
 
-    result = await backtest_strategy(spec, days=days)
+    result = await backtest_strategy(spec, days=days, risk_params=risk_params)
     return result
 
 

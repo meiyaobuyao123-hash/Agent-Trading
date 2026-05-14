@@ -188,6 +188,19 @@ WIN_RATE_HOT_D3_PCT = 20        # 热币：D3 涨幅 ≥ 20% 算 hit
 WIN_RATE_BTCETH_PNL_PCT = 2     # BTC/ETH：PnL ≥ 2% 算 hit
 WIN_RATE_AGENT_BREAK_EVEN = 0   # Agent 策略：PnL ≥ 0% 就算 win
 
+# ── R60: 回测扣手续费用 — 各链 DEX 单边综合成本 ────────────────
+# 单边 = 进单 OR 出单(LP fee + 平均滑点 + Gas 摊销)
+# 往返 = 进 + 出 = single × 2
+# 用户在 strategy.risk_params.max_slippage_pct 改过 → 优先用户值
+# 保守估计:实盘可能偏离 0.2%-2%(取决于池子流动性 / 单笔金额)
+DEX_FEE_PCT_SINGLE = {
+    "solana": 1.0,    # Jupiter LP 0.85% + 平均滑点 0.15%(meme 币偏保守)
+    "eth":    0.8,    # Uniswap V3 0.3% + gas + slippage
+    "base":   0.6,    # Uniswap V3 0.3% + Base gas 极低 + slippage
+    "bsc":    0.7,    # PancakeSwap 0.25% + BSC gas + slippage
+}
+DEX_FEE_PCT_DEFAULT_SINGLE = 1.0  # 未知链 fallback
+
 # ── PRD-009: 多 DEX 执行路由 ─────────────────────────────────────
 # Jupiter (SOL) — 免费，无需 API Key
 JUPITER_BASE_URL = "https://quote-api.jup.ag/v6"

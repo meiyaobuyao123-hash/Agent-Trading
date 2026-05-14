@@ -26,6 +26,7 @@ _evaluator = StrategyEvaluator()
 async def backtest_strategy(
     strategy_spec: Dict[str, Any],
     days: int = 7,
+    risk_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     对策略规范进行历史回测
@@ -33,9 +34,24 @@ async def backtest_strategy(
     参数:
         strategy_spec: StrategySpec（含 conditions, filters, actions）
         days: 回测天数（默认 7）
+        risk_params: 策略风控参数(R60 — 含 max_slippage_pct 用作手续费假设)
+                     若 None,用 config.DEX_FEE_PCT_SINGLE 各链默认
 
     返回:
-        {trigger_count, simulated_win_rate, avg_return_pct, max_drawdown_pct, sample_triggers}
+        R60 新格式:
+        {
+            trigger_count,
+            simulated_win_rate,       # 扣手续费后(net)
+            gross_win_rate,           # 不扣手续费(对比)
+            avg_return_pct,           # 扣手续费后(net)
+            gross_return_pct,         # 不扣手续费
+            fee_assumptions: {fee_single_pct, fee_round_trip_pct, source},
+            max_drawdown_pct,         # 暂返 null,Phase B 加 daily_lows 后启用
+            max_drawdown_status,      # "collecting" / "ready"
+            sample_triggers,
+            period_days,
+            data_sources,
+        }
     """
     db = get_db()
     cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -88,38 +104,98 @@ async def backtest_strategy(
                 if len(sample_triggers) < 10:
                     sample_triggers.append(trigger_info)
 
-    # 模拟收益（PRD-003: 用 D3 涨幅判断 win，区分 pump/hot 场景）
-    from config import WIN_RATE_PUMP_D3_PCT, WIN_RATE_HOT_D3_PCT
-    win_count = 0
-    returns = []
+    # ── R60: 模拟收益 + 扣手续费 + win 判定 ─────────────────────
+    # 双轨:gross(不扣)+ net(扣完手续费),给用户对比看到真实净收益
+    from config import (
+        WIN_RATE_PUMP_D3_PCT,
+        WIN_RATE_HOT_D3_PCT,
+        DEX_FEE_PCT_SINGLE,
+        DEX_FEE_PCT_DEFAULT_SINGLE,
+    )
+
+    # 判断 fee_single 来源:用户 risk_params.max_slippage_pct 覆盖,否则用 chain 默认
+    user_slippage = (risk_params or {}).get("max_slippage_pct")
+    fee_source = "user" if user_slippage and user_slippage > 0 else "default"
+    # 用第一个 trigger 的 chain 决定默认费率(策略一般固定链)
+    first_chain = triggers[0].get("chain", "") if triggers else "solana"
+    if fee_source == "user":
+        # 用户传的 max_slippage_pct 单位是 0.01 = 1%(R47 P4 规范)
+        fee_single_pct = float(user_slippage) * 100
+    else:
+        fee_single_pct = DEX_FEE_PCT_SINGLE.get(
+            first_chain, DEX_FEE_PCT_DEFAULT_SINGLE)
+    fee_single = fee_single_pct / 100.0
+    fee_round_trip_pct = fee_single_pct * 2
+    fee_round_trip = fee_single * 2
+
+    gross_win_count = 0
+    net_win_count = 0
+    gross_returns = []
+    net_returns = []
+
     for t in triggers:
-        perf = await _get_token_performance(db, t.get("chain", ""), t.get("token", ""))
-        if perf:
-            best_pct = perf.get("best_pct", 0)
-            returns.append(best_pct / 100 if best_pct else 0)
-            # 用 D3 涨幅判断 win
-            dh = perf.get("daily_highs") or {}
-            d3 = dh.get("D3") or dh.get("3") or {}
-            d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
-            source = perf.get("source", "")
-            if source in ("pump", "pump_live"):
-                is_win = d3_pct >= WIN_RATE_PUMP_D3_PCT
-            elif source in ("hot", "hot_live"):
-                is_win = d3_pct >= WIN_RATE_HOT_D3_PCT
-            else:
-                is_win = best_pct >= 0  # 默认不亏就算 win
-            if is_win:
-                win_count += 1
+        perf = await _get_token_performance(
+            db, t.get("chain", ""), t.get("token", ""))
+        if not perf:
+            continue
+        best_pct = perf.get("best_pct", 0) or 0
+        gross_return = best_pct / 100  # 整段最高涨幅(理想出场)
+        # 扣手续费:入场实付 = price × (1+fee_single);出场实收 = price × (1-fee_single)
+        # net 收益 = (1+gross) × (1-fee_rt) - 1 ≈ gross - fee_rt(gross 小时)
+        net_return = (1 + gross_return) * (1 - fee_round_trip) - 1
+        gross_returns.append(gross_return)
+        net_returns.append(net_return)
+
+        # win 判定:用 D3 涨幅(扣手续费前后两个版本)
+        dh = perf.get("daily_highs") or {}
+        d3 = dh.get("D3") or dh.get("3") or {}
+        d3_pct = d3.get("pct", 0) if isinstance(d3, dict) else 0
+        d3_gross = d3_pct / 100
+        d3_net = (1 + d3_gross) * (1 - fee_round_trip) - 1
+
+        source = perf.get("source", "")
+        if source in ("pump", "pump_live"):
+            gross_thresh = WIN_RATE_PUMP_D3_PCT / 100
+        elif source in ("hot", "hot_live"):
+            gross_thresh = WIN_RATE_HOT_D3_PCT / 100
+        else:
+            gross_thresh = 0.0  # 默认不亏算 win
+
+        if d3_gross >= gross_thresh:
+            gross_win_count += 1
+        if d3_net >= gross_thresh:
+            net_win_count += 1
 
     total = len(triggers)
-    win_rate = win_count / total if total > 0 else 0
-    avg_return = sum(returns) / len(returns) * 100 if returns else 0
+    gross_win_rate = gross_win_count / total if total > 0 else 0
+    net_win_rate = net_win_count / total if total > 0 else 0
+    gross_avg_return = (
+        sum(gross_returns) / len(gross_returns) * 100
+        if gross_returns else 0
+    )
+    net_avg_return = (
+        sum(net_returns) / len(net_returns) * 100
+        if net_returns else 0
+    )
 
     return {
         "trigger_count": total,
-        "simulated_win_rate": round(win_rate, 4),
-        "avg_return_pct": round(avg_return, 2),
-        "max_drawdown_pct": 0,  # 简化版不计算
+        # 默认显示 net(扣完手续费,诚实)
+        "simulated_win_rate": round(net_win_rate, 4),
+        "avg_return_pct": round(net_avg_return, 2),
+        # 对比版(不扣手续费),让用户能 toggle 看
+        "gross_win_rate": round(gross_win_rate, 4),
+        "gross_return_pct": round(gross_avg_return, 2),
+        # 手续费假设
+        "fee_assumptions": {
+            "fee_single_pct": round(fee_single_pct, 2),
+            "fee_round_trip_pct": round(fee_round_trip_pct, 2),
+            "chain": first_chain,
+            "source": fee_source,  # "user" or "default"
+        },
+        # R60 Phase B:max_drawdown 数据收集中
+        "max_drawdown_pct": None,
+        "max_drawdown_status": "collecting",
         "sample_triggers": sample_triggers,
         "period_days": days,
         "data_sources": list(data_sources),

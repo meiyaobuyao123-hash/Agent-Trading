@@ -327,22 +327,40 @@ def _apply_price_update(row: dict, current_price: float) -> bool:
         except Exception:
             daily_highs = {}
 
+    # R60: 同时更新 daily_lows(每日最低跌幅 — 算回测最大回撤用)
+    daily_lows = row.get("daily_lows") or {}
+    if isinstance(daily_lows, str):
+        try:
+            daily_lows = json.loads(daily_lows)
+        except Exception:
+            daily_lows = {}
+
     # 热币用短窗口，pump 用长窗口
     max_days = TRACK_DAYS_HOT if row.get("source") == "hot_live" else TRACK_DAYS
 
     new_high = False
     if 0 <= day_number <= max_days:
         day_key = f"D{day_number}"
-        existing = daily_highs.get(day_key)
-        if existing is None or current_price > float(existing.get("high", 0)):
+        # daily_highs:取每日**最高**价
+        existing_high = daily_highs.get(day_key)
+        if existing_high is None or current_price > float(existing_high.get("high", 0)):
             daily_highs[day_key] = {
                 "high": round(current_price, 10),
                 "pct": round(current_pct, 2),
                 "at": datetime.now(timezone.utc).isoformat(),
             }
             new_high = True
+        # R60 daily_lows:取每日**最低**价(回测 max_drawdown 用)
+        existing_low = daily_lows.get(day_key)
+        if existing_low is None or current_price < float(existing_low.get("low", 1e30)):
+            daily_lows[day_key] = {
+                "low": round(current_price, 10),
+                "pct": round(current_pct, 2),
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
 
     row["daily_highs"] = daily_highs
+    row["daily_lows"] = daily_lows  # R60
 
     # 全周期最佳
     best_price = float(row.get("best_price") or 0)
@@ -395,6 +413,14 @@ def _load_cache():
             except Exception:
                 dh = {}
         r["daily_highs"] = dh
+        # R60:同样保证 daily_lows 是 dict
+        dl = r.get("daily_lows") or {}
+        if isinstance(dl, str):
+            try:
+                dl = json.loads(dl)
+            except Exception:
+                dl = {}
+        r["daily_lows"] = dl
         _cache[key] = r
     log.info(f"📊 缓存加载: {len(_cache)} 条追踪行 (hot={sum(1 for v in _cache.values() if v['source']=='hot')}, pump={sum(1 for v in _cache.values() if v['source']=='pump')})")
 

@@ -24,6 +24,8 @@ async def test_fee_default_solana():
     # Mock DB + evaluator + token_performance
     with patch("agent.backtester.get_db") as mock_db, \
          patch("agent.backtester._evaluator") as mock_eval, \
+         patch("agent.backtester.extract_data_sources",
+               return_value=["hot_coins"]), \
          patch("agent.backtester._get_token_performance",
                new_callable=AsyncMock) as mock_perf, \
          patch("agent.backtester._load_hot_coin_history",
@@ -78,6 +80,8 @@ async def test_user_slippage_override():
 
     with patch("agent.backtester.get_db"), \
          patch("agent.backtester._evaluator") as mock_eval, \
+         patch("agent.backtester.extract_data_sources",
+               return_value=["hot_coins"]), \
          patch("agent.backtester._get_token_performance",
                new_callable=AsyncMock) as mock_perf, \
          patch("agent.backtester._load_hot_coin_history",
@@ -85,7 +89,7 @@ async def test_user_slippage_override():
 
         mock_hist.return_value = [
             DataEvent(
-                source="hot_coins", data={}, timestamp="",
+                source="hot_coins", data={}, timestamp="2026-05-14T00:00:00Z",
                 chain="eth", token_address="0xabc", token_name="T",
             )
         ]
@@ -112,13 +116,15 @@ async def test_net_lt_gross():
 
     with patch("agent.backtester.get_db"), \
          patch("agent.backtester._evaluator") as mock_eval, \
+         patch("agent.backtester.extract_data_sources",
+               return_value=["hot_coins"]), \
          patch("agent.backtester._get_token_performance",
                new_callable=AsyncMock) as mock_perf, \
          patch("agent.backtester._load_hot_coin_history",
                new_callable=AsyncMock) as mock_hist:
 
         mock_hist.return_value = [
-            DataEvent(source="hot_coins", data={}, timestamp="",
+            DataEvent(source="hot_coins", data={}, timestamp="2026-05-14T00:00:00Z",
                       chain="solana", token_address="a", token_name="A")
         ]
         mock_eval.evaluate.return_value = [{"strategy_id": "backtest"}]
@@ -147,13 +153,15 @@ async def test_win_flip_after_fee():
 
     with patch("agent.backtester.get_db"), \
          patch("agent.backtester._evaluator") as mock_eval, \
+         patch("agent.backtester.extract_data_sources",
+               return_value=["hot_coins"]), \
          patch("agent.backtester._get_token_performance",
                new_callable=AsyncMock) as mock_perf, \
          patch("agent.backtester._load_hot_coin_history",
                new_callable=AsyncMock) as mock_hist:
 
         mock_hist.return_value = [
-            DataEvent(source="hot_coins", data={}, timestamp="",
+            DataEvent(source="hot_coins", data={}, timestamp="2026-05-14T00:00:00Z",
                       chain="solana", token_address="a", token_name="A")
         ]
         mock_eval.evaluate.return_value = [{"strategy_id": "backtest"}]

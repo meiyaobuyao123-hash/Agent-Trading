@@ -122,30 +122,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 1. Premium Hero(融合身份+算力)
-        _StaggeredFadeIn(
+        // R59.5 — 1. Apple Cash 风账户 Header(头像 + name + email 居中,无卡背景)
+        const _StaggeredFadeIn(
           index: 0,
+          child: _AccountHeader(),
+        ),
+        // 2. 算力余额卡 — 独立 light mint 卡(回到 R59.0 视觉风格)
+        _StaggeredFadeIn(
+          index: 1,
           child: const Padding(
-            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: _HeroAccountCard(),
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: _HeroCreditCard(),
           ),
         ),
         const SizedBox(height: 24),
-        // 2. 我的钱包 single-card hero
+        // 3. 我的钱包 single-card hero
         _StaggeredFadeIn(
-          index: 1,
+          index: 2,
           child: const _WalletSection(),
         ),
         const SizedBox(height: 24),
-        // 3. 外观/语言/关于 sections — staggered
+        // 4. 外观/语言/关于 sections — staggered
         for (int i = 0; i < tailCount; i++)
           tailCount > 0 && commonTail[i] is _GroupedSection
-              ? _StaggeredFadeIn(index: 2 + i, child: commonTail[i])
+              ? _StaggeredFadeIn(index: 3 + i, child: commonTail[i])
               : commonTail[i],
-        // 4. 底部登出
+        // 5. 底部登出
         const SizedBox(height: 16),
         _StaggeredFadeIn(
-          index: 2 + tailCount,
+          index: 3 + tailCount,
           child: _DangerLogoutCard(onTap: _confirmLogout),
         ),
         const SizedBox(height: 28),
@@ -322,248 +327,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// R59.2 · Premium Hero Card — 融合身份 + 算力,深紫 radial gradient
-//         + Liquid Glass 高光层 + specular highlights + 微光粒子
+// R59.5 · 顶部账户 Header(Apple Cash 风,居中无卡背景)
+// 64px 圆形 gradient 头像 + 居中 name + email,通透不抢戏
 // ═══════════════════════════════════════════════════════════════════
-class _HeroAccountCard extends StatelessWidget {
-  const _HeroAccountCard();
+class _AccountHeader extends StatelessWidget {
+  const _AccountHeader();
 
   @override
   Widget build(BuildContext context) {
+    final c = context.colors;
     final email = AuthService.instance.email ?? '';
     final displayName = AuthService.instance.displayName;
     final initial = email.isNotEmpty ? email[0].toUpperCase() : '?';
+    final nameText = displayName != null && displayName.isNotEmpty
+        ? displayName
+        : email.split('@').first;
 
-    final balance = CreditService.instance.balance;
-    final balanceUsd = balance?.balanceUsd ?? 0.0;
-    final isLow = balance != null && balanceUsd < 1.0;
-    final isCritical = balance != null && balanceUsd < 0.01;
-    final balanceStr = balanceUsd < 0.01
-        ? balanceUsd.toStringAsFixed(4)
-        : balanceUsd.toStringAsFixed(2);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Stack(
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── 底层:深紫 → 深蓝 radial gradient(R59.3 简化两段)──
+          // 64px 圆形头像 — mint→aqua gradient
           Container(
-            decoration: const BoxDecoration(
-              gradient: RadialGradient(
-                center: Alignment(0.85, -0.5),
-                radius: 1.6,
-                colors: [
-                  Color(0xFF2A1F5C),  // 深紫
-                  Color(0xFF0F1729),  // 深蓝
-                ],
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFF34D399), Color(0xFF06B6D4)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ),
-          ),
-          // ── Liquid Glass 高光层 ──
-          Positioned.fill(
-            child: CustomPaint(
-              painter: _LiquidGlassHighlightPainter(),
-            ),
-          ),
-          // ── 顶层内容 ──
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 身份段
-                Row(
-                  children: [
-                    Container(
-                      width: 48,
-                      height: 48,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFF34D399), Color(0xFF06B6D4)],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF06B6D4)
-                                .withValues(alpha: 0.4),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName != null && displayName.isNotEmpty
-                                ? displayName
-                                : email.split('@').first,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: -0.2,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            email,
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.5),
-                              fontSize: 11,
-                              letterSpacing: 0.1,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    // R59.3:删 PRO badge(fake data),留白
-                  ],
-                ),
-                const SizedBox(height: 22),
-                // 渐变 divider
-                Container(
-                  height: 1,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [
-                        Colors.white.withValues(alpha: 0.0),
-                        Colors.white.withValues(alpha: 0.12),
-                        Colors.white.withValues(alpha: 0.0),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 18),
-                // 算力段
-                Row(
-                  children: [
-                    Icon(
-                      Icons.bolt_rounded,
-                      size: 13,
-                      color: const Color(0xFF34D399)
-                          .withValues(alpha: 0.9),
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      '算力余额',
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.6),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                        letterSpacing: 0.6,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (isCritical)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 7, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFEF4444)
-                              .withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: const Color(0xFFEF4444)
-                                .withValues(alpha: 0.4),
-                            width: 0.5,
-                          ),
-                        ),
-                        child: const Text(
-                          '余额不足',
-                          style: TextStyle(
-                            color: Color(0xFFFCA5A5),
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    // R59.3:纯白大数字(去 ShaderMask 渐变)— 反差最大可读性最好
-                    Text(
-                      '\$$balanceStr',
-                      style: TextStyle(
-                        color: isLow
-                            ? const Color(0xFFFCA5A5)
-                            : Colors.white,
-                        fontSize: 40,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -1.2,
-                        height: 0.95,
-                        fontFeatures: const [FontFeature.tabularFigures()],
-                      ),
-                    ),
-                    const SizedBox(width: 7),
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 5),
-                      child: Text(
-                        'USD',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.4),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.6,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                // 2 action buttons
-                Row(
-                  children: [
-                    Expanded(
-                      child: _HeroActionButton(
-                        label: isLow ? '立即充值' : '充值',
-                        icon: Icons.add_rounded,
-                        primary: true,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const CreditPage()),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _HeroActionButton(
-                        label: '流水',
-                        icon: Icons.receipt_long_outlined,
-                        primary: false,
-                        onTap: () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                              builder: (_) => const CreditPage()),
-                        ),
-                      ),
-                    ),
-                  ],
+              borderRadius: BorderRadius.circular(32),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF06B6D4).withValues(alpha: 0.25),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
                 ),
               ],
             ),
+            alignment: Alignment.center,
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 26,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            nameText,
+            style: TextStyle(
+              color: c.textPrimary,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              letterSpacing: -0.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            email,
+            style: TextStyle(
+              color: c.textSecondary,
+              fontSize: 12.5,
+              letterSpacing: 0.1,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -572,83 +410,169 @@ class _HeroAccountCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// R59.2 · Liquid Glass 高光层(specular highlights + edge bleed + 粒子)
-// 静态渲染,shouldRepaint=false,低端设备无性能担忧
+// R59.5 · 算力余额卡 — 浅 mint gradient + 黑字大数字(回到 light 风格)
+// 跟 App 整体 light 主题统一,不再用深色 Liquid Glass
 // ═══════════════════════════════════════════════════════════════════
-class _LiquidGlassHighlightPainter extends CustomPainter {
+class _HeroCreditCard extends StatelessWidget {
+  const _HeroCreditCard();
+
   @override
-  void paint(Canvas canvas, Size size) {
-    // 1. Specular highlight 椭圆 — 右上角光源(R59.3:alpha 0.22 → 0.16)
-    final specularRect = Rect.fromCircle(
-      center: Offset(size.width * 0.85, size.height * -0.1),
-      radius: size.width * 0.6,
-    );
-    final specularPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.white.withValues(alpha: 0.16),
-          Colors.white.withValues(alpha: 0.0),
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final balance = CreditService.instance.balance;
+    final balanceUsd = balance?.balanceUsd ?? 0.0;
+    final isLow = balance != null && balanceUsd < 1.0;
+    final isCritical = balance != null && balanceUsd < 0.01;
+    final balanceStr = balanceUsd < 0.01
+        ? balanceUsd.toStringAsFixed(4)
+        : balanceUsd.toStringAsFixed(2);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isLow
+              ? const [Color(0xFFFEF2F2), Color(0xFFFFF7ED)]
+              : const [Color(0xFFECFDF5), Color(0xFFF0FDFA)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: isLow
+              ? const Color(0xFFEF4444).withValues(alpha: 0.16)
+              : const Color(0xFF10B981).withValues(alpha: 0.18),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: (isLow
+                    ? const Color(0xFFEF4444)
+                    : const Color(0xFF10B981))
+                .withValues(alpha: 0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
         ],
-        stops: const [0.0, 1.0],
-      ).createShader(specularRect);
-    canvas.drawOval(specularRect, specularPaint);
-
-    // R59.3:删 cyan glow(跟 specular 重复,克制)
-    // 2. 静态微光粒子(12 个,克制版)
-    final particlePaint = Paint()..style = PaintingStyle.fill;
-    const positions = <List<double>>[
-      [0.18, 0.22, 1.4, 0.10],   // [xRatio, yRatio, radius, alpha]
-      [0.42, 0.38, 1.6, 0.12],
-      [0.65, 0.18, 1.2, 0.09],
-      [0.78, 0.55, 1.8, 0.11],
-      [0.32, 0.72, 1.5, 0.10],
-      [0.55, 0.88, 1.3, 0.08],
-      [0.88, 0.72, 1.4, 0.10],
-      [0.12, 0.58, 1.6, 0.09],
-      [0.48, 0.55, 1.5, 0.10],
-      [0.72, 0.32, 1.4, 0.11],
-      [0.22, 0.45, 1.2, 0.09],
-      [0.92, 0.45, 1.7, 0.10],
-    ];
-    for (final p in positions) {
-      particlePaint.color = Colors.white.withValues(alpha: p[3]);
-      canvas.drawCircle(
-        Offset(size.width * p[0], size.height * p[1]),
-        p[2],
-        particlePaint,
-      );
-    }
-
-    // 3. Edge bleed — 顶部 highlight gradient
-    final topGlow = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          Colors.white.withValues(alpha: 0.14),
-          Colors.white.withValues(alpha: 0.0),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Label 行
+          Row(
+            children: [
+              Icon(
+                Icons.bolt_rounded,
+                size: 16,
+                color: isLow
+                    ? const Color(0xFFEF4444)
+                    : const Color(0xFF10B981),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '算力余额',
+                style: TextStyle(
+                  color: c.textSecondary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const Spacer(),
+              if (isCritical)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color:
+                        const Color(0xFFEF4444).withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Text(
+                    '余额不足',
+                    style: TextStyle(
+                      color: Color(0xFFEF4444),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.3,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // 大数字
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: [
+              Text(
+                '\$$balanceStr',
+                style: TextStyle(
+                  color: isLow
+                      ? const Color(0xFFEF4444)
+                      : c.textPrimary,
+                  fontSize: 40,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -1.2,
+                  height: 0.95,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 7),
+              Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Text(
+                  'USD',
+                  style: TextStyle(
+                    color: c.textTertiary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          // 2 buttons — 充值 mint solid / 流水 mint outline
+          Row(
+            children: [
+              Expanded(
+                child: _HeroActionButton(
+                  label: isLow ? '立即充值' : '充值',
+                  icon: Icons.add_rounded,
+                  primary: true,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const CreditPage()),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _HeroActionButton(
+                  label: '流水',
+                  icon: Icons.receipt_long_outlined,
+                  primary: false,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const CreditPage()),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
-        stops: const [0.0, 0.18],
-      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
-    canvas.drawRect(
-        Rect.fromLTWH(0, 0, size.width, size.height), topGlow);
-
-    // 4. Inner highlight 1px stroke 顶部
-    final stroke = Paint()
-      ..color = Colors.white.withValues(alpha: 0.16)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    canvas.drawLine(
-      const Offset(20, 0.4),
-      Offset(size.width - 20, 0.4),
-      stroke,
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// R59.5 · 充值/流水 action button — light 版
+// 充值 = mint solid + 白字  /  流水 = 白底 + mint outline + mint 字
+// ═══════════════════════════════════════════════════════════════════
 class _HeroActionButton extends StatelessWidget {
   final String label;
   final IconData icon;
@@ -663,39 +587,37 @@ class _HeroActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const mint = Color(0xFF10B981);
+    const mintDark = Color(0xFF059669);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(11),
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          height: 44,
           decoration: BoxDecoration(
             gradient: primary
                 ? const LinearGradient(
-                    colors: [Color(0xFF34D399), Color(0xFF10B981)],
+                    colors: [Color(0xFF34D399), mint],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   )
-                : LinearGradient(
-                    colors: [
-                      Colors.white.withValues(alpha: 0.10),
-                      Colors.white.withValues(alpha: 0.04),
-                    ],
-                  ),
+                : null,
+            color: primary ? null : Colors.white,
             borderRadius: BorderRadius.circular(11),
             border: primary
                 ? null
                 : Border.all(
-                    color: Colors.white.withValues(alpha: 0.18),
-                    width: 0.8,
+                    color: mint.withValues(alpha: 0.35),
+                    width: 1,
                   ),
             boxShadow: primary
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF10B981).withValues(alpha: 0.22),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
+                      color: mint.withValues(alpha: 0.20),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
                     ),
                   ]
                 : null,
@@ -705,15 +627,15 @@ class _HeroActionButton extends StatelessWidget {
             children: [
               Icon(
                 icon,
-                size: 15,
-                color: Colors.white,
+                size: 16,
+                color: primary ? Colors.white : mintDark,
               ),
               const SizedBox(width: 5),
               Text(
                 label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 13.5,
+                style: TextStyle(
+                  color: primary ? Colors.white : mintDark,
+                  fontSize: 14,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.2,
                 ),

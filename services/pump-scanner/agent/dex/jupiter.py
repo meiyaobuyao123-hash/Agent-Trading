@@ -125,6 +125,8 @@ class JupiterDex:
         quote_response: Dict[str, Any],
         user_public_key: str,
         wrap_unwrap_sol: bool = True,
+        priority_fee_sol: float = 0.0,
+        jito_tip_sol: float = 0.0,
     ) -> Dict[str, Any]:
         """
         获取 Jupiter swap 交易（base64 编码）
@@ -133,6 +135,8 @@ class JupiterDex:
             quote_response: get_quote 返回的 raw 数据
             user_public_key: 用户 Solana 公钥地址
             wrap_unwrap_sol: 是否自动 wrap/unwrap SOL
+            priority_fee_sol: R64 — Solana 优先费（lamports = SOL × 1e9）
+            jito_tip_sol: R64 — Jito tip（走私有 mempool 防 MEV）
 
         Returns:
             {"swapTransaction": "<base64>", ...} 或 {"error": "..."}
@@ -141,11 +145,22 @@ class JupiterDex:
             session = await self._get_session()
             url = f"{JUPITER_BASE}/swap"
 
-            payload = {
+            payload: Dict[str, Any] = {
                 "quoteResponse": quote_response,
                 "userPublicKey": user_public_key,
                 "wrapAndUnwrapSol": wrap_unwrap_sol,
+                # R64 — 让 Jupiter 自动估算 CU,避免 OOM
+                "dynamicComputeUnitLimit": True,
             }
+
+            # R64 — 优先费（lamports = SOL × 1e9）
+            if priority_fee_sol and priority_fee_sol > 0:
+                payload["prioritizationFeeLamports"] = int(priority_fee_sol * 1_000_000_000)
+
+            # R64 — Jito tip（私有 mempool 防三明治攻击）
+            # Jupiter v6 swap endpoint 支持 jitoTipLamports（写入 tx 时附带转账 Jito tip account 的 instruction）
+            if jito_tip_sol and jito_tip_sol > 0:
+                payload["jitoTipLamports"] = int(jito_tip_sol * 1_000_000_000)
 
             async with session.post(
                 url,

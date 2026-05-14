@@ -24,7 +24,8 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
   bool _promoting = false;
 
   // R42 P0.5 risk_params 状态(从策略读 + 编辑)
-  bool _showRiskSettings = false;
+  // R64 — 默认展开,让"速度档位 + 滑块"一进页面就可见
+  bool _showRiskSettings = true;
   late double _maxSlippagePct;     // 0.01 = 1%
   late double _stopLossPct;        // 0.30 = 30%
   late double _takeProfitPct;      // 1.00 = 100%
@@ -471,11 +472,17 @@ class _StrategyDetailPageState extends State<StrategyDetailPage> {
                     style: TextStyle(color: c.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
               ),
               _speedPresets(c),
-              // R45 — chain 感知 MEV 标注
+              // R64 — 自定义滑块,覆盖 3 档预设
+              const SizedBox(height: 8),
+              _riskSlider(c, '优先 Gas Fee', _priorityFeeSol, 0.0001, 0.02, ' SOL',
+                  (v) => setState(() { _priorityFeeSol = v; _riskDirty = true; })),
+              _riskSlider(c, 'MEV 贿赂', _mevBribeSol, 0.0, 0.02, ' SOL',
+                  (v) => setState(() { _mevBribeSol = v; _riskDirty = true; })),
+              // R45/R64 — chain 感知 MEV 标注
               Padding(
                 padding: const EdgeInsets.only(top: 8),
                 child: Text(
-                  '💡 MEV 防护:Solana 走 Jito · Ethereum 走 Flashbots Protect · 其他 EVM 走 1inch 路由(全部已接通)',
+                  '💡 MEV 防护:Solana 走 Jito · Ethereum 走 Flashbots Protect · 非 SOL 链按当链 native token 等值换算(EVM 高级 gas 调度 R65 上线)',
                   style: TextStyle(color: c.textTertiary, fontSize: 10, height: 1.5),
                 ),
               ),

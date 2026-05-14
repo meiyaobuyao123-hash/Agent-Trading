@@ -52,6 +52,10 @@ dependencies:
   # iOS Bundle ID: com.aitrading.aitradingApp(已配 Firebase)
   google_sign_in: ^6.2.2
 
+  # R64 — Agent chat 表格/代码块渲染(GitHub Flavored Markdown)
+  flutter_markdown: ^0.7.4+1
+  markdown: ^7.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

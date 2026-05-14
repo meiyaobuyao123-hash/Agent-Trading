@@ -240,6 +240,7 @@ class DexRouter:
             result = await self._execute_quote(
                 best, chain, token_address, action, amount_usd,
                 slippage_pct, wallet_address, private_key,
+                priority_fee_sol=priority_fee_sol, mev_bribe_sol=mev_bribe_sol,
             )
 
             # 5. 失败 → fallback
@@ -250,6 +251,7 @@ class DexRouter:
                     result = await self._execute_quote(
                         fq, chain, token_address, action, amount_usd,
                         slippage_pct, wallet_address, private_key,
+                        priority_fee_sol=priority_fee_sol, mev_bribe_sol=mev_bribe_sol,
                     )
                     if result.success:
                         result.fallback_used = True
@@ -566,6 +568,8 @@ class DexRouter:
         slippage_pct: float,
         wallet_address: Optional[str],
         private_key: Optional[str],
+        priority_fee_sol: float = 0.0,    # R64
+        mev_bribe_sol: float = 0.0,       # R64
     ) -> RouteResult:
         """根据报价执行交易"""
 
@@ -573,6 +577,7 @@ class DexRouter:
             return await self._execute_jupiter(
                 quote, chain, token_address, action, amount_usd,
                 slippage_pct, wallet_address, private_key,
+                priority_fee_sol=priority_fee_sol, mev_bribe_sol=mev_bribe_sol,
             )
         elif quote.dex == "oneinch":
             return await self._execute_oneinch(
@@ -600,11 +605,16 @@ class DexRouter:
         slippage_pct: float,
         wallet_address: Optional[str],
         private_key: Optional[str],
+        priority_fee_sol: float = 0.0,    # R64
+        mev_bribe_sol: float = 0.0,       # R64
     ) -> RouteResult:
         """通过 Jupiter 执行交易
 
         R59 P0 fix: 直接用 execute() 预解析过的 wallet_address/private_key,
         不再调 executor._resolve_wallet() — 那会丢 user_id 上下文 fallback 到 DEV_WALLET。
+
+        R64: priority_fee_sol / mev_bribe_sol 透传给 jup.get_swap(),
+        Jupiter v6 会把这两个值写入 swap tx(prioritizationFeeLamports + jitoTipLamports)。
         """
         try:
             from agent.dex.jupiter import get_jupiter_dex
@@ -623,8 +633,12 @@ class DexRouter:
 
             jup = get_jupiter_dex()
 
-            # 获取 swap 交易
-            swap_data = await jup.get_swap(quote.raw, wallet_addr)
+            # 获取 swap 交易(R64 — 真传 priority_fee + jito_tip)
+            swap_data = await jup.get_swap(
+                quote.raw, wallet_addr,
+                priority_fee_sol=priority_fee_sol,
+                jito_tip_sol=mev_bribe_sol,
+            )
             if "error" in swap_data:
                 return RouteResult(
                     success=False, error=f"Jupiter swap: {swap_data['error']}",

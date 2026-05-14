@@ -163,6 +163,7 @@ class OneInchDex:
         amount: str,
         from_address: str,
         slippage: float = 1.0,
+        priority_fee_eth: float = 0.0,  # R64 占位:UI 字段统一,EVM 高级 gas 调度 R65 真接
     ) -> Dict[str, Any]:
         """
         获取 1inch swap 交易数据
@@ -174,10 +175,18 @@ class OneInchDex:
             amount: 输入数量（wei）
             from_address: 发送者地址
             slippage: 滑点百分比 (1.0 = 1%)
+            priority_fee_eth: R64 占位 — UI 字段统一,EVM 实际不真传 gasPrice。
+                              1inch 默认 gas 估算已足够好(fast tier),用户手动覆盖反而易导致交易卡死。
+                              真传 gasPrice + Flashbots Protect 留 R65 单独做。
 
         Returns:
             {"tx": {"to": ..., "data": ..., "value": ..., "gas": ...}} 或 {"error": ...}
         """
+        if priority_fee_eth and priority_fee_eth > 0:
+            log.info(
+                "[1inch] R64 priority_fee_eth=%.6f received but NOT passed to 1inch API "
+                "(占位,等 R65 真接 EVM 高级 gas)", priority_fee_eth,
+            )
         if not self._api_key:
             return {"error": "1inch API key not configured"}
 

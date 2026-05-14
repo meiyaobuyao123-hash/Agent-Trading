@@ -585,8 +585,19 @@ def _detect_limit(text: str, default: int = 10) -> int:
     return default
 
 
+def _fmt_usd_k(n: float) -> str:
+    """R64 — 数字简化:1234 → '1.2K' / 1234567 → '1.23M'"""
+    if not n or n <= 0:
+        return "-"
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.2f}M"
+    if n >= 1000:
+        return f"{n/1000:.1f}K"
+    return f"{n:.0f}"
+
+
 def _format_top_movers(items: list, window: str, source: str) -> str:
-    """把 T18 输出 format 成中文 markdown 列表。"""
+    """R64 — T18 输出 format 成 markdown table(GFM),前端启用 react-markdown / flutter_markdown 渲染。"""
     if not items:
         src_label = {"pump": "pump.fun", "hot": "热币榜", "all": "全网"}.get(source, source)
         return (
@@ -597,10 +608,15 @@ def _format_top_movers(items: list, window: str, source: str) -> str:
 
     src_label = {"pump": "pump.fun 内盘", "hot": "多链热币", "all": "全网热门"}.get(source, source)
     header = f"📈 **{src_label} · {window} 涨幅 Top {len(items)}**\n\n"
-    rows = []
-    for it in items:
+
+    # R64 — GFM markdown table 表头 + 分隔行
+    lines = [
+        "| # | 代币 | 链 | 涨幅 | 24h量 | 市值 | 评分 |",
+        "|---|------|----|----:|------:|------:|----:|",
+    ]
+    for i, it in enumerate(items, start=1):
         sym = it.get("symbol", "?")
-        chain = it.get("chain", "?")
+        chain = (it.get("chain") or "?").upper()
         # hot_coins.price_change_24h 已是 percentage(45 = 45%),不再 ×100
         # 但 pump_signals 历史数据可能是比例(0.45),做 heuristic:|pct|<=10 视为比例
         raw_pct = it.get("pct_change") or 0
@@ -608,22 +624,18 @@ def _format_top_movers(items: list, window: str, source: str) -> str:
         vol = it.get("volume_usd") or 0
         mcap = it.get("mcap_usd") or 0
         score = it.get("score") or 0
-        # 格式化 vol/mcap
-        vol_s = f"${vol/1e6:.1f}M" if vol >= 1e6 else f"${vol/1e3:.0f}K"
-        mcap_s = f"${mcap/1e6:.1f}M" if mcap >= 1e6 else f"${mcap/1e3:.0f}K"
-        addr = it.get("address", "")
-        addr_short = f"{addr[:6]}...{addr[-4:]}" if len(addr) > 10 else addr
-        rows.append(
-            f"**{it.get('rank', '?')}. {sym}** ({chain}) · "
-            f"涨幅 **+{pct:.1f}%** · 量 {vol_s} · MC {mcap_s} · 评分 {score:.0f}\n"
-            f"   `{addr_short}`"
+        rank = it.get("rank") or i
+        lines.append(
+            f"| {rank} | **{sym}** | {chain} | "
+            f"+{pct:.0f}% | ${_fmt_usd_k(vol)} | ${_fmt_usd_k(mcap)} | "
+            f"{score:.0f} |"
         )
-    body = "\n\n".join(rows)
+
+    table = "\n".join(lines)
     footer = (
-        "\n\n---\n"
-        "💡 想要监控其中某个?告诉我代币名 + 触发条件,我帮你建实时监控策略。"
+        "\n\n💡 想要监控其中某个?告诉我代币名 + 触发条件,我帮你建实时监控策略。"
     )
-    return header + body + footer
+    return header + table + footer
 
 
 # CocreationLoop method 加在 class 内,但 Python 允许动态加 — 用 mixin 模式:

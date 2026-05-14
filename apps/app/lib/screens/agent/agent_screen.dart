@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:markdown/markdown.dart' as md;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../l10n/app_localizations.dart';
 import '../../theme/app_colors.dart';
 import '../../services/agent_service.dart';
@@ -536,21 +539,61 @@ class _AiBubble extends StatelessWidget {
               ),
               border: Border.all(color: c.glassBorder, width: 0.5),
             ),
-            child: RichText(
-              text: TextSpan(
-                style: TextStyle(
-                  color: c.textPrimary,
-                  fontSize: 14,
-                  height: 1.6,
-                ),
-                children: [
-                  TextSpan(text: text),
-                  if (isStreaming)
-                    WidgetSpan(
-                      child: _BlinkingCursor(color: c.primary),
+            // R64 — Markdown 渲染(表格 + 代码块 + 列表 + 加粗)
+            // streaming 末尾 append 闪烁光标作为视觉提示
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                MarkdownBody(
+                  data: text.isEmpty ? '​' : text,
+                  selectable: true,
+                  extensionSet: md.ExtensionSet.gitHubWeb,
+                  onTapLink: (linkText, href, title) async {
+                    if (href == null) return;
+                    final uri = Uri.tryParse(href);
+                    if (uri == null) return;
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                  },
+                  styleSheet: MarkdownStyleSheet(
+                    p: TextStyle(color: c.textPrimary, fontSize: 14, height: 1.6),
+                    strong: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700),
+                    em: TextStyle(color: c.textPrimary, fontStyle: FontStyle.italic),
+                    h1: TextStyle(color: c.textPrimary, fontSize: 18, fontWeight: FontWeight.w700, height: 1.3),
+                    h2: TextStyle(color: c.textPrimary, fontSize: 16, fontWeight: FontWeight.w700, height: 1.3),
+                    h3: TextStyle(color: c.textPrimary, fontSize: 14, fontWeight: FontWeight.w700, height: 1.4),
+                    a: TextStyle(color: c.primary, decoration: TextDecoration.underline),
+                    listBullet: TextStyle(color: c.textPrimary, fontSize: 14),
+                    tableHead: TextStyle(color: c.textPrimary, fontWeight: FontWeight.w700, fontSize: 12),
+                    tableBody: TextStyle(color: c.textPrimary, fontSize: 12, height: 1.4),
+                    tableBorder: TableBorder.all(color: c.glassBorder, width: 0.5),
+                    tableCellsPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                    tableHeadAlign: TextAlign.left,
+                    code: TextStyle(
+                      color: c.primary,
+                      fontFamily: 'monospace',
+                      fontSize: 12,
+                      backgroundColor: c.surfaceAlt,
                     ),
-                ],
-              ),
+                    codeblockDecoration: BoxDecoration(
+                      color: c.surfaceAlt,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: c.glassBorder, width: 0.5),
+                    ),
+                    blockquoteDecoration: BoxDecoration(
+                      border: Border(left: BorderSide(color: c.glassBorder, width: 3)),
+                    ),
+                    blockquotePadding: const EdgeInsets.only(left: 12, top: 4, bottom: 4),
+                    blockquote: TextStyle(color: c.textSecondary, fontSize: 13, fontStyle: FontStyle.italic),
+                  ),
+                ),
+                if (isStreaming)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: _BlinkingCursor(color: c.primary),
+                  ),
+              ],
             ),
           ),
         ),

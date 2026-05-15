@@ -3,6 +3,37 @@
 > 定义 Agent 的 4 层记忆：写什么、留多久、谁读、怎么遗忘、怎么晋升。
 > 是 **S04 / S07 / T04** 的底层支撑，也是 Agent "记得住用户" 的硬核依据。
 
+---
+
+## 📖 PM 速读(给非技术读者 · 30 秒看完)
+
+**Agent 像人一样记得过去**,分 4 层:
+
+| 层 | 像什么 | 例子 | 留多久 |
+|---|---|---|---|
+| ① **工作记忆**(Working) | 短期脑海 | "用户刚说'我手上有 5K SOL'" | **24 小时** 内自动忘 |
+| ② **情景记忆**(Episodic) | 日记本 | "2026-04-20 BULL 市,跟单 TRUMP +48%" | **14-30 天** TTL |
+| ③ **语义记忆**(Semantic) | 总结的规则 | "周五交易胜率最低,建议暂停" | **永久**(直到被推翻) |
+| ④ **反思引擎**(Reflection) | 每天回顾的脑回路 | 每天 20:00 把 ②③ 提炼成新规则 | 不断跑 |
+
+**关键设计**:**规则不是 AI 拍脑袋出来,必须满足 5 条硬条件才能从"猜"升级为"规则"**:
+1. 至少 **重复观察 3 次** — 不是巧合
+2. 至少 **20 个样本** — 不是偶然
+3. **Wilson 置信度 95% 下界 > 55%** — 不是赌运气(简单说:统计上真的有效)
+4. **p < 0.05** — 不是随机抖动
+5. **跨 2 种以上行情**(牛 / 熊 / 震荡)都成立 — 不是某种市场专属
+
+**还有 Shadow Mode**(14 天试用期):规则升上来后先**只观察不真用**,14 天内必须实战命中 ≥ 10 次 + 表现不劣于预期 20% 以上,才正式生效。**这是为了避免 Agent 学到"幸存者偏差"的错误规律。**
+
+**为什么这套设计是核心护城河**:Photon / GMGN 等竞品都是"信号 → 用户决策" 单向,**记忆 = 0**。我们让 Agent 在每个用户身上沉淀**他自己的判断框架**,用得越久 Agent 越懂你。
+
+**R67 订正**(2026-05-15):
+- ⚠️ Shadow Mode 降级 handler 设计了但**未真正实施**(`evaluate_shadow_rules()` 只记录不降级,见 §4.3 注释)— R68+ 修
+- ⚠️ Episodic 实际上限 **200 条**(代码 `MAX_EPISODIC = 200`),不是文档说的 500 — 以代码为准
+- ⚠️ Regime 评分公式实际 **7 元 regime + 对立加 0 分**(不减分),不是文档说的"3 元 + 对立 -1" — 见 §3.5 注释
+
+---
+
 | 字段 | 值 |
 |------|---|
 | Status | 🟢 v0.2 Draft |
@@ -218,10 +249,13 @@ CREATE INDEX idx_memory_relevance ON agent_memory(device_id, chain, trigger_sour
 
 ### 3.5 检索算法（T04 recall_memory 启发式评分）⭐ v0.2 改严
 
+> ⚠️ **R67 订正(2026-05-15)**:文档原写"3 元 regime(BULL/SIDEWAYS/CRISIS)+ 对立 -1",**代码实际**是 **7 元 regime**(TRENDING_UP / BREAKOUT / RANGING / CRISIS / RECOVERY / DOWNTRENDING / CHOPPY) + **对立 0**(不减分,只是不加)。下面是文档描述,实际算法见 `agent/memory/episodic_memory.py`。
+
 v1 使用**规则化评分**（不用 embedding，简单可解释）：
 
 ```python
 # Regime 距离表（避免二元匹配丢失相关 regime 转换期案例）
+# ⚠️ 文档版用 3 元简化展示,代码实际是 7 元(见上注释)
 REGIME_DISTANCE = {
     ("BULL", "BULL"): 0, ("SIDEWAYS", "SIDEWAYS"): 0, ("CRISIS", "CRISIS"): 0,
     ("BULL", "SIDEWAYS"): 1, ("SIDEWAYS", "BULL"): 1,
@@ -238,8 +272,9 @@ def relevance_score(memory, situation):
     if memory.mcap_bucket == situation.mcap_bucket:        score += 1
 
     # Regime 用距离（而非二元）
+    # ⚠️ R67 订正:代码实际是 {0: +2 / 1: +1 / 2: +0.5 / 3+: 0},无负分
     dist = REGIME_DISTANCE[(memory.regime, situation.regime)]
-    score += {0: 2, 1: 0.5, 2: -1}[dist]   # 同 regime +2 / 邻近 +0.5 / 对立 -1
+    score += {0: 2, 1: 0.5, 2: -1}[dist]   # 文档版:同 regime +2 / 邻近 +0.5 / 对立 -1
 
     # 重要性和新鲜度加成
     score += memory.importance / 10                        # 0-1
@@ -309,7 +344,7 @@ T04 recall_memory 要求 `situation` 字段。**情境由调用方根据 context
 | 规则 | 行为 |
 |------|------|
 | `expires_at < now` | 每日 cron 清理（保留 match_count > 5 的 14 天）|
-| 同 device `type=episodic` > 500 条 | 保留最高 importance 的 400 条 + 最近 100 条 |
+| 同 device `type=episodic` > **200 条**(R67 订正,文档原说 500,代码 `MAX_EPISODIC = 200`)| 保留最高 importance 的 160 条 + 最近 40 条(按相同比例缩放) |
 | wallet 绑定转移 | 保留（见 § 6 跨设备）|
 
 **500 条上限的依据**：
@@ -468,6 +503,12 @@ CREATE INDEX idx_wal_retry ON memory_write_wal(next_retry_at) WHERE attempts < 3
 - T04 recall_memory 时**不**注入 shadow 规则到 prompt
 - 但每次 thesis / 策略 evaluate 时**后台记录** "如果此规则生效，决策会如何不同"
 - 14 天后统计对比
+
+> ⚠️ **R67 订正(2026-05-15) — Shadow Mode 设计完整,代码 stub**:
+> - `semantic_memory.py` 的 `evaluate_shadow_rules()` **只记录不降级**(handler 是 stub)
+> - 实际 `SHADOW_GRADUATE_MIN_MATCHES = 3`(不是文档的 10)
+> - 老路径 `try_promote()` 仍在用**旧标准**(3 反思 + ≥5 样本 + 15pp 胜率差),跟新 `check_strict_promotion_gates()` 的 5 门槛并存 — **两套标准同时活,容易混淆**
+> - **R68+ 优先修**:把 try_promote() 撤掉 + 真正实施 14 天 Shadow Mode 自动降级
 
 ### 4.4 活跃规则上限（数字依据）
 

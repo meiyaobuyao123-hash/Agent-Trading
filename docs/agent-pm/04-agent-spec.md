@@ -3,6 +3,27 @@
 > 定义 Agent 本体：身份、能力、边界、Loop、状态机、失败模式、版本。
 > 本 Spec 是 [01 Vision](./01-product-vision.md) + [03 PRD](./03-prd.md) 的**工程实现契约**。
 
+---
+
+## 📖 PM 速读(给非技术读者 · 30 秒看完)
+
+**Agent 是什么**:一个**懂用户、记得过去、能陪用户走完整个交易周期**的加密链上现货 Copilot。它不是给所有人推同一条信号(那是 App 热币/聪明钱/新币 Tab 的活),而是**听用户讲想法、把想法变成可自动执行的策略,然后帮用户记住决定、自动跑、自动复盘**。
+
+**Agent 怎么工作**(像 5 条流水线一直在后台跑):
+1. **看市场**(Scout Loop)— 实时盯 4 条链的代币 / 钱包 / 热度变化
+2. **出策略 / 分析**(Thesis Loop)— 用户问到时,AI 综合多维度数据给判断
+3. **聊策略**(Chat Loop)— 用户对话创建策略,**6 阶段共创**(澄清 → 细化 → 试运行 → 确认 → 保存 / 中止)
+4. **通知 + 执行**(Notify Loop)— 命中条件 → 推送通知 → 模拟或真自动执行
+5. **复盘**(Reflect Loop)— 每天 20:00 把过去经验提炼成新规则
+
+**大额单(>$2000)怎么处理**:不是停下等用户审批(R62 改全自动),而是触发"3 个 AI 角色辩论"机制 — 1 个保守、1 个激进、1 个 risk 审计,辩出最终决定 + 推送通知告诉用户"我决定了什么 / 为什么"。
+
+**怎么防 Agent 乱来**:30 条硬红线(永不做的事,比如"单笔 > $5000 拒绝")+ 14 个熔断器(异常自动停)+ Kill Switch(用户一键全停)兜底。
+
+**用户能怎么用**:看(只看 chat 分析) → 半干预(看完自己点)→ 全自动(Agent 在 7 兜底下自己干);用户随时切档。
+
+---
+
 > ⚠️ **R42 修订（2026-05-05）— HITL 全废,改为完全全自动化 + 7 条兜底**
 >
 > §HITL 的"5/15/60min 统一审批"和"分层 auto/semi/manual 三档"全部废弃。R42 改为**完全无审批的全自动化**(用户对齐 2026-05-05 决策)。
@@ -15,7 +36,7 @@
 > 3. 该策略连续亏损 ≥ 3 笔 → 自动暂停
 > 4. 该策略 30 天最大回撤 > 30% → 强制锁回 paper
 > 5. 单笔持仓亏 > 50% → 自动平仓 + 暂停(由 position_monitor 触发)
-> 6. safety_engine 30 HR + 13 CB(已有,trade_executor 内 wire)
+> 6. safety_engine **30 HR + 14 CB**(已有,trade_executor 内 wire;CB14 = R47 加的 manual Kill Switch)
 > 7. input_filter / cost_guard / output_filter(R40+R41 chat 路径已 wire)
 >
 > **不要紧急停止开关**(用户决策):用户单笔/单日上限 + 策略级 pause 已足够。
@@ -59,7 +80,7 @@
 
 ### 0.3 术语
 
-- **Loop**：Agent 的主循环，本 Agent 有 4 条（Scout / Thesis / Notify / Reflect）
+- **Loop**：Agent 的主循环，本 Agent 有 **5 条**(R64 订正)— Scout / Thesis / Notify / Reflect / **Chat**(共创对话独立循环,见 `agent/loops/chat_loop.py`)
 - **L1 / L2 / L3**：决策分级（规则 / Opus 单次 / Opus 多分析师+辩论）
 - **HITL**：Human-In-The-Loop，用户当次拍板
 - **Event-Driven First**：实时路径必走事件流，详见 [03 PRD § 8.7](./03-prd.md#87-event-driven-first-原则)
@@ -104,7 +125,10 @@
 - ❌ 不推送官方信号（用户需自建策略）
 - ❌ 不给"保证盈利"话术
 - ❌ 不预测具体价格
-- ❌ 单笔真金 > $2000 **必须**用户当次 HITL，即使已授权(R47 P9 — 用户 2026-05-08 提)
+- ⚠️ 单笔真金 > $2000 **触发推送通知 + 自动执行**(R62 订正,2026-05-14):原 R47 P9 设计是"必须 HITL 审批",但 R62 把 SEMI_AUTO_THRESHOLD 改为 `float('inf')` 全自动化 — 用户通过 promote_to_live 时签的免责声明 + 4 项 checklist + 7 兜底防线兜底。$2000 仍走 L3 Opus 多角色辩论(见 §4.2)
+- 📌 **两个易混淆阈值**(R67 订正):
+  - **$200** = `notify_loop.HITL_AMOUNT_USD` — 触发后台 HITL queue 记录(给运营审计,不阻塞执行)
+  - **$2000** = `multi_role_orchestrator` L3 升级阈值 — 切到 3 Haiku + 4 Opus 辩论 + 1 Opus 风控(成本约 $0.06/笔)
 - ❌ 不做未经用户明确授权的真金执行
 - ⚠️ **托管模式下**（v0.5）：助记词仅存用户 FlutterSecureStorage + 服务端 KMS 签名密钥，严禁 .env / DB 明文（见 08 § 6A）
 
@@ -192,7 +216,7 @@
 | # | 决策 | 理由 |
 |---|------|------|
 | D1 | **Event-Driven First** | 实时路径必走事件流（[PRD §8.7](./03-prd.md#87-event-driven-first-原则)）|
-| D2 | **三级决策分级 L1/L2/L3** | 成本 $0 / ~$0.025 / ~$0.35，绝大多数走 L1，复杂/大额才升级 |
+| D2 | **三级决策分级 L1/L2/L3** | 成本 $0 / ~$0.025 / ~$0.06(R63 后),绝大多数走 L1，复杂/大额才升级 |
 | D3 | **v1 全链 Claude Opus（质量优先）** | 分析师 / 辩论 / 风控 / 复盘 / NL 建策略全部 Opus；Sonnet / Haiku 仅作**预算降级**兜底；详见 [03 PRD § 8.8.0](./03-prd.md#880-模型分层决策v1-采用质量优先方案) |
 | D4 | **本地 Postgres + PostgREST** | 已从 Supabase 迁移，减少依赖 |
 | D5 | **Memory 分三层** | Episodic(14d) / Semantic(30d) / Reflection（promotion）|
@@ -338,8 +362,14 @@ async def on_event(event):
 | 级别 | 触发条件 | 流程 | 模型 | 成本 |
 |------|---------|------|------|------|
 | **L1** | 简单查询 / 已决定 | RuleEngine | 无 LLM | $0 |
-| **L2** | 常规分析 | 单 prompt + tool-use | **Opus** | **~$0.025** |
-| **L3** | 大额（**>$2000**）/ 低置信度（<0.6）/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | **3×Opus + 5×Opus + 1×Opus** | **~$0.35** |
+| **L2** | 常规分析(thesis_loop) | 单 prompt + tool-use | **Sonnet 4.6**(thesis_loop.py line 52) | **~$0.025** |
+| **L3** | 大额(**>$2000**)/ 低置信度(<0.6)/ CRISIS regime / 新策略首笔 | 3 分析师并行 + Bull vs Bear 3 轮辩论 + RiskReviewer | **3×Haiku 4.5 + 4×Opus 4.7 + 1×Opus 4.7**(multi_role_orchestrator) | **~$0.06**(R63 升级后) |
+
+> 📌 **R67 订正**:
+> - Thesis Loop(L2)用 **Sonnet 4.6**,不是 Opus(原文档误)— Haiku 4.5 用于 L1 规则路由
+> - L3 不是"9 个 Opus",而是 3 Haiku(并行分析师)+ 4 Opus(2 轮 Bull/Bear 辩论)+ 1 Opus(RiskReviewer)
+> - L3 单次成本约 **$0.06**(R63 实测),不是 $0.35(原文档基于全 Opus 估算过高)
+> - 月预算评估按 $0.06/L3 重算,不是 $0.35
 
 **L3 伪代码**：
 ```python
@@ -430,7 +460,7 @@ async def reflect(period="daily"):
 |-----|---------|----------|----------|
 | L1  | < 200ms | $0       | - |
 | L2  | < 6s    | ~$0.025  | ≤ 20% |
-| L3  | < 18s   | ~$0.35   | ≤ 60% |
+| L3  | < 18s   | ~$0.06(R63 后)| ≤ 60% |
 | Reflect | < 40s | ~$0.15 / 日 · $0.40 / 周  | ≤ 20% |
 
 详见 [13 Cost Budget](./13-cost-budget.md)。

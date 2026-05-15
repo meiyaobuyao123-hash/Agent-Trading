@@ -1,15 +1,49 @@
 # Agent v1 实施 vs 设计文档对比审计
 
-**日期**: 2026-05-03
+**日期**: 2026-05-03(初版) · **更新**: 2026-05-15(R67)
 **范围**: `docs/agent-pm/00-17.md` 18 篇设计文档 vs `services/pump-scanner/agent/` + `apps/app/lib/` 实际代码
 **方式**: 4 个并行 Explore agent 独立审计 + 主上下文交叉核验
 
 ---
 
-## TL;DR
+## 📖 PM 速读(给非技术读者 · 30 秒看完)
 
-- **总对齐率 ~70%** — 骨架完整,深度有差距
-- **结构对齐 95%+**: 17/17 Tools, 18/18 Prompts, 5/5 Loops, 7/7 Skills, 30 HR + 13 CB + 5 C, 62/62 Launch Criteria 全部就位
+**这份文档干啥**:对比"我们写的产品 / 工程设计文档"和"代码真实做出来的东西",找差异。
+
+**为啥重要**:文档是给 PM / 投资人 / 新工程师看的"说明书";代码是真实做出来的"产品"。**两者长期不一致 = 文档骗读者 + 工程师跟产品决策对不上**。
+
+**当前结论(2026-05-03 + 2026-05-15)**:
+- ✅ **骨架 ~95% 对齐** — 文档说有的 18 个 Tool / 18 个 Prompt / 5 个 Loop / 7 个 Skill / 30 条红线 / 14 个熔断器,**代码里全有**(数字精确对得上)
+- ⚠️ **细节 ~50% 对齐** — 框架在,但"深度行为"差(比如"自动晋升 5 门槛"代码里只是 stub,实际还是用老的 3 门槛)
+- 🟢 **可以团队内测** / 🔴 **付费用户上线前必须修 5 条 P0 punch list**(下面有清单)
+
+**这份文档不是终点**:每个 sprint(R47-R67 已 20 个 sprint)都可能引入新的"代码 vs 文档"漂移,需要持续追。这次 R67 加了 10 条 2026-05-15 新偏差。
+
+---
+
+## 🔄 2026-05-15(R67)状态更新 — R47 ~ R66 期间积累的 10 条新偏差
+
+| # | 偏差 | 状态 | 影响 |
+|---|---|---|---|
+| 1 | 04-agent-spec 说"4 个 Loop",代码 5 个(+ chat_loop) | ✅ R67 已修 04 §0.3 + PM 速读 | 中等 |
+| 2 | 04 R42 摘要说"7 stage 共创",代码实际 6 stage(clarifying/refining/dry_run/confirming/saved/aborted) | ✅ R67 已修 04 PM 速读 | 严重(误导) |
+| 3 | 04 §1.4 说"$2000 必须 HITL 审批",R62 改全自动 SEMI_AUTO=inf | ✅ R67 已修 04 §1.4 | 严重(用户预期错) |
+| 4 | 04 §4.2 L3 说"3+5+1=9 个 Opus,~$0.35",实际 3 Haiku + 4 Opus + 1 Opus,$0.06 | ✅ R67 已修 04 §4.2 + 性能表 | 严重(预算评估错) |
+| 5 | 04 文档混用 $200(notify HITL queue)和 $2000(L3 升级)两个阈值 | ✅ R67 已修 04 §1.4 加术语区分 | 严重 |
+| 6 | 04 §0 说"30 HR + 13 CB",实际 30 HR + 14 CB(R47 加 CB14 Kill Switch) | ✅ R67 已修 04 §0 | 中等 |
+| 7 | 04 §4.2 Thesis L2/L3 说用 Opus,代码用 Sonnet 4.6(thesis_loop)+ Haiku 4.5(L1) | ✅ R67 已修 04 §4.2 | 中等(成本/质量) |
+| 8 | 06 §3.5 Regime 评分"3 元 + 对立 -1",代码 7 元 + 对立 0(不减分) | ✅ R67 已修 06 §3.5 加 ⚠️ | 中等 |
+| 9 | 06 §3.7 Episodic 上限 500,代码 MAX_EPISODIC=200 | ✅ R67 已修 06 §3.7 | 低 |
+| 10 | 06 §4.3 Shadow Mode 14 天降级 handler 文档完整,代码 evaluate_shadow_rules() 只记录不降级(stub) + 老 try_promote() 仍用旧标准并存 | ✅ R67 已修 06 §4.3 加 ⚠️ + 列入 R68+ punch list | **严重**(虚假承诺) |
+
+### R68+ 待修的代码层 punch list(R67 只修文档,代码 bug 留 R68+)
+- [ ] **Shadow Mode 真实施 14 天降级**(`semantic_memory.py:evaluate_shadow_rules()` 是 stub)
+- [ ] **撤掉老 try_promote() 路径**(避免两套晋升标准并存)
+- [ ] **SHADOW_GRADUATE_MIN_MATCHES 改 10**(代码现 3)
+- [ ] **paper→auto 晋升门槛实施**(promote-to-live 当前可绕)
+- [ ] **HITL 5/15/60min 超时升级 handler**(notify_loop 仅 4 触发条件,文档说 10 个)
+
+---
 - **深度对齐 ~50%**: 多处属于 "metadata 写了但运行时未完整接通"(Semantic 5-gate / HITL 时限 / Kill Switch / LLM judge calibration 等)
 - **R35 决策性偏差**: KMS / 法务 / Beta 灰度 / Red Team 等 "GA 流程" 被用户明确判定为不需要(早期项目无付费用户),改为 not_applicable;不属于实施缺陷
 

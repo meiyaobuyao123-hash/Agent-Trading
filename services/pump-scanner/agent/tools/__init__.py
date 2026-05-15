@@ -1,11 +1,12 @@
 """
-Tools — 17 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
+Tools — 19 个原子 Tool(JSON Schema + idempotent + 无 LLM 成本)
 引用 docs/agent-pm/05-tool-catalog.md §4
 引用 docs/agent-pm/17-tech-plan.md Phase 1
 
-17 个 Tool 清单:
-  查询(5):  T01 query_market / T02 query_holders / T03 query_onchain_activity
-            T04 recall_memory / T10 get_paper_performance
+19 个 Tool 清单:
+  查询(7):  T01 query_market / T02 query_holders / T03 query_onchain_activity
+            T04 recall_memory / T10 get_paper_performance / T18 query_top_movers
+            T19 query_pump_tokens (R68 加,pump.fun 实时信号专属)
   CRUD(4): T05 list_strategies / T06 update_strategy_status / T11 approve_rule / T12 save_strategy
   执行(3): T07 run_paper_trade / T08 execute_swap / T09 create_approval_request
   计算(3): T14 calc_technical_indicators / T15 calc_risk_metrics / T16 run_backtest
@@ -39,10 +40,11 @@ from .t16_run_backtest import RunBacktestTool
 from .t17_calc_position_size import CalcPositionSizeTool
 from .t08_execute_swap import ExecuteSwapTool
 from .t18_query_top_movers import QueryTopMoversTool
+from .t19_query_pump_tokens import QueryPumpTokensTool
 
 
 def get_tool_registry() -> dict:
-    """返回 {tool_name: Tool 实例} 注册表(R39 后:18/18 全实施 + T18)。"""
+    """返回 {tool_name: Tool 实例} 注册表(R68 后:19/19 全实施 + T19 pump.fun 专属)。"""
     return {
         "query_market": QueryMarketTool(),
         "query_holders": QueryHoldersTool(),
@@ -62,6 +64,7 @@ def get_tool_registry() -> dict:
         "run_backtest": RunBacktestTool(),
         "calc_position_size": CalcPositionSizeTool(),
         "query_top_movers": QueryTopMoversTool(),
+        "query_pump_tokens": QueryPumpTokensTool(),
     }
 
 
@@ -85,5 +88,6 @@ __all__ = [
     "RunBacktestTool",
     "CalcPositionSizeTool",
     "QueryTopMoversTool",
+    "QueryPumpTokensTool",
     "get_tool_registry",
 ]

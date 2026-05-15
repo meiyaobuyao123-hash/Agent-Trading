@@ -7,13 +7,13 @@
 
 ## 📖 PM 速读(给非技术读者 · 30 秒看完)
 
-**什么是 Tool**:Agent 能做的**18 个最小原子动作**(像组装乐高的基础积木),每个都能单独调用 / 单独测试 / 单独评估成本。
+**什么是 Tool**:Agent 能做的**19 个最小原子动作**(像组装乐高的基础积木),每个都能单独调用 / 单独测试 / 单独评估成本。
 
-**18 个 Tool 分 5 类**:
+**19 个 Tool 分 5 类**(R68 加 T19 — pump.fun 实时新币信号专属):
 
 | 类别 | 数量 | 包含什么 |
 |---|---|---|
-| **查询类**(只读,免费,P95<500ms) | 6 | 查代币行情 / 查持币者 / 查链上活动 / 翻历史经验 / 查模拟盘表现 / 查热币榜(R39 新增) |
+| **查询类**(只读,免费,P95<500ms) | 7 | 查代币行情 / 查持币者 / 查链上活动 / 翻历史经验 / 查模拟盘表现 / 查热币榜(R39) / **查 pump.fun 早期信号**(R68 新增 — 暴露毕业曲线 % + 评分 + 检测时间) |
 | **CRUD 类**(改数据库) | 4 | 列策略 / 改状态 / 存策略 / 审批新规则 |
 | **执行类**(动钱) | 3 | 模拟盘下单 / 真金下单 / 申请审批(R62 后大多无审批) |
 | **计算类**(纯算) | 3 | 算技术指标 / 算风险指标 / 跑回测 |
@@ -119,9 +119,9 @@ X 是否需要 LLM 做判断 / 推理 / 文本生成？
 
 ---
 
-## 2. Tools Inventory（18 个原子操作）
+## 2. Tools Inventory（19 个原子操作）
 
-### 2.1 查询类（6）
+### 2.1 查询类（7）
 
 | ID | Tool Name | I/O | Status | Version |
 |----|-----------|-----|--------|---------|
@@ -131,6 +131,7 @@ X 是否需要 LLM 做判断 / 推理 / 文本生成？
 | **T04** | `recall_memory` | read | 🔴 新建 | v0.1 |
 | **T10** | `get_paper_performance` | read | 🟢 | v0.1 |
 | **T18** | `query_top_movers` 🆕 | read | 🟢 R39 | v0.1 |
+| **T19** | `query_pump_tokens` 🆕 | read | 🟢 R68 | v0.1 |
 
 ### 2.2 CRUD 类（4）
 
@@ -1034,6 +1035,78 @@ failure_fallback: |
 - chat_loop 关键词预触发（R39 MVP 实施）
 - 未来：S04 signal-strategy-builder（用户问"建监控"时先看 top movers）
 - 未来：S07 review-engine（每周大涨 top 跟反思关联）
+
+---
+
+### 4.19 T19: query_pump_tokens 🆕 R68
+
+> **跟 T18 区别**:T18 是综合 top movers(hot_coins + pump_signals union,**按涨幅排序为主**)。T19 是 **pump.fun 专属深度** — 暴露 pump 特有元数据(`bonding_curve_pct` / `score` / `detected_at` / `age_minutes`),只查 SOL 链 pump.fun 信号池,**按评分或 BC 进度排序**。
+
+**purpose**:回答 "pump.fun 最新 / 毕业进度 X% / 刚冒头 score>N / BC 早期信号" 这类问题。让 chat agent 不再依赖 App "新币 Tab" 数据,自己有专属 tool 查 pump.fun。
+
+**input_schema**:
+```json
+{
+  "min_score": int 0-100,              // 默认 55(pump_scanner 早期信号阈值)
+  "bc_min": float 0-100,                // 默认 3 (毕业曲线下界 %)
+  "bc_max": float 0-100,                // 默认 35(毕业曲线上界 %)
+  "min_volume_usd": number,             // 默认 1000
+  "limit": int 1-50,                    // 默认 20
+  "sort_by": "score" | "bc_pct" | "volume" | "detected_age"   // 默认 "score"
+}
+```
+
+**output_schema**:
+```json
+{
+  "ok": bool,
+  "items": [{
+    "rank": int,
+    "symbol": str, "name": str, "address": str,
+    "score": float,                     // 0-100,pump_scanner 综合评分
+    "bonding_curve_pct": float,         // 3-35 = 早期;>50 = 接近毕业
+    "price_usd": float,
+    "mcap_usd": float,
+    "volume_24h_usd": float,
+    "price_change_24h_pct": float,
+    "detected_at": str,
+    "age_minutes": float                // 距 detected_at 多久(支持"刚出来 vs 老货")
+  }],
+  "total": int,
+  "source_used": "scanner" | "redis" | "file" | "empty",   // 数据源透明
+  "is_history": bool,                   // True = 实时池空,展示最近 1h 历史回顾
+  "reason": str                         // 空池时给 friendly 解释
+}
+```
+
+**数据源策略**(从 routes_pump.py 借鉴):
+1. **scanner in-memory**(同进程,毫秒级,**最优**)
+2. **Redis**`KEY_PUMP_SIGNAL_POOL`(独立 api 进程,5s 新鲜)
+3. **文件**`/tmp/pump_signal_pool.json`(兜底,最差 60s)
+4. 空池(所有都失败 / 无信号)
+
+**字段**:
+- `idempotent=True`,`side_effects=NONE`,`cost_usd=$0`,`permission=PUBLIC`
+- `p95_latency_ms=200`(内存读 / Redis 都很快)
+- `failure_modes`: `INPUT_SCHEMA_INVALID` / `DATA_SOURCE_UNAVAILABLE` / `EMPTY_RESULT`
+
+**调用方**:
+- chat_loop 关键词预触发(R68 实施)— `PUMP_TOKENS_KEYWORDS` 命中 → 调 T19 直接返表格
+- 触发关键词:**"pump.fun" / "毕业" / "bonding curve" / "BC" / "新币" / "刚出" / "早期信号"**
+- 优先级:**T19 优先于 T18**(更具体 → 先匹配)
+
+**输出 chat 用 markdown 表格**(配合 R64 markdown 渲染):
+```
+| # | 代币 | 评分 | 毕业 % | 价格 | 市值 | 24h量 | 24h涨幅 | 检测 |
+|---|------|----:|------:|-----:|-----:|------:|-------:|-----:|
+| 1 | XYZ  | 87 | 18.3% | $0.000012 | $324K | $5K | +45% | 12m |
+| ...
+```
+
+**未来扩展**:
+- S04 signal-strategy-builder:用户问"建 pump.fun 监控"时先用 T19 看现状
+- S08 thesis 合成:cite T19 结果("当前 pump.fun 平均评分 X / 池子里有 Y 个新币")
+- S05 trade-strategy-builder:用 T19 的 `bonding_curve_pct` 范围做触发条件(如"BC 5-15% 自动跟单 $50")
 
 ---
 

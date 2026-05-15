@@ -47,11 +47,22 @@ TOP_MOVER_KEYWORDS = (
     "涨幅", "涨得好", "涨得多", "表现好", "表现优异", "近期表现",
     "排行", "排行榜", "榜单", "top movers", "top gainers", "gainers",
     "哪些币", "哪些代币", "哪个币", "trending", "trend",
-    "pump.fun", "pump fun", "pumpfun",
     "热门币", "热门代币", "热门",
 )
 # pump 子源关键词(命中后 source=pump,否则 source=all)
 PUMP_HINT_KEYWORDS = ("pump.fun", "pump fun", "pumpfun", "内盘")
+
+# R68:T19 query_pump_tokens 触发关键词(pump.fun 专属深度查询)
+# 优先于 T18 检测:命中 → 调 T19 暴露 bonding_curve / score / detected_age
+# T19 跟 T18 区别:T18 是综合 top movers(多链 union),T19 是 pump 早期信号深度
+PUMP_TOKENS_KEYWORDS = (
+    "pump.fun", "pump fun", "pumpfun",
+    "毕业", "毕业进度", "毕业曲线",
+    "bonding curve", "bonding", "bc 进度", "bc进度", " bc ",
+    "新币", "刚出", "刚冒头", "早期信号", "早期",
+    "pump 信号", "pump信号", "pump 早期", "pump 新币", "pump新币",
+    "内盘",
+)
 
 
 @dataclass
@@ -140,8 +151,22 @@ class CocreationLoop:
         from agent.orchestration import cocreation_state_machine as csm
         conv_id = state["conversation_id"]
 
+        # ── R68:T19 query_pump_tokens 快速路径(优先于 T18)─────
+        # 命中 "pump.fun / 毕业 / bonding curve / 新币" 等 pump 专属关键词
+        # → 直接调 T19,返带 bonding_curve_pct + detected_age 的 pump 列表
+        if _matches_pump_tokens_intent(user_message):
+            answer = await self._answer_pump_tokens(user_message, state)
+            if answer is not None:
+                csm.append_message(conv_id, "assistant", answer)
+                return ChatLoopResult(
+                    ok=True, assistant_text=answer,
+                    stage="clarifying", conversation_id=conv_id,
+                    source="tool:query_pump_tokens",
+                    suggested_next_stage="clarifying",
+                )
+
         # ── R39:T18 query_top_movers 快速路径 ────────────────
-        # 命中"涨幅 / top / pump.fun / 哪些币"等关键词 → 直接调 T18 返列表
+        # 命中"涨幅 / top / 哪些币"等关键词 → 直接调 T18 返列表
         # 不走 P01(P01 是澄清模板,看到数据也只会问"想监控啥条件")
         if _matches_top_movers_intent(user_message):
             answer = await self._answer_top_movers(user_message, state)
@@ -665,6 +690,139 @@ async def _answer_top_movers(self, user_message: str, state: Dict[str, Any]) -> 
 
 # 把 _answer_top_movers 挂到 CocreationLoop class
 CocreationLoop._answer_top_movers = _answer_top_movers  # type: ignore[attr-defined]
+
+
+# ── R68:T19 query_pump_tokens 快速路径 helpers ──────────
+
+
+def _matches_pump_tokens_intent(text: str) -> bool:
+    """检测用户是否在**查 pump.fun 实时新币 / 早期信号**(非策略创建意图)。
+
+    判定:
+      - 命中 PUMP_TOKENS_KEYWORDS(pump.fun / 毕业 / bonding curve / 新币...)
+      - 且**不**命中 STRATEGY_INTENT_KEYWORDS(策略/监控/学习 等)
+      - 或显式命中 QUERY_HINT_KEYWORDS(查询/列表/榜单)→ 强制走查询
+    """
+    if not text:
+        return False
+    t = text.lower()
+    has_pump = any(kw.lower() in t for kw in PUMP_TOKENS_KEYWORDS)
+    if not has_pump:
+        return False
+    has_strategy = any(kw in text for kw in _STRATEGY_INTENT_KEYWORDS)
+    has_explicit_query = any(kw.lower() in t for kw in _QUERY_HINT_KEYWORDS)
+    if has_explicit_query:
+        return True
+    if has_strategy:
+        return False
+    return True
+
+
+def _detect_bc_range(text: str) -> tuple[float, float]:
+    """从用户文本抽 BC 范围。
+    "毕业进度 10-20%" → (10, 20)
+    "BC 20% 以下" → (3, 20)
+    "BC 30%-50%" → (30, 50)(可能超 35 上限,T19 不限制 max,这里就照原值)
+    默认 (3, 35)
+    """
+    if not text:
+        return (3.0, 35.0)
+    import re as _re
+    # 支持:"10-20%" / "5%-25%" / "10 到 20%" / "10~20%"
+    # 容许第一个数字后面带可选 %
+    m = _re.search(r"(\d+(?:\.\d+)?)\s*%?\s*[-到~至]\s*(\d+(?:\.\d+)?)\s*%", text)
+    if m:
+        try:
+            lo, hi = float(m.group(1)), float(m.group(2))
+            return (min(lo, hi), max(lo, hi))
+        except ValueError:
+            pass
+    return (3.0, 35.0)
+
+
+def _format_pump_tokens(items: list, source_used: str, is_history: bool) -> str:
+    """T19 输出 format 成 GFM markdown 表格。"""
+    if not items:
+        return (
+            "📊 当前 pump.fun 实时信号池**为空**。\n\n"
+            "可能原因:① 市场偏冷,无代币满足 score≥55 + BC 3-35%;② 数据源延迟。\n"
+            "**建议**:稍后再问,或换条件(放宽 BC 范围 / 降低 min_score)。"
+        )
+
+    hist_note = " · _展示最近 1h 历史回顾(当前实时池空)_" if is_history else ""
+    header = (
+        f"📈 **pump.fun 实时新币信号 Top {len(items)}**(数据源: {source_used}){hist_note}\n\n"
+    )
+
+    lines = [
+        "| # | 代币 | 评分 | 毕业 % | 价格 | 市值 | 24h量 | 24h涨幅 | 检测 |",
+        "|---|------|----:|------:|-----:|-----:|------:|-------:|-----:|",
+    ]
+    for i, it in enumerate(items, start=1):
+        sym = it.get("symbol") or "?"
+        score = float(it.get("score") or 0)
+        bc_pct = float(it.get("bonding_curve_pct") or 0)
+        price = float(it.get("price_usd") or 0)
+        mcap = float(it.get("mcap_usd") or 0)
+        vol = float(it.get("volume_24h_usd") or 0)
+        chg = float(it.get("price_change_24h_pct") or 0)
+        # chg heuristic 同 T18:|pct|<=10 视为比例
+        chg_pct = chg * 100 if abs(chg) <= 10 else chg
+        age = it.get("age_minutes")
+        if age is None:
+            age_s = "-"
+        elif age < 60:
+            age_s = f"{age:.0f}m"
+        else:
+            age_s = f"{age/60:.1f}h"
+        rank = it.get("rank") or i
+
+        lines.append(
+            f"| {rank} | **{sym}** | {score:.0f} | {bc_pct:.1f}% | "
+            f"${price:.6f} | ${_fmt_usd_k(mcap)} | ${_fmt_usd_k(vol)} | "
+            f"{chg_pct:+.0f}% | {age_s} |"
+        )
+    table = "\n".join(lines)
+    footer = (
+        "\n\n💡 **解读**:评分≥55 + BC 3-35% 是 pump.fun **早期信号定义**"
+        "(还没毕业到 Raydium,流动性集中在 bonding curve)。"
+        "想监控其中某个? 告诉我代币名 + 触发条件,我帮你建实时监控策略。"
+    )
+    return header + table + footer
+
+
+async def _answer_pump_tokens(self, user_message: str, state: Dict[str, Any]) -> Optional[str]:  # noqa
+    """命中 pump 关键词时调 T19 + format。失败返 None(让 LLM 接管)。"""
+    try:
+        from agent.tools import QueryPumpTokensTool
+        tool = QueryPumpTokensTool()
+        bc_min, bc_max = _detect_bc_range(user_message)
+        payload = {
+            "min_score": 55,
+            "bc_min": bc_min,
+            "bc_max": bc_max,
+            "min_volume_usd": 1000,
+            "limit": _detect_limit(user_message, default=10),
+            "sort_by": "score",
+        }
+        res = await tool.run(payload)
+        if not res.ok:
+            log.warning("[chat_loop] T19 fail: %s", res.error)
+            return None
+        out = res.output or {}
+        items = out.get("items", [])
+        return _format_pump_tokens(
+            items,
+            source_used=out.get("source_used", "unknown"),
+            is_history=bool(out.get("is_history", False)),
+        )
+    except Exception as e:
+        log.warning("[chat_loop] T19 wrap fail: %s", e)
+        return None
+
+
+# 把 _answer_pump_tokens 挂到 CocreationLoop class
+CocreationLoop._answer_pump_tokens = _answer_pump_tokens  # type: ignore[attr-defined]
 
 
 # ── singleton ────────────────────────────────────────────

@@ -403,6 +403,169 @@ R1-R5 上线前 14 天 shadow 比对:
 
 ---
 
+## 13. 主流量化框架借鉴(8 框架调研)
+
+### 13.0 为什么调研
+
+我们项目的架构是从零长出来的(LLM + 18 tool + 3 层 memory + DEX 路由)。在认真规划 AI 升级(§2-5)之前,**先实摸 8 个主流量化框架,答 3 个问题**:
+1. 我们在不在重复造轮子?
+2. 业界有没有我们没想到的通用模式?
+3. 我们当前架构是领先 / 持平 / 落后?
+
+下面是实摸结果。**不是为了向任何框架靠拢,是按业界标准抽象我们项目里没抽象的部分。**
+
+### 13.1 8 框架对标表
+
+| 框架 | 核心定位 | DEX 支持 | 契合度 | 最大借鉴点 |
+|---|---|---|---|---|
+| **Hummingbot** | 做市 + 套利 + DEX(Coinbase 系) | ✅ Gateway 一级 + 24 DEX | **5/5** ⭐ | Connector / Executor / Gateway 三层 |
+| **Nautilus Trader** | 工业级事件驱动 + 纳秒精度 | ⚠️ dYdX / Hyperliquid | **4/5** | backtest = live 同代码 |
+| **Freqtrade** | 加密 + 超参寻优 + ML 集成 | ❌ CEX 为主 | **3/5** | Hyperopt 装饰器 + 多目标 Loss |
+| **Jesse** | 加密 + 300 指标 + 蒙特卡洛 | ⚠️ 多交易所但 DEX 不清 | **2.5/5** | Monte Carlo 交易序列洗牌 |
+| **VeighNa(v3)** | 中文 + 期货 + 加密 + RPC 分布式 | ⚠️ CEX 现货 | **2.5/5** | RiskManager 模块化 |
+| **QuantConnect LEAN** | 多资产 + 云端 + 风控框架 | ❌ 加密但无 DEX | **2/5** | Alpha → Portfolio → Execution → Risk 四层 |
+| **Backtrader** | 多时间框架 + 教学(已基本停维护) | ❌ | **1.5/5** | Cerebro 订单状态机 |
+| **Zipline-Reloaded** | 学术派 + 股票日频 | ❌ | **1/5** | 不推荐深入 |
+
+---
+
+### 13.2 三个最值得深入借鉴的框架
+
+#### 🏆 1. Hummingbot ⭐ 5/5 — 架构最贴近,直接照搬 3 个模式
+
+##### a) Connector 模式取代 if-else 路由
+
+**当前**(`agent/dex_router.py`):
+```python
+if best_route == "jupiter": result = jupiter_api.quote(...)
+elif best_route == "1inch": result = oneinch_api.quote(...)
+elif best_route == "okx":  result = okx_api.quote(...)
+```
+
+**Hummingbot 风**:抽象 `DexConnector` ABC,每个 DEX 一个子类(`JupiterConnector` / `OneInchConnector` / `OkxConnector`),主路由 `routers[best].get_quote(...)` 统一调。**新增 Orca / Raydium 只加一个 Connector 文件,主策略不动。**
+
+##### b) Gateway 独立微服务封装链上细节
+
+**当前**:后端直接调 Jupiter API,priority_fee + Jito tip + 重试逻辑跟业务代码混在一起。
+**Hummingbot 风**:`gateway_service.py` 独立微服务,只暴露 `execute_swap(connector, params, gas_optimization)`。后端只关心"交换意图",签名 / 失败回滚 / MEV 防护全在 gateway 里。**Gateway 可以独立升级(加新链 / 加新 MEV 路由),不影响主 agent。**
+
+##### c) Executor 模式取代单一 backtest 循环
+
+**当前**(`agent/backtester.py`):`for tick in data: agent.decide(tick)` 一根线 loop。
+**Hummingbot 风**:把"网格交易 / DCA / 趋势跟踪 / 套利"各抽象成 Executor,每个 executor 自管订单生命周期 + 退出条件:
+```python
+class GridExecutor:
+    def process(self):  # 每 tick 调
+        if self.entry_condition(): self.place_grid_orders()
+        if self.exit_condition():  self.cancel_all()
+```
+**Backtester 和 Live 共用 executor**,只切数据源。这是消除"回测和实盘逻辑漂移"的关键。
+
+---
+
+#### 🥈 2. Nautilus Trader 4/5 — 事件驱动统一回测 + 实盘
+
+##### a) 事件总线消除 backtest / live 漂移
+
+**当前**:`backtester.py` 是 `for tick in sorted_data` 顺序循环;`trade_executor` 是 asyncio 事件驱动。**两套逻辑分叉,bug 频发**(R66 那个 `Backtester` import 错就是典型)。
+**Nautilus 风**:统一事件总线 — backtest 时 push `TickEvent` 进总线,live 时网络 push 同样的 `TickEvent` 进总线。**handler 代码一份**。
+
+##### b) 配置化 BacktestNode 参数 sweep 不改代码
+
+**当前**:测 3 个 slippage 阈值要改 3 次代码。
+**Nautilus 风**:`BacktestRunConfig` 对象 + `RiskLimitConfig`,改 yaml 就能 sweep 100 个参数组合。配合 §6 的 Wilson CI 验证非常顺。
+
+**评估**:Nautilus 全套 Rust + asyncio,学习曲线陡。**我们不全套迁移,只抄"事件驱动 backtest = live"这个心智模型**(自实现一份小 EventBus,~300 行 Python 够了)。
+
+---
+
+#### 🥉 3. Freqtrade 3/5 — Hyperopt 参数寻优我们 0,这是大坑
+
+##### a) 装饰器声明参数空间(Optuna 自动搜)
+
+**当前**:`regime_detector.py` 里 `cusum_threshold = 5` / `hmm_states = 3` 全手工调,**容易过拟合**。
+**Freqtrade 风**:
+```python
+class RegimeDetector:
+    cusum_threshold = IntParameter(1, 20, default=5, space='detection')
+    hmm_states = IntParameter(2, 5, default=3, space='detection')
+```
+跑 `freqtrade hyperopt -e 500 --hyperopt-loss SharpeHyperOptLoss`,Optuna 自动找最优阈值。**每个新加的预测 / 时序模型(P1 / P4 / T3)都应该用这个模式。**
+
+##### b) 多目标 Loss Function(Sharpe + max_drawdown 联合)
+
+**当前**:`backtester.py` 只输出净/毛胜率;**没有 Sharpe / Sortino / Calmar / Profit Factor**。
+**Freqtrade 风**:自定义 `IHyperOptLoss`:
+```python
+def hyperopt_objective(results, ...):
+    if max_drawdown > 0.15: return 1000  # 硬约束惩罚
+    return -sharpe_ratio                  # 最大化 Sharpe
+```
+**对齐 §6 路线图**:R66 已经修了回测字段(net/gross + fee_assumptions),下一步应该是补 Sharpe + Sortino + Calmar(对齐 Freqtrade 输出标准)。
+
+---
+
+### 13.3 三个不要做(反面教训)
+
+#### ❌ 1. 不要 fork Backtrader 适配链上
+
+Backtrader 的 Cerebro 假设 DataFeed 时间线同步;链上 block time variable + async 确认。社区有人尝试改造支持秒级数据,代码重构率 >60%,最后还是不如直接用事件驱动框架。
+
+#### ❌ 2. 不要期望 Zipline-Reloaded 适配加密
+
+Zipline 设计为日频股票回测,Pandas 向量化。秒级加密数据的格式根本不同;向量化 vs 事件驱动根本不匹配。社区 `zipline-crypto` fork 已停滞。
+
+#### ❌ 3. 不要直接移植 QuantConnect 风控到链上
+
+QuantConnect 的 `Trailing Stop Risk Management Model` 假设流动性充足 + 成交快速。**Uniswap 小池可能 < order size、MEV 可能吃 5-10%、block time 12s 让 stop loss 滑出范围**。有项目原样复制 → 设 -5% stop loss → 实际亏 -15%。**借鉴四层框架思想,但实现必须链上定制**(参考 §10)。
+
+---
+
+### 13.4 项目 vs 业界自评(诚实评估)
+
+| 维度 | 我们 | 业界标杆 | 评价 |
+|---|---|---|---|
+| **AI 决策 + 工具集成** | LLM (Opus 4.7) + 18 tool 动态组合 | Hummingbot 无 AI;Freqtrade FreqAI 仅模型推理 | **领先** |
+| **链上特定优化**(Jito / priority_fee / 多路由) | ✅ R64 已上 | Hummingbot 之外基本无 | **领先** |
+| **Memory + 反思** | 3 层 + reflection | 框架都无 | **领先** |
+| **参数优化** | ❌ 全手工 | Freqtrade Hyperopt / Jesse Monte Carlo | **落后** |
+| **回测精度** | for 循环;缺 Sharpe/Sortino/max_dd | Nautilus 纳秒事件驱动 + 完整指标 | **落后** |
+| **风控架构** | 硬编码 30 HR + 14 CB | QuantConnect 四层模型 / VeighNa RiskManager | **落后** |
+| **Router 抽象** | if-else | Hummingbot Connector / VeighNa Gateway | **落后** |
+| **纸盘 / 实盘切换** | ✅ 双轨 | 大多数框架都有 | **持平** |
+
+**最关键的不同**:
+- 我们 = **LLM 驱动 + memory 闭环**(用户 chat → tool → strategy → 执行 → memory → 下次决策)
+- 业界 = **静态策略 + 参数优化**(backtest → 找参数 → redeploy,单向无反馈)
+
+**这意味着**:不能完全套业界框架(它们没有 LLM 和 memory),但**它们抽象掉的工程通用问题(Connector / Executor / 参数搜索 / 回测精度 / 风控分层)我们没抽象。**
+
+---
+
+### 13.5 4-Phase 整合 Roadmap(对接 §6 优先级矩阵)
+
+下面 4 个 Phase 跟 §6 的 Q1/Q2 路线图融合(原 Q1 是 RAG + embedding + P1/P4;现在加架构标准化)。
+
+| Phase | 工时 | 内容 | 跟 §6 关系 |
+|---|---|---|---|
+| **P1 架构标准化**(2-3 周) | ~15 人天 | Router → Connector / Gateway 微服务 / backtest 输出加 Sharpe + Sortino + Calmar(对齐 Freqtrade) | **加进 Q1**,跟 R1-R5 RAG 并行 |
+| **P2 参数优化**(3-4 周) | ~15 人天 | Optuna 给 `regime_detector` + `position_sizer` 加 Hyperopt;自定义 Loss(Sharpe + max_drawdown 硬约束) | **Q1 末**,RAG 上完后 |
+| **P3 回测精度**(4-6 周) | ~20 人天 | 自实现轻量 EventBus(~300 行 Python)统一 backtest / live + DEX 池深滑点模拟 + 配置化 sweep | **Q2 初**,跟 T4 策略半衰期同期 |
+| **P4 风控模块化**(长期) | ~25 人天 | 参考 QuantConnect 四层框架重构 `safety_engine`:Alpha (LLM 信号)→ Portfolio (position_sizer)→ Execution (router)→ Risk (链上定制检查 MEV / 池深) | **Q3+** |
+
+**关键决策**:
+- ❌ **不全套迁移到 Hummingbot / Nautilus** — 我们的 LLM + memory 是它们没有的,完整迁移会丢护城河
+- ✅ **抄 3 个心智模型**:Connector(Hummingbot)/ EventBus(Nautilus)/ Hyperopt(Freqtrade)
+- ✅ **保留我们的核心**:LLM 决策 + memory 反思 + 18 tool + 链上特定优化
+
+---
+
+### 13.6 一句话总结
+
+> **业界标杆做对的工程抽象(Connector / Executor / Hyperopt / EventBus / 四层风控)我们都没抽象;业界没做的产品差异化(LLM + memory + 链上)我们已做。R66+ 应该补前者 3 个心智模型(Connector / EventBus / Hyperopt),不抄整套框架。**
+
+---
+
 **附录 A:模型 / 数据资产对照表**
 
 | 数据表 | 用途 | 行数级别 | AI 应用 |

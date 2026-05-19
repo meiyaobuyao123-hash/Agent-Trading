@@ -188,10 +188,13 @@ class _MainShellState extends State<MainShell> {
     ProfileScreen(),
   ];
 
-  // R49 — 切 tab 拦截:仅 Profile (idx=4) 需登录
-  // Agent tab 不在此处 gate — 用户可以进 Agent 页面浏览 UI/历史,
-  // 但点击发送时由 AgentScreen._send() 内部弹登录(更精准,体验更好)
-  static const _gatedTabs = {4};
+  // R70 订正(2026-05-19):撤掉 Profile tab gate — 跟 R59 的 _LoginPromptCard 冲突
+  // 用户原话:"原来不是有个人中心页面,用户点击登录之后才会有登录弹窗吗?"
+  // 设计意图:profile_screen.dart 自己有 _LoginPromptCard(顶部主色"登录/注册"卡片)
+  // + 未登录态隐藏身份/算力/钱包/通知,只显示"外观/关于"。
+  // 不在 tab 入口拦截 = 用户能看 Profile 页面,自己决定何时点登录。
+  // 架构保留(以后想加 gate 用),目前空集 = 全部 tab 自由进入。
+  static const _gatedTabs = <int>{};
 
   /// 处理 tab 点击:需登录的 tab 在未登录时弹 LoginPage(可关闭)
   Future<void> _handleTabTap(int targetIdx) async {

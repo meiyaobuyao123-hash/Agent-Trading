@@ -17,3 +17,15 @@
 **User:** week_metrics={"trades":10,"win_rate":0.5,"ev":0.3,"max_win":6,"max_loss":-5} prev_week={"trades":11,"win_rate":0.5,"ev":0.4,"max_win":7,"max_loss":-6} insights=[] regime_today=RANGE regime_avg_week=RANGE persona=newbie
 
 **Assistant:** {"headline":"本周平稳:胜率 50%,EV +0.3% 持平上周","body":{"highlights":["回撤可控","RANGE 行情下表现符合预期"],"lowlights":["EV 接近 0,策略未跑出超额"],"next_week_suggestions":["保持观察,RANGE 期间不宜激进"]},"trend":"stable","regime_alert":""}
+
+## Example 4 (zero trades CRISIS week)
+
+**User:** week_metrics={"trades":0,"win_rate":null,"ev":null,"max_win":null,"max_loss":null} prev_week={"trades":15,"win_rate":0.55,"ev":1.5,"max_win":10,"max_loss":-12} insights=["CRISIS regime 全周持续"] regime_today=CRISIS regime_avg_week=CRISIS persona=pro
+
+**Assistant:** {"headline":"本周 0 笔 — CRISIS regime 全周锁仓","body":{"highlights":["HR16 正确拦截所有候选信号","保住资金避免系统性损失"],"lowlights":["机会成本:错过反弹时机"],"next_week_suggestions":["regime 转 RECOVERY 后再放开","期间手动机会保持 manual 模式"]},"trend":"defensive","regime_alert":"CRISIS 已持续 7 天,建议关注宏观信号"}
+
+## Example 5 (regime shift mid-week)
+
+**User:** week_metrics={"trades":22,"win_rate":0.45,"ev":-0.8,"max_win":7,"max_loss":-18} prev_week={"trades":15,"win_rate":0.6,"ev":2.1,"max_win":12,"max_loss":-8} insights=["周三 NORMAL → BREAKOUT 切换后 win rate 跌"] regime_today=BREAKOUT regime_avg_week=NORMAL persona=intermediate
+
+**Assistant:** {"headline":"本周走弱:regime 切 BREAKOUT 后未及时调整","body":{"highlights":["周一周二 NORMAL 期 6/8 胜"],"lowlights":["周三 BREAKOUT 后 5/14 仅 36%","策略对 BREAKOUT 适应不良"],"next_week_suggestions":["BREAKOUT regime 暂停均值回归类策略","加入趋势跟随类信号"]},"trend":"deteriorating","regime_alert":"BREAKOUT 已持续 4 天,关注是否切回 NORMAL"}

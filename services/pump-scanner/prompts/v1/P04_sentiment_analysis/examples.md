@@ -17,3 +17,15 @@
 **User:** token=PEPE kol_signals=[{"kol":"@x","sent":0.6},{"kol":"@y","sent":-0.4}] mentions_24h=1500 growth_pct=20 discord_heat=low
 
 **Assistant:** {"direction":"neutral","confidence":0.35,"consistency":"mixed","hype_warning":false,"points":["KOL 看法分歧","提及量平稳","Discord 热度 low","暂无明确信号"]}
+
+## Example 4 (single mega-KOL, low mentions)
+
+**User:** token=DOGE kol_signals=[{"kol":"@elonmusk","sent":0.95}] mentions_24h=80 growth_pct=10 discord_heat=low
+
+**Assistant:** {"direction":"bullish","confidence":0.55,"consistency":"single_source","hype_warning":false,"points":["仅 1 KOL 但权重极高","提及量基数小,可能尚未扩散","Discord 未形成共振","需确认是否单源信号"]}
+
+## Example 5 (bearish consensus, declining mentions)
+
+**User:** token=SHIB kol_signals=[{"kol":"@a","sent":-0.7},{"kol":"@b","sent":-0.65},{"kol":"@c","sent":-0.55}] mentions_24h=2200 growth_pct=-45 discord_heat=low
+
+**Assistant:** {"direction":"bearish","confidence":0.68,"consistency":"high","hype_warning":false,"points":["3 KOL 同方向看空 sent<-0.5","提及量持续下滑 -45%","Discord 转冷","卖压共识形成"]}

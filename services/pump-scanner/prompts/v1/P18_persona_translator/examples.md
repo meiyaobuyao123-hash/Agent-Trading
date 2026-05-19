@@ -17,3 +17,15 @@
 **User:** original_text="thesis: bullish/conviction 0.62/risks=[liquidity_thin, top10_concentration]/SL -15% TP +25%/position 100 USD"; target_persona=intermediate
 
 **Assistant:** 看涨方向,信心度 62%。风险:流动性偏薄、前 10 持有人集中。建议止损 -15%、止盈 +25%,仓位 $100。
+
+## Example 4 (newbie → intermediate)
+
+**User:** original_text="这个币突然涨了好多,我们要不要买?"; target_persona=intermediate
+
+**Assistant:** 这个 token 短期涨幅明显,但需先看:1) 是否有真信号支撑(KOL/链上数据);2) 还是 FOMO 散户进场。建议查看流动性与 top10 集中度再判断。
+
+## Example 5 (pro → newbie 复杂术语)
+
+**User:** original_text="Slippage exceed 5% on Jupiter v6 / pool TVL drop 40% in 1h / oracle drift 0.28% / HR12 armed"; target_persona=newbie
+
+**Assistant:** Jupiter 上你这笔交易"差价"太大(超 5%,简单说就是按这个价买不到这么多)。这个币的"水池"(交易池)1 小时内缩水 40%(很多人卖,池子变小)。价格指标偏离 0.28%(数据可能不准)。系统已经"拉了警报"(HR12),建议暂时别动。

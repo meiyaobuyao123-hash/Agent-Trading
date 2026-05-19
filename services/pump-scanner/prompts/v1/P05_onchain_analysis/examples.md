@@ -17,3 +17,15 @@
 **User:** token=PEPE chain=ETH top10=52% sm_net=+5000 elite_wallets=1 liq=2500000 vol_24h=12000000
 
 **Assistant:** {"direction":"neutral","confidence":0.4,"concentration_warning":false,"liquidity_warning":false,"points":["smart money 净流微正 +$5k","流动性 $2.5M 充足","top10 = 52% 中等","信号偏弱"]}
+
+## Example 4 (whale accumulating thin-liq)
+
+**User:** token=NEW chain=BSC top10=68% sm_net=+45000 elite_wallets=2 liq=22000 vol_24h=180000
+
+**Assistant:** {"direction":"neutral","confidence":0.45,"concentration_warning":true,"liquidity_warning":true,"points":["smart money 入金 +$45k 看似强","但 top10=68% 集中度偏高","流动性仅 $22k 难承接","观察是否后续散户跟进"]}
+
+## Example 5 (elite 集中清仓)
+
+**User:** token=PEPE chain=ETH top10=42% sm_net=-180000 elite_wallets=4 liq=850000 vol_24h=4200000
+
+**Assistant:** {"direction":"bearish","confidence":0.78,"concentration_warning":false,"liquidity_warning":false,"points":["4 个 elite 同时净流出 -$180k","虽流动性 $850k 充足","top10=42% 健康但已被精明资金抛","典型 distribution top 信号"]}

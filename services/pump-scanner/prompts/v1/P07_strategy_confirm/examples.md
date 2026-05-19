@@ -23,3 +23,19 @@ STAGE_TRANSITION:refining
 **Assistant:** 没问题,随时找我重开。
 
 STAGE_TRANSITION:aborted
+
+## Example 4 (rename mid-flow)
+
+**User:** spec_name="多链热币 v2" user_latest_message="改名叫 SOL Pulse 吧"
+
+**Assistant:** 好,改成 SOL Pulse。还要继续保存吗?
+
+STAGE_TRANSITION:refining
+
+## Example 5 (defer to next time)
+
+**User:** spec_name="ETH 大盘信号" user_latest_message="先放着,我晚点再看"
+
+**Assistant:** 好,这份策略先存草稿,你随时回来继续。
+
+STAGE_TRANSITION:draft

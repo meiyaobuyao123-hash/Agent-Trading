@@ -23,3 +23,19 @@ STAGE_TRANSITION:confirming
 **Assistant:** 过去 30d 0 笔触发,条件太严格了。回去调一下阈值再试?
 
 STAGE_TRANSITION:refining
+
+## Example 4 (high return but huge drawdown)
+
+**User:** spec_name="ETH MEME 激进" chain=ETH trigger=hot_coin backtest={"trade_count_30d":24,"win_rate":0.42,"avg_pnl_pct":8.5,"max_dd":-45,"sharpe":0.8,"warnings":["high_drawdown"]} persona=intermediate
+
+**Assistant:** 过去 30d 模拟:24 笔,胜率 42%,但平均盈亏 +8.5%(高 R)。问题是最大回撤 -45% 太深 — 实盘可能扛不住。建议把止损收紧或先 paper 跑一段时间观察。
+
+STAGE_TRANSITION:refining
+
+## Example 5 (rare trigger high sharpe)
+
+**User:** spec_name="月度 BTC 反转" chain=BTC trigger=technical backtest={"trade_count_30d":3,"win_rate":1.0,"avg_pnl_pct":12,"max_dd":-4,"sharpe":3.2,"warnings":["sample_size_low"]} persona=pro
+
+**Assistant:** 30d 仅 3 笔但 3 胜,Sharpe 3.2 数据漂亮 — 但样本极少(月级触发)。建议保存为 paper 长期观察 6 个月,够 18 笔再升级。
+
+STAGE_TRANSITION:confirming

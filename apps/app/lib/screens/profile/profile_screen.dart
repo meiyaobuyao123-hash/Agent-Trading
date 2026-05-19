@@ -10,6 +10,7 @@ import '../../services/auth_service.dart';
 import '../../theme/app_colors.dart';
 import '../../widgets/wallet_import_sheet.dart';
 import '../credit/credit_page.dart';
+import '../auth/login_page.dart';
 import '../../services/push_notification_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -28,6 +29,53 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadNotifSettings();
+    // R70.1 — 登录态变化时自动重 rebuild,让 Profile 在登录/登出后立即切换布局
+    AuthService.instance.addListener(_onAuthChanged);
+  }
+
+  @override
+  void dispose() {
+    AuthService.instance.removeListener(_onAuthChanged);
+    super.dispose();
+  }
+
+  void _onAuthChanged() {
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _doLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('确认登出?'),
+        content: const Text('登出后下次启动需要重新登录'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('登出', style: TextStyle(color: Color(0xFFEF4444))),
+          ),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      await AuthService.instance.logout();
+    }
+  }
+
+  void _gotoLogin() {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => LoginPage(
+          onLoggedIn: () => Navigator.of(context).pop(true),
+          onClose: () => Navigator.of(context).pop(false),
+        ),
+      ),
+    );
   }
 
   Future<void> _loadNotifSettings() async {
@@ -105,141 +153,131 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // ── 钱包绑定卡 ─────────────────
-                  const _WalletCard(),
-                  const SizedBox(height: 16),
-
-                  // ── R47 算力 + R46 账户 ─────────
-                  _SectionLabel(label: '账户 & 算力'),
-                  const SizedBox(height: 8),
-                  _SettingItem(
-                    icon: Icons.bolt_rounded,
-                    title: '算力余额',
-                    value: '充值 / 流水',
-                    onTap: () => Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const CreditPage()),
-                    ),
-                  ),
-                  _SettingItem(
-                    icon: Icons.account_circle_outlined,
-                    title: AuthService.instance.email ?? '未登录',
-                    value: AuthService.instance.displayName ?? '',
-                    onTap: null,
-                  ),
-                  _SettingItem(
-                    icon: Icons.logout_rounded,
-                    title: '登出',
-                    value: '',
-                    onTap: () async {
-                      final confirm = await showDialog<bool>(
-                        context: context,
-                        builder: (_) => AlertDialog(
-                          title: const Text('确认登出?'),
-                          content: const Text('登出后下次启动需要重新登录'),
-                          actions: [
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(false),
-                              child: const Text('取消'),
-                            ),
-                            TextButton(
-                              onPressed: () => Navigator.of(context).pop(true),
-                              child: const Text('登出', style: TextStyle(color: Color(0xFFEF4444))),
-                            ),
-                          ],
-                        ),
-                      );
-                      if (confirm == true) {
-                        await AuthService.instance.logout();
-                      }
-                    },
-                  ),
-                  const SizedBox(height: 16),
-
-                  // ── 通知设置 ───────────────────
-                  _SectionLabel(label: S.of(context).notificationSettings),
-                  const SizedBox(height: 8),
-                  _ToggleItem(
-                    icon: Icons.bolt_rounded,
-                    title: S.of(context).newCoinPush,
-                    subtitle: S.of(context).newCoinPushDesc,
-                    value: _notifNewCoin,
-                    onChanged: (v) => _onToggleNotif('notif_new_coin', v),
-                  ),
-                  _ToggleItem(
-                    icon: Icons.local_fire_department_rounded,
-                    title: S.of(context).hotCoinAlert,
-                    subtitle: S.of(context).hotCoinAlertDesc,
-                    value: _notifHotCoin,
-                    onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
-                  ),
-                  _ToggleItem(
-                    icon: Icons.smart_toy_rounded,
-                    title: S.of(context).agentNotification,
-                    subtitle: S.of(context).agentNotificationDesc,
-                    value: _notifAgent,
-                    onChanged: (v) => _onToggleNotif('notif_agent', v),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── 外观设置 ───────────────────
-                  _SectionLabel(label: S.of(context).appearanceSettings),
-                  const SizedBox(height: 8),
-                  _SettingItem(
-                    icon: context.isDark
-                        ? Icons.dark_mode_rounded
-                        : Icons.light_mode_rounded,
-                    title: S.of(context).darkMode,
-                    value: context.isDark ? S.of(context).darkModeOn : S.of(context).darkModeOff,
-                    onTap: () => themeNotifier.toggle(),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── 语言设置 ───────────────────
-                  _SectionLabel(label: S.of(context).languageSettings),
-                  const SizedBox(height: 8),
-                  _SettingItem(
-                    icon: Icons.language_rounded,
-                    title: S.of(context).language,
-                    value: LocaleProvider.displayName(localeProvider.locale),
-                    onTap: () => _showLanguagePicker(context),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // ── 关于 ───────────────────────
-                  _SectionLabel(label: S.of(context).about),
-                  const SizedBox(height: 8),
-                  _SettingItem(
-                    icon: Icons.info_outline_rounded,
-                    title: S.of(context).version,
-                    value: 'v1.0.0',
-                    onTap: null,
-                  ),
-                  _SettingItem(
-                    icon: Icons.data_object_rounded,
-                    title: S.of(context).dataSource,
-                    value: 'pump.fun · OKX · Binance',
-                    onTap: null,
-                  ),
-                  _SettingItem(
-                    icon: Icons.warning_amber_rounded,
-                    title: S.of(context).riskWarning,
-                    value: '',
-                    onTap: () => _showRiskDisclaimer(context),
-                  ),
-
-                  const SizedBox(height: 32),
-                ],
-              ),
+              child: _buildBody(context),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// R70.1 — 按登录态分支:
+  /// - 未登录:**1 个**登录卡(顶部主色)+ 外观 / 语言 / 关于(无需账户也可用)
+  /// - 已登录:身份卡(头像+邮箱,不含登出)+ 算力 + 钱包 + 通知 + 外观 / 语言 / 关于
+  ///   + 底部**1 个**独立"登出"红字按钮(全局唯一登出入口,放最远防误点)
+  /// 全局保证:登录按钮 ≤ 1 / 登出按钮 ≤ 1,**未登录态不出现"登出"** / **已登录态不出现"登录"**
+  Widget _buildBody(BuildContext context) {
+    final isLoggedIn = AuthService.instance.isLoggedIn;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ── ① 顶部:登录态分支 ─────────────────────────────
+        if (!isLoggedIn) ...[
+          _LoginPromptCard(onTap: _gotoLogin),
+          const SizedBox(height: 20),
+        ] else ...[
+          _AccountIdentityCard(
+            email: AuthService.instance.email ?? '',
+            displayName: AuthService.instance.displayName,
+          ),
+          const SizedBox(height: 16),
+          // 算力余额(仅已登录)
+          _SectionLabel(label: '账户 & 算力'),
+          const SizedBox(height: 8),
+          _SettingItem(
+            icon: Icons.bolt_rounded,
+            title: '算力余额',
+            value: '充值 / 流水',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const CreditPage()),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 钱包(仅已登录)
+          const _WalletCard(),
+          const SizedBox(height: 16),
+
+          // 通知设置(仅已登录 — 推送依赖 user_id)
+          _SectionLabel(label: S.of(context).notificationSettings),
+          const SizedBox(height: 8),
+          _ToggleItem(
+            icon: Icons.bolt_rounded,
+            title: S.of(context).newCoinPush,
+            subtitle: S.of(context).newCoinPushDesc,
+            value: _notifNewCoin,
+            onChanged: (v) => _onToggleNotif('notif_new_coin', v),
+          ),
+          _ToggleItem(
+            icon: Icons.local_fire_department_rounded,
+            title: S.of(context).hotCoinAlert,
+            subtitle: S.of(context).hotCoinAlertDesc,
+            value: _notifHotCoin,
+            onChanged: (v) => _onToggleNotif('notif_hot_coin', v),
+          ),
+          _ToggleItem(
+            icon: Icons.smart_toy_rounded,
+            title: S.of(context).agentNotification,
+            subtitle: S.of(context).agentNotificationDesc,
+            value: _notifAgent,
+            onChanged: (v) => _onToggleNotif('notif_agent', v),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // ── ② 外观(已登录 + 未登录都显示)─────────────────
+        _SectionLabel(label: S.of(context).appearanceSettings),
+        const SizedBox(height: 8),
+        _SettingItem(
+          icon: context.isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
+          title: S.of(context).darkMode,
+          value: context.isDark ? S.of(context).darkModeOn : S.of(context).darkModeOff,
+          onTap: () => themeNotifier.toggle(),
+        ),
+        const SizedBox(height: 16),
+
+        // ── ③ 语言 ─────────────────────────────────
+        _SectionLabel(label: S.of(context).languageSettings),
+        const SizedBox(height: 8),
+        _SettingItem(
+          icon: Icons.language_rounded,
+          title: S.of(context).language,
+          value: LocaleProvider.displayName(localeProvider.locale),
+          onTap: () => _showLanguagePicker(context),
+        ),
+        const SizedBox(height: 16),
+
+        // ── ④ 关于 ─────────────────────────────────
+        _SectionLabel(label: S.of(context).about),
+        const SizedBox(height: 8),
+        _SettingItem(
+          icon: Icons.info_outline_rounded,
+          title: S.of(context).version,
+          value: 'v2.0.0',
+          onTap: null,
+        ),
+        _SettingItem(
+          icon: Icons.data_object_rounded,
+          title: S.of(context).dataSource,
+          value: 'pump.fun · OKX · Binance',
+          onTap: null,
+        ),
+        _SettingItem(
+          icon: Icons.warning_amber_rounded,
+          title: S.of(context).riskWarning,
+          value: '',
+          onTap: () => _showRiskDisclaimer(context),
+        ),
+
+        // ── ⑤ 底部"登出"(仅已登录,全局唯一登出入口)──────
+        if (isLoggedIn) ...[
+          const SizedBox(height: 24),
+          _DangerLogoutCard(onTap: _doLogout),
+        ],
+
+        const SizedBox(height: 32),
+      ],
     );
   }
 
@@ -348,6 +386,162 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const Spacer(),
             if (isSelected) Icon(Icons.check_rounded, color: c.primary, size: 20),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ─── R70.1:登录提示卡(未登录态唯一登录入口)──────────
+class _LoginPromptCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _LoginPromptCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft, end: Alignment.bottomRight,
+              colors: [c.primary, c.primary.withOpacity(0.78)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: c.primary.withOpacity(0.18),
+                blurRadius: 16, offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.22),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.account_circle_outlined,
+                  color: Colors.white, size: 28),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text('登录 / 注册',
+                      style: TextStyle(color: Colors.white,
+                          fontSize: 16, fontWeight: FontWeight.w700,
+                          letterSpacing: -0.2)),
+                  SizedBox(height: 3),
+                  Text('登录后解锁 Agent 自动交易 / 算力充值 / 钱包管理 / 推送通知',
+                      style: TextStyle(color: Colors.white70,
+                          fontSize: 11.5, height: 1.4)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: Colors.white, size: 14),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// ─── R70.1:已登录账户身份卡(纯展示,不含登出)──────
+class _AccountIdentityCard extends StatelessWidget {
+  final String email;
+  final String? displayName;
+  const _AccountIdentityCard({required this.email, this.displayName});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final initial = (displayName?.isNotEmpty == true
+        ? displayName!.substring(0, 1)
+        : (email.isNotEmpty ? email.substring(0, 1) : '?')).toUpperCase();
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: c.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: c.border, width: 0.5),
+      ),
+      child: Row(children: [
+        Container(
+          width: 52, height: 52,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [c.primary, c.primary.withOpacity(0.65)],
+            ),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          alignment: Alignment.center,
+          child: Text(initial,
+              style: const TextStyle(color: Colors.white,
+                  fontSize: 22, fontWeight: FontWeight.w700)),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(displayName?.isNotEmpty == true ? displayName! : email,
+                  style: TextStyle(color: c.textPrimary,
+                      fontSize: 15.5, fontWeight: FontWeight.w700,
+                      letterSpacing: -0.1),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 3),
+              Text(email,
+                  style: TextStyle(color: c.textSecondary,
+                      fontSize: 12, letterSpacing: 0.1),
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ─── R70.1:底部独立"登出"红卡(已登录态唯一登出入口)──
+class _DangerLogoutCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _DangerLogoutCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    const danger = Color(0xFFEF4444);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFEF2F2),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: danger.withOpacity(0.18), width: 0.6),
+          ),
+          alignment: Alignment.center,
+          child: Row(mainAxisSize: MainAxisSize.min, children: const [
+            Icon(Icons.logout_rounded, color: danger, size: 18),
+            SizedBox(width: 8),
+            Text('登出',
+                style: TextStyle(color: danger,
+                    fontSize: 15, fontWeight: FontWeight.w600,
+                    letterSpacing: 0.2)),
+          ]),
         ),
       ),
     );

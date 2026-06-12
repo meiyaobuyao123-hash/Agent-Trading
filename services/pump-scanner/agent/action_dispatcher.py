@@ -549,8 +549,18 @@ class ActionDispatcher:
         except Exception:
             pass
 
-        sl_pct = risk_params.get("stop_loss_pct", 25)
-        tp_pct = risk_params.get("take_profit_pct", 100)
+        # R71: 归一化 sl/tp 单位。部分策略 risk_params 存的是 ratio(0.1=10%),
+        # 原样透传会让 paper 仓 sl_pct<1 被跳过卡死、live 仓 0.1% 即时止损。
+        def _norm_pct(v, default):
+            try:
+                f = float(v)
+            except (TypeError, ValueError):
+                return float(default)
+            if f <= 0:
+                return float(default)
+            return round(f * 100, 4) if f < 1 else f
+        sl_pct = _norm_pct(risk_params.get("stop_loss_pct"), 25)
+        tp_pct = _norm_pct(risk_params.get("take_profit_pct"), 100)
 
         engine = get_paper_engine()
         await engine.open_position(

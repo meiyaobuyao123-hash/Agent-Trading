@@ -58,8 +58,31 @@ def test_hold_seconds_computed_from_created_at():
     assert 590 <= held_z <= 700
 
 
+# ── Fix 9: paper_engine 写入前归一化 sl/tp 单位(防 ratio 仓卡死)──
+def test_paper_normalize_pct_unit():
+    from agent.paper_engine import _normalize_pct_unit
+
+    # ratio 误存 → ×100
+    assert _normalize_pct_unit(0.1) == 10.0
+    assert _normalize_pct_unit(0.3) == 30.0
+    assert _normalize_pct_unit(0.25) == 25.0
+    # 正常 percent 不动
+    assert _normalize_pct_unit(10) == 10.0
+    assert _normalize_pct_unit(30) == 30.0
+    assert _normalize_pct_unit(90) == 90.0
+    # 无效/<=0 → 默认 25
+    assert _normalize_pct_unit(0) == 25.0
+    assert _normalize_pct_unit(-5) == 25.0
+    assert _normalize_pct_unit(None) == 25.0
+    assert _normalize_pct_unit("garbage") == 25.0
+    # 归一化后必定 >=1(不会再被 paper check 循环跳过)
+    for v in [0.01, 0.1, 0.5, 0.99]:
+        assert _normalize_pct_unit(v) >= 1.0
+
+
 if __name__ == "__main__":
     test_empty_condition_node_returns_false()
     test_nonempty_condition_still_works()
     test_hold_seconds_computed_from_created_at()
+    test_paper_normalize_pct_unit()
     print("ALL PASS")

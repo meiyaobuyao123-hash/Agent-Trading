@@ -24,6 +24,21 @@ PAPER_DEFAULT_DAYS = 3           # 默认 paper 模式天数
 PAPER_MAX_IDLE_DAYS = 7          # 7 天无操作自动暂停
 
 
+def _normalize_pct_unit(v) -> float:
+    """sl/tp 单位归一化:0<v<1 视为 ratio 误存(0.1=10%)→ ×100。
+    R47 P4 规定 sl/tp 必须是 percent 整数(1-90),故 0<v<1 必为 ratio。
+    无效/<=0 回落到 25(默认止损)。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 25.0
+    if f <= 0:
+        return 25.0
+    if f < 1:
+        return round(f * 100, 4)
+    return f
+
+
 class PaperEngine:
     """模拟交易引擎"""
 
@@ -53,6 +68,14 @@ class PaperEngine:
         """
         # 买入模拟滑点：实际成交价 = 市场价 * (1 + 1.5%)
         simulated_price = price * (1 + SIMULATED_SLIPPAGE)
+
+        # R71: 写入前归一化 sl/tp 单位。
+        # 根因:部分策略 risk_params.stop_loss_pct 存的是 ratio(0.1=10%),
+        # action_dispatcher 原样透传 → 开出 sl_pct=0.1 的仓 → check 循环每 tick
+        # 因 <1 跳过 → 仓位永远不评估止盈止损、卡死 open + 刷 ERROR 日志。
+        # R47 P4 schema 规定 sl/tp 必须是 percent 整数(1-90),故 0<v<1 必为 ratio 误存。
+        sl_pct = _normalize_pct_unit(sl_pct)
+        tp_pct = _normalize_pct_unit(tp_pct)
 
         row = {
             "strategy_id": strategy_id,

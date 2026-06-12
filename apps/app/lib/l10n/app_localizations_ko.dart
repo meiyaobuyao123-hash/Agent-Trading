@@ -225,6 +225,12 @@ class SKo extends S {
   String get myStrategyTab => '내 전략';
 
   @override
+  String get noStrategiesYet => '아직 전략이 없습니다';
+
+  @override
+  String get createFirstStrategy => '\'대화\'에서 아이디어를 설명해 첫 전략을 만들어 보세요';
+
+  @override
   String get dataSourceTab => '데이터 소스';
 
   @override

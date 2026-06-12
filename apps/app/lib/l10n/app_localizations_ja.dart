@@ -225,6 +225,12 @@ class SJa extends S {
   String get myStrategyTab => 'マイストラテジー';
 
   @override
+  String get noStrategiesYet => '戦略がまだありません';
+
+  @override
+  String get createFirstStrategy => '「対話」で発想を伝え、最初の戦略を作成しましょう';
+
+  @override
   String get dataSourceTab => 'データソース';
 
   @override

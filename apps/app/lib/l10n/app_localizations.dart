@@ -503,6 +503,18 @@ abstract class S {
   /// **'我的策略'**
   String get myStrategyTab;
 
+  /// No description provided for @noStrategiesYet.
+  ///
+  /// In zh, this message translates to:
+  /// **'还没有策略'**
+  String get noStrategiesYet;
+
+  /// No description provided for @createFirstStrategy.
+  ///
+  /// In zh, this message translates to:
+  /// **'去「策略对话」描述你的想法，创建第一个策略'**
+  String get createFirstStrategy;
+
   /// No description provided for @dataSourceTab.
   ///
   /// In zh, this message translates to:

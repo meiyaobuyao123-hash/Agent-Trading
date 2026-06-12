@@ -225,6 +225,12 @@ class SZh extends S {
   String get myStrategyTab => '我的策略';
 
   @override
+  String get noStrategiesYet => '还没有策略';
+
+  @override
+  String get createFirstStrategy => '去「策略对话」描述你的想法，创建第一个策略';
+
+  @override
   String get dataSourceTab => '数据源';
 
   @override

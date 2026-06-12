@@ -1580,7 +1580,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                     color: c.primary, size: 36),
               ),
               const SizedBox(height: 20),
-              Text(S.of(context).noSignals,
+              Text(S.of(context).noStrategiesYet,
                   style: TextStyle(
                     color: c.textPrimary,
                     fontSize: 18,
@@ -1588,7 +1588,7 @@ class _MyStrategiesTabState extends State<_MyStrategiesTab>
                   )),
               const SizedBox(height: 10),
               Text(
-                S.of(context).whenTokenAppears,
+                S.of(context).createFirstStrategy,
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: c.textSecondary,

@@ -227,6 +227,13 @@ class SEn extends S {
   String get myStrategyTab => 'My Strategies';
 
   @override
+  String get noStrategiesYet => 'No strategies yet';
+
+  @override
+  String get createFirstStrategy =>
+      'Go to Chat to describe your idea and create your first strategy';
+
+  @override
   String get dataSourceTab => 'Data Source';
 
   @override

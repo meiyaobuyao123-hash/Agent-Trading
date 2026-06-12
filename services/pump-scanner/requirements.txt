@@ -8,7 +8,11 @@ apscheduler==3.10.4
 fastapi==0.109.2
 uvicorn==0.27.1
 pydantic==2.6.1
-anthropic==0.18.1
+# httpx 必须 <0.28:starlette 0.36(fastapi 0.109 配套)的 TestClient 传 app= 参数,
+# httpx 0.28 已删除该参数 → TestClient 全炸。0.28 是被其他包隐式拖上去的漂移。
+httpx==0.27.2
+# anthropic 0.18.1 不可用(构造函数 proxies 报错,见 pitfalls),服务器实际跑 0.84
+anthropic==0.84.0
 PyJWT==2.8.0
 # R46 账户体系
 bcrypt==4.1.2

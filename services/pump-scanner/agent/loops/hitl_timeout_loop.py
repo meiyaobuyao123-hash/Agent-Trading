@@ -184,8 +184,11 @@ async def _try_send_repush(device_id, approval_id, strategy_id, amount_usd) -> N
     try:
         from agent.push_service import send_push, build_deep_link
         deep_link = build_deep_link("hitl_approval", approval_id=str(approval_id))
+        # R71: send_push 形参是 user_id;pending_approvals.device_id 列实际存的就是
+        # user_id(notify_loop 写入 "device_id": event.user_id)。之前传 device_id=
+        # 是不存在的 kwarg → TypeError 被吞 → 5min 重推 100% 静默失效。
         await send_push(
-            device_id=str(device_id),
+            user_id=str(device_id),
             title="审批等待中",
             body=f"策略触发提醒(${amount_usd or '?'}),5 分钟后将降级为通知模式",
             data={

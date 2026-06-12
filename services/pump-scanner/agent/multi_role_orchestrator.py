@@ -23,8 +23,27 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Dict, List, Optional
+
+
+def _safe_json_parse(raw: str) -> Optional[dict]:
+    """健壮解析 LLM 输出的 JSON:容忍前言/markdown ```json 围栏。
+    直接 json.loads 失败时,提取第一段 {...} 再试。全失败返 None。"""
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (json.JSONDecodeError, TypeError):
+        pass
+    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    if m:
+        try:
+            return json.loads(m.group(0))
+        except (json.JSONDecodeError, TypeError):
+            pass
+    return None
 
 from agent.analysts import TechnicalAnalyst, SentimentAnalyst, OnchainAnalyst
 from agent.debate import DebateEngine
@@ -232,12 +251,13 @@ class MultiRoleOrchestrator:
             raw = response.content[0].text.strip()
             tokens_used = (response.usage.input_tokens or 0) + (response.usage.output_tokens or 0)
 
-            try:
-                result = json.loads(raw)
+            # R71: 健壮解析(容忍前言/markdown 围栏),避免模型加前缀就静默 hold 丢信号
+            result = _safe_json_parse(raw)
+            if result is not None:
                 action = result.get("action", "hold")
                 confidence = float(result.get("confidence", 0.5))
                 reason = result.get("reason", "L2 快速评估")
-            except json.JSONDecodeError:
+            else:
                 action = "hold"
                 confidence = 0.5
                 reason = f"L2 JSON 解析失败: {raw[:100]}"

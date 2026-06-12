@@ -80,9 +80,27 @@ def test_paper_normalize_pct_unit():
         assert _normalize_pct_unit(v) >= 1.0
 
 
+# ── Fix 10: L2 健壮 JSON 解析(防模型加前言/markdown → 静默 hold 丢信号)──
+def test_l2_safe_json_parse():
+    from agent.multi_role_orchestrator import _safe_json_parse
+
+    # 纯 JSON
+    assert _safe_json_parse('{"action":"buy","confidence":0.8}')["action"] == "buy"
+    # 带前言
+    assert _safe_json_parse('好的,我的判断:{"action":"sell","confidence":0.6}')["action"] == "sell"
+    # markdown 围栏
+    assert _safe_json_parse('```json\n{"action":"hold"}\n```')["action"] == "hold"
+    # 多行 + 尾注
+    assert _safe_json_parse('结论\n{"action": "buy",\n "confidence": 0.9}\n以上')["action"] == "buy"
+    # 真无法解析 → None
+    assert _safe_json_parse("完全没有 json") is None
+    assert _safe_json_parse("") is None
+
+
 if __name__ == "__main__":
     test_empty_condition_node_returns_false()
     test_nonempty_condition_still_works()
     test_hold_seconds_computed_from_created_at()
     test_paper_normalize_pct_unit()
+    test_l2_safe_json_parse()
     print("ALL PASS")

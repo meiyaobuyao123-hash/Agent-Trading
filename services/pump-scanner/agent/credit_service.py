@@ -479,6 +479,7 @@ def create_recharge_order(
         conn = _get_conn()
         with conn.cursor() as cur:
             # 防 nonce 撞车:同一 chain pending 中不能有相同 amount_exact
+            collided = True
             for _ in range(5):
                 cur.execute(
                     """
@@ -488,8 +489,16 @@ def create_recharge_order(
                     (chain, amount_exact),
                 )
                 if not cur.fetchone():
+                    collided = False
                     break
                 amount_exact, nonce = _gen_amount_with_nonce(amount_usd_int)
+            if collided:
+                # R71: 5 次仍撞车 → 拒单,不插入歧义金额。
+                # 之前会带着撞车的 amount_exact 直接 INSERT → 同链两个 pending
+                # 同金额,到账后 _match_pending first-match 可能把钱记给错的用户。
+                log.error("[credit] nonce 5 连撞 chain=%s amount=%s,拒单",
+                          chain, amount_usd_int)
+                return None
             cur.execute(
                 """
                 INSERT INTO recharge_orders
@@ -518,8 +527,12 @@ def create_recharge_order(
 
 
 def list_pending_orders_by_chain(chain: str) -> List[Dict[str, Any]]:
-    """R47 P2 监听 cron 用:拉某链所有 status='pending' 且未过期的 orders。
+    """R47 P2 监听 cron 用:拉某链所有 status='pending' 的 orders(含 24h 迟付宽限)。
     cron 拿到后从链上查 USDC 转账,匹配 amount_exact 命中 → 调 confirm_recharge_order。
+
+    R71 迟付宽限:之前过滤 expires_at > now(),用户第 29 分钟付款、cron 第 31 分钟
+    才扫到 → 订单被过滤 → USDC 已到账但永远不记账(资金丢失,无任何记录)。
+    现在过期后仍保留 24h 匹配窗口;amount_exact 唯一归属原订单,记给原用户语义正确。
     """
     try:
         conn = _get_conn()
@@ -529,7 +542,8 @@ def list_pending_orders_by_chain(chain: str) -> List[Dict[str, Any]]:
                 SELECT id, user_id, chain, receive_address, amount_usd, amount_base,
                        amount_nonce, created_at, expires_at
                 FROM recharge_orders
-                WHERE chain = %s AND status = 'pending' AND expires_at > now()
+                WHERE chain = %s AND status = 'pending'
+                  AND expires_at > now() - interval '24 hours'
                 ORDER BY created_at ASC
                 """,
                 (chain,),

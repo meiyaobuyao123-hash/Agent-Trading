@@ -20,6 +20,34 @@ from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
 
+# R71: 真实 token decimals 查询(带缓存),修 buy 路径硬编码 9/18 → entry_price 算错。
+# pump.fun/SPL meme 多为 6 decimals,硬编码 9 会把价格算高 ~1000 倍 → SL/TP 全偏。
+_DECIMALS_CACHE: Dict[str, int] = {}
+
+
+async def _resolve_solana_decimals(mint: str, fallback: int = 9) -> int:
+    """查 SPL token decimals(getTokenSupply,Helius RPC),带缓存。
+    失败回退到 fallback(旧默认值)→ 绝不比修复前更糟。"""
+    if not mint:
+        return fallback
+    if mint in _DECIMALS_CACHE:
+        return _DECIMALS_CACHE[mint]
+    try:
+        from config import HELIUS_RPC
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "getTokenSupply",
+                   "params": [mint]}
+        timeout = aiohttp.ClientTimeout(total=5)
+        async with aiohttp.ClientSession(timeout=timeout) as s:
+            async with s.post(HELIUS_RPC, json=payload) as r:
+                data = await r.json()
+        dec = int(data["result"]["value"]["decimals"])
+        if 0 <= dec <= 18:
+            _DECIMALS_CACHE[mint] = dec
+            return dec
+    except Exception as e:
+        log.debug("[dex_router] decimals 查询失败 mint=%s: %s", str(mint)[:12], e)
+    return fallback
+
 log = logging.getLogger(__name__)
 
 # ── 常量 ─────────────────────────────────────────────────────
@@ -696,9 +724,11 @@ class DexRouter:
 
             # 计算输出
             out_amount_raw = int(quote.out_amount)
-            # Jupiter quote.raw 可能有 outputMint decimals 信息
-            # 默认 USDC=6, SPL token 通常 6 或 9
-            to_decimals = 6 if action == "sell" else 9  # sell→USDC, buy→token
+            # R71: sell→USDC(6);buy→查 token 真实 decimals(原硬编码 9,pump=6 会错算)
+            if action == "sell":
+                to_decimals = 6
+            else:
+                to_decimals = await _resolve_solana_decimals(token_address, fallback=9)
             to_amount_float = out_amount_raw / (10 ** to_decimals)
 
             return RouteResult(
@@ -816,7 +846,10 @@ class DexRouter:
 
             # 计算输出
             out_amount_raw = int(quote.out_amount) if quote.out_amount != "0" else 0
-            to_decimals = 6 if action == "sell" else 18  # sell→USDC(6), buy→ERC20(varies)
+            # sell→USDC(6);buy→ERC20 多数 18(标准),少数非标(如 USDC/USDT=6)会偏。
+            # TODO(R71): EVM 也接 eth_call decimals();目前无现成 EVM RPC 端点,
+            # 且 18 命中率远高于 SOL 的 9,EVM 侧潜伏 P2,留后续。
+            to_decimals = 6 if action == "sell" else 18
             to_amount_float = out_amount_raw / (10 ** to_decimals)
 
             return RouteResult(

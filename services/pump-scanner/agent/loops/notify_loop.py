@@ -294,8 +294,8 @@ class NotifyLoop:
                 "chain": event.get("matched_chain") or token_data.get("chain", ""),
                 "price": float(token_data.get("price_usd") or token_data.get("price") or 1.0),
                 "amount_usd": position_usd,
-                "sl_pct": float(ctx.get("sl_pct", -10.0)),
-                "tp_pct": float(ctx.get("tp_pct", 30.0)),
+                "sl_pct": float(ctx.get("sl_pct") or 10.0),
+                "tp_pct": float(ctx.get("tp_pct") or 30.0),
                 "trigger_context": ctx,
             })
             paper = r.output.get("trade") if r.ok else None

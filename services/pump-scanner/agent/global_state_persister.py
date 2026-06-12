@@ -66,7 +66,12 @@ def persist_to_pg(payload: dict) -> bool:
 
     try:
         with conn.cursor() as cur:
-            # 1. 更新单例
+            # 1. 先读旧 state(必须在 UPDATE 之前,否则 prev_state==new_state 审计失真)
+            cur.execute("SELECT state FROM agent_global_state WHERE id = 1")
+            row = cur.fetchone()
+            prev_state = row[0] if row else None
+
+            # 2. 更新单例
             cur.execute(
                 """
                 UPDATE agent_global_state
@@ -79,11 +84,7 @@ def persist_to_pg(payload: dict) -> bool:
                 (state, breakers_json),
             )
 
-            # 2. 写 history(检测 prev_state)
-            cur.execute("SELECT state FROM agent_global_state WHERE id = 1")
-            row = cur.fetchone()
-            prev_state = row[0] if row else None
-
+            # 3. 写 history(prev_state 已在 UPDATE 前取到)
             cur.execute(
                 """
                 INSERT INTO agent_global_state_history

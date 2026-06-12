@@ -239,7 +239,7 @@ class ProactiveScanner:
             res = (
                 get_db()
                 .table("kol_signals")
-                .select("token_address, token_symbol, chain, kol_count, avg_sentiment, signal_strength")
+                .select("token_address, ticker, chain, kol_count, avg_sentiment, signal_strength")
                 .gte("detected_at", cutoff)
                 .gte("kol_count", 3)
                 .execute()
@@ -254,7 +254,7 @@ class ProactiveScanner:
             if sentiment > 0.3:  # 正面情绪
                 results.append({
                     "token_address": sig.get("token_address", ""),
-                    "token_symbol": sig.get("token_symbol", ""),
+                    "token_symbol": sig.get("ticker", ""),
                     "chain": sig.get("chain", ""),
                     "source_type": "kol_resonance",
                     "score": float(sig.get("signal_strength") or 50),

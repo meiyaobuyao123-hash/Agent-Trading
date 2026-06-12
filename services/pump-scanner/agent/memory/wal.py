@@ -248,15 +248,19 @@ class MemoryWAL:
                 conn2 = _gc()
                 with conn2.cursor() as cur2:
                     if new_attempt >= MAX_ATTEMPT:
-                        # 标 P1 告警(待 alert cron 处理)
+                        # 达到上限:停止重试,把 next_retry_at 推到远期,
+                        # 否则 next_retry_at 不变(仍 <= now)→ 每 30s tick 重新选中
+                        # → 无限重写挂掉的主库,放大故障 + p1_alerted 虚高。
+                        dead_at = datetime.now(timezone.utc) + timedelta(days=3650)
                         cur2.execute(
                             """
                             UPDATE memory_write_retry_queue
                             SET attempt_count = %s, last_error = %s,
+                                next_retry_at = %s,
                                 failed_p1_alerted = false  -- 等 alert cron 标 true
                             WHERE retry_id = %s
                             """,
-                            (new_attempt, str(err)[:300], retry_id),
+                            (new_attempt, str(err)[:300], dead_at, retry_id),
                         )
                         p1_alerted += 1
                     else:

@@ -95,6 +95,7 @@ async def backtest_strategy(
             if matched:
                 trigger_info = {
                     "token": event.token_name or event.token_address[:12],
+                    "token_address": event.token_address,
                     "chain": event.chain,
                     "score": event.data.get("score", 0),
                     "price_usd": event.data.get("price_usd", 0),
@@ -135,7 +136,7 @@ async def backtest_strategy(
 
     for t in triggers:
         perf = await _get_token_performance(
-            db, t.get("chain", ""), t.get("token", ""))
+            db, t.get("chain", ""), t.get("token_address", ""))
         if not perf:
             continue
         best_pct = perf.get("best_pct", 0) or 0
@@ -280,12 +281,14 @@ async def _load_kol_history(db, cutoff: str) -> List[DataEvent]:
     return events
 
 
-async def _get_token_performance(db, chain: str, token: str) -> Optional[dict]:
-    """查询代币的表现追踪数据"""
+async def _get_token_performance(db, chain: str, token_address: str) -> Optional[dict]:
+    """查询代币的表现追踪数据(按合约地址精确匹配,不用 symbol 模糊匹配防张冠李戴)"""
+    if not token_address:
+        return None
     try:
         res = db.table("token_performance").select("best_pct, daily_highs") \
             .eq("chain", chain) \
-            .like("symbol", f"%{token}%") \
+            .eq("address", token_address) \
             .limit(1) \
             .execute()
         if res.data:

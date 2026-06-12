@@ -54,7 +54,9 @@ def evaluate_conditions(
 def _evaluate_node(node: ConditionNode, data: Dict[str, Any]) -> bool:
     """评估逻辑节点 (AND/OR)"""
     if not node.rules:
-        return True  # 空规则视为通过
+        # 空规则 = 无任何条件 → 永不触发(fail-closed)。
+        # 之前返回 True 会让空/畸形条件树对每个事件无条件命中,buy 动作即无条件下单。
+        return False
 
     results = [evaluate_conditions(rule, data) for rule in node.rules]
 

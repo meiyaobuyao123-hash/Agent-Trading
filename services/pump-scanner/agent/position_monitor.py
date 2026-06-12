@@ -22,17 +22,29 @@ from database import get_db
 log = logging.getLogger(__name__)
 
 
+def _hold_seconds(created_at_str: str) -> float:
+    """从 created_at ISO 字符串算持仓秒数,无效返回 0。"""
+    if not created_at_str:
+        return 0.0
+    try:
+        created_dt = datetime.fromisoformat(str(created_at_str).replace("Z", "+00:00"))
+        return max(0.0, (datetime.now(timezone.utc) - created_dt).total_seconds())
+    except Exception:
+        return 0.0
+
+
 class PositionInfo:
     """持仓信息"""
     __slots__ = (
         "execution_id", "strategy_id", "user_id", "chain",
         "token_address", "entry_price", "amount_usd", "amount_token",
         "stop_loss_pct", "take_profit_pct", "trailing_stop_pct",
-        "wallet_address", "private_key",
+        "wallet_address", "private_key", "created_at",
     )
 
     def __init__(self, row: dict):
         self.execution_id = row.get("id", "")
+        self.created_at = row.get("created_at", "")
         self.strategy_id = row.get("strategy_id", "")
         self.user_id = row.get("user_id", "")
         self.chain = row.get("chain", "")
@@ -286,9 +298,7 @@ class PositionMonitor:
                         "exit_price": exit_price,
                         "pnl_pct": round(pnl_pct, 2),
                         "pnl_usd": round(pnl_usd, 2),
-                        "hold_seconds": (
-                            datetime.now(timezone.utc) - datetime.now(timezone.utc)
-                        ).total_seconds(),  # 实际用 created_at
+                        "hold_seconds": _hold_seconds(pos.created_at),
                         "exit_trigger": trigger,
                         "amount_usd": pos.amount_usd,
                     },

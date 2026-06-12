@@ -16,100 +16,26 @@ log = logging.getLogger(__name__)
 
 async def run_daily_reflection():
     """
-    每日 UTC 20:00 定时反思
+    每日记忆维护(只清理,不反思)。
 
-    1. 收集最近已闭环的交易
-    2. 调 Claude Sonnet 分析
-    3. 新规则写入 episodic，检查是否可晋升 semantic
-    4. 废弃失效规则
-    5. 清理过期 episodic 记忆
+    ⚠️ per-user 反思已迁移至 reflect_loop.run_per_user_cycle(按用户计费,R47 P9)。
+    本函数过去会跨用户聚合 agent_executions 跑一次 run_reflection(不传 user_id)→
+    平台白吞 LLM 成本 + 把所有用户的交易混在一起出规则写进共享 semantic 表。
+    现在它只保留两件 reflect_loop 不做的事:清理过期 episodic + 废弃失效 semantic 规则。
     """
     from agent.memory import get_memory_manager
 
     mem = get_memory_manager()
-
-    # 收集最近交易
     try:
-        db = get_db()
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
-        res = db.table("agent_executions").select("*") \
-            .eq("status", "closed") \
-            .gte("exited_at", cutoff) \
-            .order("exited_at", desc=True) \
-            .limit(10).execute()
-
-        trades = []
-        for r in (res.data or []):
-            trades.append({
-                "token": r.get("token_address", "")[:10],
-                "chain": r.get("chain", ""),
-                "action": r.get("action", ""),
-                "pnl_pct": r.get("pnl_pct", 0),
-                "pnl_usd": r.get("pnl_usd", 0),
-                "exit_trigger": r.get("exit_trigger", ""),
-                "amount_usd": r.get("amount_usd", 0),
-                "created_at": r.get("created_at", ""),
-                "exited_at": r.get("exited_at", ""),
-            })
-
-        if not trades:
-            log.info("[DailyReflection] No closed trades to reflect on")
-            # 仍然执行清理
-            mem.episodic.cleanup_expired()
-            mem.semantic.deprecate_stale()
-            return
-
-        # 执行反思
-        active_rules = mem.semantic.get_all_active()
-        result = await mem.reflection.run_reflection(
-            trades=trades,
-            active_rules=active_rules,
-            is_emergency=False,
-        )
-
-        if result:
-            # 写入新规则到 episodic
-            new_rules = result.get("new_rules", [])
-            for rule in new_rules[:3]:
-                mem.episodic.add({
-                    "category": "market_pattern",
-                    "content": f"{rule.get('condition', '')} -> {rule.get('action', '')} ({rule.get('evidence', '')})",
-                    "structured_data": rule,
-                    "importance": 7,
-                })
-
-            # 检查是否有规则可晋升
-            _check_promotion(mem, new_rules)
-
-            # 废弃已标记的规则
-            deprecated_ids = result.get("deprecated_rule_ids", [])
-            for rid in deprecated_ids:
-                if rid:
-                    try:
-                        db.table("agent_memory").update(
-                            {"is_active": False}
-                        ).eq("id", rid).execute()
-                        log.info("[DailyReflection] Deprecated rule: %s", rid)
-                    except Exception:
-                        pass
-
-        # 重置交易计数
         mem.reflection.reset_trade_count()
-
-        # 清理
         mem.episodic.cleanup_expired()
         deprecated = mem.semantic.deprecate_stale()
-
         log.info(
-            "[DailyReflection] Complete: %d trades analyzed, "
-            "%d new rules, %d deprecated",
-            len(trades),
-            len(result.get("new_rules", [])) if result else 0,
+            "[DailyMemoryMaintenance] cleanup done, %d stale rules deprecated",
             deprecated,
         )
-
     except Exception as e:
-        log.error("[DailyReflection] Failed: %s", e)
+        log.error("[DailyMemoryMaintenance] Failed: %s", e)
 
 
 def _check_promotion(mem, new_rules: list) -> None:

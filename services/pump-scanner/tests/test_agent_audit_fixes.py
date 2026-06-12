@@ -1,0 +1,65 @@
+"""
+回归测试:2026-06 Agent 审计修复批次。
+覆盖本批已修的、可纯逻辑验证的真 bug。
+重依赖(anthropic/supabase)路径的修复(notify_loop/wal/global_state/proactive)
+在 conftest 完整依赖装好后由各自模块测试 + 服务器 CI 覆盖。
+"""
+import sys
+import os
+from datetime import datetime, timezone, timedelta
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+
+# ── Fix 1: rule_engine 空条件树必须 fail-closed(返 False,不再无条件触发)──
+def test_empty_condition_node_returns_false():
+    from agent.rule_engine import evaluate_conditions
+    from agent.schemas import ConditionNode
+
+    # 空 rules 的 AND 节点
+    node = ConditionNode(operator="AND", rules=[])
+    assert evaluate_conditions(node, {"score": 99}) is False, \
+        "空条件树必须返回 False(永不触发),否则 buy 动作会对每个事件无条件下单"
+
+    # 空 rules 的 OR 节点同理
+    node_or = ConditionNode(operator="OR", rules=[])
+    assert evaluate_conditions(node_or, {"score": 99}) is False
+
+
+def test_nonempty_condition_still_works():
+    """确认修复没破坏正常条件求值。"""
+    from agent.rule_engine import evaluate_conditions
+    from agent.schemas import ConditionNode, ConditionRule
+
+    rule = ConditionRule(data_source="pump_tokens", field="score",
+                         operator=">=", value=70)
+    node = ConditionNode(operator="AND", rules=[rule])
+    assert evaluate_conditions(node, {"pump_tokens.score": 80}) is True
+    assert evaluate_conditions(node, {"pump_tokens.score": 50}) is False
+
+
+# ── Fix 2: position_monitor._hold_seconds 不再恒为 0 ──
+def test_hold_seconds_computed_from_created_at():
+    from agent.position_monitor import _hold_seconds
+
+    # 空/非法 → 0
+    assert _hold_seconds("") == 0.0
+    assert _hold_seconds(None) == 0.0
+    assert _hold_seconds("garbage") == 0.0
+
+    # 1 小时前 → ≈3600s(允许少量误差)
+    one_hour_ago = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    held = _hold_seconds(one_hour_ago)
+    assert 3590 <= held <= 3700, f"持仓 1h 应约 3600s,实际 {held}"
+
+    # Z 后缀也能解析
+    z_form = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat().replace("+00:00", "Z")
+    held_z = _hold_seconds(z_form)
+    assert 590 <= held_z <= 700
+
+
+if __name__ == "__main__":
+    test_empty_condition_node_returns_false()
+    test_nonempty_condition_still_works()
+    test_hold_seconds_computed_from_created_at()
+    print("ALL PASS")

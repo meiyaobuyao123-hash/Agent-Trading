@@ -27,13 +27,31 @@ _pool = None
 
 
 def _get_conn():
-    """获取或创建连接（简单单连接，够用）"""
+    """获取或创建连接（单连接 + 存活探测）。
+
+    R71: 修登录报 'server closed the connection unexpectedly' 根因。
+    server 端关闭空闲连接 / PG 重启时,客户端 _pool.closed 仍是 0(本地不知情),
+    只判断 .closed 会返回一个'看着活实际死'的连接,下一次查询直接抛错给用户。
+    auth/login 等调用方没有重连兜底 → 必须在这里 SELECT 1 探活,死了就重连。
+    本地 Unix socket ping 亚毫秒级,开销可忽略。
+    """
     global _pool
     try:
-        if _pool is None or _pool.closed:
-            _pool = psycopg2.connect(_LOCAL_DB_DSN)
-            _pool.autocommit = True
-            log.info("[LocalDB] 连接成功: %s", _LOCAL_DB_DSN.split("password=")[0] + "***")
+        if _pool is not None and not _pool.closed:
+            try:
+                with _pool.cursor() as cur:
+                    cur.execute("SELECT 1")
+                return _pool
+            except Exception:
+                # 连接已被 server 关闭 → 丢弃重连
+                try:
+                    _pool.close()
+                except Exception:
+                    pass
+                _pool = None
+        _pool = psycopg2.connect(_LOCAL_DB_DSN)
+        _pool.autocommit = True
+        log.info("[LocalDB] 连接成功: %s", _LOCAL_DB_DSN.split("password=")[0] + "***")
         return _pool
     except Exception as e:
         log.error("[LocalDB] 连接失败: %s", e)
